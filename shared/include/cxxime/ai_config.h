@@ -36,7 +36,6 @@ struct AiConfig {
     std::string provider = "deepseek";  // an id of the built-in provider table (ai_client.h)
     std::string base_url;               // empty: the provider's own
     std::string model;                  // empty: the provider's own
-    double temperature = 0.7;
     std::string reasoning_effort;  // "" = do not send one
     int timeout_ms = 8000;
     std::vector<std::string> keys;  // DPAPI-protected, base64 (ai_secret in ai_client.h)

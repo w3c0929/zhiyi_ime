@@ -281,7 +281,7 @@ const std::string& session_id() {
 
 bool build_request(const AiConfig& config, const Provider& provider,
                    const std::string& system_prompt, const std::string& user_prompt,
-                   const std::string& key, Request* request) {
+                   const std::string& key, bool send_thinking_off, Request* request) {
     const std::string base = trim_slashes(effective_base_url(config));
     const std::string model = effective_model(config);
     if (base.empty() || model.empty()) {
@@ -308,9 +308,10 @@ bool build_request(const AiConfig& config, const Provider& provider,
                                {"messages",
                                 {{{"role", "system"}, {"content", system_prompt}},
                                  {{"role", "user"}, {"content", user_prompt}}}},
-                               {"temperature", config.temperature},
+
                                {"stream", false}};
-        if (config.thinking && !config.reasoning_effort.empty()) {
+        if (send_thinking_off) body[`"reasoning_effort`"] = `"none`";  // on by default up there
+        else if (config.thinking && !config.reasoning_effort.empty()) {
             body["reasoning_effort"] = config.reasoning_effort;
         }
         request->body = body.dump();
@@ -327,7 +328,7 @@ bool build_request(const AiConfig& config, const Provider& provider,
             {"max_tokens", 2048},
             {"system", system_prompt},
             {"messages", {{{"role", "user"}, {"content", user_prompt}}}},
-            {"temperature", config.temperature}};
+            };
         request->body = body.dump();
         return true;
     }
@@ -341,7 +342,7 @@ bool build_request(const AiConfig& config, const Provider& provider,
         nlohmann::json body = {
             {"systemInstruction", {{"parts", {{{"text", system_prompt}}}}}},
             {"contents", {{{"role", "user"}, {"parts", {{{"text", user_prompt}}}}}}},
-            {"generationConfig", {{"temperature", config.temperature}}}};
+            };
         request->body = body.dump();
         return true;
     }
@@ -529,7 +530,7 @@ bool complete(const AiConfig& config, const std::string& system_prompt,
         std::string key;
         if (!unprotect_secret(stored, &key) || key.empty()) continue;
         Request request;
-        if (!build_request(config, provider, system_prompt, user_prompt, key, &request)) {
+        if (!build_request(config, provider, system_prompt, user_prompt, key, false, &request)) {
             if (error) *error = g_last_error;
             return false;
         }
@@ -541,6 +542,16 @@ bool complete(const AiConfig& config, const std::string& system_prompt,
             continue;  // the next key may still work
         }
         if (parse_response(provider.protocol, body, text)) {
+            if (error) error->clear();
+            return true;
+        }
+        // Turning thinking off means sending a value some services do not know: ask again without
+        // it rather than fail the translation.
+        if (!config.thinking &&
+            build_request(config, provider, system_prompt, user_prompt, key, true, &request) &&
+            http_request(L"POST", request.url, request.headers, &request.body,
+                         (std::max)(1000, config.timeout_ms), &body, &failure) &&
+            parse_response(provider.protocol, body, text)) {
             if (error) error->clear();
             return true;
         }

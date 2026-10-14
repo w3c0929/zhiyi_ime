@@ -16,7 +16,6 @@
 | `ai.provider` | `deepseek` | 内置提供方表的 id（见 `shared/include/cxxime/ai_client.h` 的 `table()`，约 30 家：deepseek / openai / anthropic / google / kimi / glm / qwen / siliconflow / hunyuan / minimax / 小米 / groq / openrouter / mistral / ollama …） |
 | `ai.base_url` | `""` | 空 = 用该提供方自带的地址；也可填自建/代理地址 |
 | `ai.model` | `""` | 空 = 用该提供方自带的默认模型 |
-| `ai.temperature` | `0.7` | 采样温度（0–2） |
 | `ai.reasoning_effort` | `""` | 推理档位；空 = 不发这个字段 |
 | `ai.timeout_ms` | `8000` | 单次请求超时（1000–120000） |
 | `ai.keys` | `[]` | **多把** API 密钥，**DPAPI（当前用户）加密后的 base64**，不是明文。一把被拒（401/429）自动换下一把 |

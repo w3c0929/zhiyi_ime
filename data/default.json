@@ -102,7 +102,6 @@
         "provider": "deepseek",
         "base_url": "",
         "model": "",
-        "temperature": 0.7,
         "reasoning_effort": "",
         "thinking": true,
         "timeout_ms": 8000,

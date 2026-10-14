@@ -371,7 +371,6 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(ai.provider);
     KEEP_PAGE_EDIT(ai.base_url);
     KEEP_PAGE_EDIT(ai.model);
-    KEEP_PAGE_EDIT(ai.temperature);
     KEEP_PAGE_EDIT(ai.reasoning_effort);
     KEEP_PAGE_EDIT(ai.thinking);
     KEEP_PAGE_EDIT(ai.timeout_ms);
