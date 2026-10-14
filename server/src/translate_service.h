@@ -6,6 +6,10 @@
 // unloaded after a while unused; the translation runs on a thread of its own, never on the IPC
 // thread (loading the model can take seconds).
 //
+// The language of the selection is guessed from its script (translate_service.cc), and what it
+// is translated into is the row that language has on the settings page (Learning, the candidate
+// translation rows — Config::gloss_targets), the same row the online AI is asked with.
+//
 // One request at a time, for the session that asked; another request replaces it.
 #ifndef CXXIME_SERVER_TRANSLATE_SERVICE_H_
 #define CXXIME_SERVER_TRANSLATE_SERVICE_H_

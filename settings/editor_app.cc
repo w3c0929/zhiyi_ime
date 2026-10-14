@@ -260,7 +260,8 @@ void EditorApp::destroy_controls() {
     }
     hList_ = hFooter_ = hAboutTitle_ = nullptr;
     hUpdateStatus_ = nullptr;  // show_update_state() waits for the new page
-    hChineseTarget_ = hEnglishTarget_ = hGlossPreview_ = hPackList_ = hCheckAllPacks_ = nullptr;
+    for (HWND& combo : hGlossTargets_) combo = nullptr;
+    hGlossPreview_ = hPackList_ = hCheckAllPacks_ = nullptr;
     hPackTabs_[0] = hPackTabs_[1] = nullptr;
     hPackActions_.clear();
     hPackRemoves_.clear();
@@ -341,8 +342,7 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(theme);
     KEEP_PAGE_EDIT(font_size);
     KEEP_PAGE_EDIT(layout);
-    KEEP_PAGE_EDIT(chinese_gloss_target);
-    KEEP_PAGE_EDIT(english_gloss_target);
+    KEEP_PAGE_EDIT(gloss_targets);
     KEEP_PAGE_EDIT(digits_type_translation);
     KEEP_PAGE_EDIT(mt_enable);
     KEEP_PAGE_EDIT(mt_device);

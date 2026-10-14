@@ -115,7 +115,13 @@ private:
     void init_learning();
     void populate_learning();
     void read_learning(cxxime::Config& config);
-    void fill_target_combo(HWND combo, const std::string& source, const std::string& selected);
+    // grey_uninstalled: the targets without a downloaded language pack are greyed out. Only the
+    // sources that have packs at all (Chinese and English) set it — the other languages are
+    // translated by a model or the online AI, so nothing is missing for them.
+    void fill_target_combo(HWND combo, const std::string& source, const std::string& selected,
+                           bool grey_uninstalled);
+    bool source_has_packs(const std::string& source) const;
+    HWND gloss_combo(const std::string& language) const;  // nullptr without a row
     std::string combo_target(HWND combo, const std::string& source) const;
     void refresh_pack(PackState& pack);
     void show_pack_tab(int tab);
@@ -255,7 +261,7 @@ private:
         bool note_good = false;     // shown in the accent color
         std::shared_ptr<std::atomic<bool>> cancel;
     };
-    HWND hChineseTarget_ = nullptr, hEnglishTarget_ = nullptr;
+    HWND hGlossTargets_[8] = {};  // one combo per language (glossary_languages())
     HWND hDigitsTranslation_ = nullptr;  // learning.digits_type_translation
     HWND hGlossPreview_ = nullptr;
     HWND hPackTabs_[2] = {};
@@ -265,7 +271,7 @@ private:
     std::vector<HWND> hPackRemoves_;
     std::vector<PackState> packs_;    // zh -> 7 targets, then en -> 7 targets
     int pack_tab_ = 0;
-    int last_chinese_target_ = 0, last_english_target_ = 0;  // combo indexes
+    int last_gloss_target_[8] = {};  // combo indexes, one per language
     HWND hTranslator_ = nullptr, hTranslatorDevice_ = nullptr, hTranslatorStatus_ = nullptr;
     HWND hTranslatorAction_ = nullptr, hTranslatorRemove_ = nullptr, hTranslatorHint_ = nullptr;
     // AI (editor_ai_panel.cc)

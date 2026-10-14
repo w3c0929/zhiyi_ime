@@ -5,6 +5,10 @@
 - **中文输入**：中文候选 → 英语、日语、韩语、法语、德语、西班牙语、俄语，七选一；
 - **英文输入**：英文候选 → 中文、日语、韩语、法语、德语、西班牙语、俄语，七选一。
 
+设置页给**八种语言各留一行**（中文、英文、日语、韩语、法语、德语、西班牙语、俄语），每行选它译成哪种语言。
+只有中文和英文候选会在候选窗口里显示译文；其余几行是**划词翻译（Ctrl+C+C）**用的：选中一段文字，
+按语言（按文字系统判断，见 `docs/settings-guide.md`）找到它那一行，译成那一行选的语言（`server/src/translate_service.cc`）。
+
 翻译来自预先生成的词表（语言包），输入法运行时只查表，不加载翻译模型，也不联网。
 
 ## 设置
@@ -58,8 +62,8 @@
 | 配置项 | 说明 |
 |------|------|
 | `style.layout` | `vertical`（默认）或 `horizontal`；打开学习模式时设置程序改为 `vertical` |
-| `learning.chinese_target` | 空（关闭）或 `en` `ja` `ko` `fr` `de` `es` `ru` |
-| `learning.english_target` | 空（关闭）或 `zh` `ja` `ko` `fr` `de` `es` `ru` |
+| `learning.gloss_targets` | 每种源语言译成什么：`{"zh":"ja","en":"zh",...}`，键与值是 `zh` `en` `ja` `ko` `fr` `de` `es` `ru`，缺键或空串为关闭 |
+| `learning.chinese_target` / `english_target` | 旧键（`gloss_targets` 之前），仍会读取，保存时一并写出，方便回退到旧版本 |
 
 ## 候选窗口
 

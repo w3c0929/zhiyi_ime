@@ -51,6 +51,8 @@
   `IPCCommand::TRANSLATE_SELECTION = 35`、`TRANSLATE_STATUS = 36`，`IPCRequest.translate_text`，
   `IPCResponse.translate_state / translate_text`；配置见 `engine/include/cxxime/config.h` 的
   `translate_selection_shortcut / translate_direct_insert / translate_device / translate_idle_seconds`。
+  **译成哪种语言跟「学习」页走**：源语言按文字系统猜（`server/src/translate_service.cc`），目标取
+  `Config::gloss_targets` 那一行的语言（`learning.gloss_targets`），空则回落「中→英、其他→中」。
   **合并上游时若上游也改 `ipc_protocol.h`，先确认它新增的枚举值 / flag 位不与 35、36 及我们已用的位冲突。**
 - **在线 AI（设置「AI」页，默认关闭）**：`shared/include/cxxime/ai_config.h`（配置）、
   `shared/src/ai_client.cc`（约 30 家提供方的协议表、DPAPI 加密的多密钥、`list_models()`、

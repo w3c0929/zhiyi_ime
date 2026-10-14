@@ -225,7 +225,8 @@
 | `initial_state.full_shape` / `chinese_punct` | false / true | 启动时的全角与中文标点状态 |
 | `style.font_point` | 14 | 候选字号 |
 | `style.layout` | vertical | 候选竖排（vertical）或横排（horizontal） |
-| `learning.chinese_target` / `english_target` | 空 | 学习模式：中文 / 英文候选的翻译语言（`en` `ja` `ko` `fr` `de` `es` `ru` / `zh` …），空为关闭 |
+| `learning.gloss_targets` | `{}` | 「学习」页每种源语言译成什么：`{"zh":"ja","en":"zh",...}`（键与值都是 `zh` `en` `ja` `ko` `fr` `de` `es` `ru`），缺哪个语言就是关。中文、英文两行是候选窗里的译文，八行全都是划词翻译（Ctrl+C+C）译成的语言 |
+| `learning.chinese_target` / `english_target` | 空 | 旧键（`gloss_targets` 之前），仍会读取，保存时一并写出，便于回退到旧版本 |
 | `learning.translator` | false | 离线翻译：语言包里没有的候选用下载的翻译模型翻译 |
 | `learning.translator_device` | 空 | 离线翻译在哪里运行：显卡名称（同型号的第二块为 `名称 #2`）或 `cpu`；空 = 列表里的第一项 |
 | `learning.translator_min_gpu_memory_mb` | 1000 | “学习”页离线翻译列出的显卡至少要有这么多 MB 自带显存（Vulkan 的独立显卡；模型约占 1 GB） |

@@ -120,8 +120,13 @@ std::string candidate_gloss(const std::string& chinese_target, const std::string
                             const std::string& text, const std::string& syllables,
                             bool english_candidate);
 
-// The packs: <source>-<target>, source "zh" (targets en ja ko fr de es ru) or "en" (targets
-// zh ja ko fr de es ru).
+// The languages a text can be translated from or into, in the order the settings page shows
+// them: zh en ja ko fr de es ru.
+const std::vector<std::string>& glossary_languages();
+
+// The languages `source` can be translated into: every language but the source itself. The
+// installed packs are <source>-<target> ("zh-en", "en-zh", ...); only "zh" and "en" have packs
+// so far, the rest are asked of a model or of the online AI (translate_service.cc).
 const std::vector<std::string>& glossary_targets(const std::string& source);
 std::string glossary_pack_id(const std::string& source, const std::string& target);
 std::string glossary_directory();  // %USERPROFILE%\zhiyu\glossary

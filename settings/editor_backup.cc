@@ -289,11 +289,12 @@ void EditorApp::import_user_backup() {
 
     // Translations need their language packs on this computer.
     std::wstring missing;
-    for (const auto& [source, target] : {std::make_pair(std::string("zh"), config_.chinese_gloss_target),
-                                         std::make_pair(std::string("en"), config_.english_gloss_target)}) {
+    // Only Chinese and English have packs, so only their targets can be missing here.
+    for (const char* source : {"zh", "en"}) {
+        const std::string target = config_.gloss_target(source);
         if (!target.empty() && !installed_pack(source, target).installed) {
             if (!missing.empty()) missing += L"、";
-            missing += tr(("lang." + source).c_str());
+            missing += tr((std::string("lang.") + source).c_str());
             missing += L" → ";
             missing += tr(("lang." + target).c_str());
         }

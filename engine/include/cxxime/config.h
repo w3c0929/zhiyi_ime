@@ -3,6 +3,7 @@
 #ifndef CXXIME_CONFIG_H_
 #define CXXIME_CONFIG_H_
 
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -86,10 +87,31 @@ struct Config {
     // passes --autostart and the server exits at once when this is off); otherwise the input
     // method starts it the first time it is switched to.
     bool autostart = true;
-    // Learning mode (docs/learning-mode.md): the language of the translations shown after
-    // Chinese and English candidates; empty: none. A language pack must be installed.
-    std::string chinese_gloss_target;  // en ja ko fr de es ru
-    std::string english_gloss_target;  // zh ja ko fr de es ru
+    // Learning mode (docs/learning-mode.md): the language each source language is translated
+    // into, keyed by its code ("zh" en ja ko fr de es ru, glossary_languages()); a language that
+    // is missing or empty is off. The same table tells the selection translation (Ctrl+C+C) what
+    // to translate a selection into. JSON: learning.gloss_targets — learning.chinese_target and
+    // learning.english_target (the two keys of older builds) are still read, and still written,
+    // so a build from before this table existed keeps working.
+    std::map<std::string, std::string> gloss_targets;
+
+    // What `source` is translated into; "" when it is off.
+    std::string gloss_target(const std::string& source) const {
+        const auto found = gloss_targets.find(source);
+        return found == gloss_targets.end() ? std::string() : found->second;
+    }
+    // Whether the selection translation has anywhere to go.
+    bool any_gloss_target() const {
+        for (const auto& entry : gloss_targets) {
+            if (!entry.second.empty()) return true;
+        }
+        return false;
+    }
+    // Whether candidate translations are on. Only Chinese and English candidates exist, so the
+    // other languages (selection translation only) do not count here.
+    bool candidate_gloss_enabled() const {
+        return !gloss_target("zh").empty() || !gloss_target("en").empty();
+    }
     // learning.space_languages: Ctrl+1..9 types a translation into these languages with a space
     // before it after a word (a letter or digit that is not Chinese or Japanese).
     std::vector<std::string> translation_space_languages = {"en", "ko", "fr", "de", "es", "ru"};

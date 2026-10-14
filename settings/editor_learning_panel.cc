@@ -1,14 +1,15 @@
 // Copyright (c) 2026 Zhiyi IME Contributors. GPL-3.0-only.
 //
-// Settings > Learning (docs/learning-mode.md): the languages of the translations shown after
-// Chinese and English candidates (languages without an installed pack are grayed out), a preview,
-// and the language packs: download, check for updates, update, remove. Downloads run on worker
-// threads and report back with window messages; the IME picks up installed or removed packs by
-// itself (the server checks the pack files).
+// Settings > Learning (docs/learning-mode.md): one row per language, each choosing what that
+// language is translated into (the targets without an installed pack are grayed out where packs
+// exist at all), a preview, and the language packs: download, check for updates, update, remove.
+// Downloads run on worker threads and report back with window messages; the IME picks up
+// installed or removed packs by itself (the server checks the pack files).
 
 #include "editor_app.h"
 
 #include <algorithm>
+#include <iterator>
 #include <thread>
 
 #include <cxxime/version.h>
@@ -21,15 +22,38 @@ namespace settings {
 namespace {
 
 enum ControlId {
-    kChineseTargetId = 1501,
-    kEnglishTargetId,
-    kGlossPreviewId,
+    kGlossTargetFirstId = 1501,  // .. 1508, one combo per language (glossary_languages())
+    kGlossPreviewId = 1510,
     kDigitsTranslationId,
-    kPackTabFirstId = 1510,  // .. 1511
-    kCheckAllPacksId = 1515,
-    kPackActionFirstId = 1520,  // .. 1526, one per row
-    kPackRemoveFirstId = 1540,  // .. 1546
+    kPackTabFirstId = 1520,  // .. 1521
+    kCheckAllPacksId = 1525,
+    kPackActionFirstId = 1530,  // .. 1536, one per row
+    kPackRemoveFirstId = 1550,  // .. 1556
 };
+
+// The combo index (0-based row) a language's target is chosen in; -1 without a row.
+int gloss_target_slot(const std::string& language) {
+    const std::vector<std::string>& languages = glossary_languages();
+    const auto found = std::find(languages.begin(), languages.end(), language);
+    return found == languages.end() ? -1 : static_cast<int>(found - languages.begin());
+}
+
+bool is_gloss_target_id(int control_id) {
+    return control_id >= kGlossTargetFirstId &&
+           control_id < kGlossTargetFirstId + static_cast<int>(glossary_languages().size());
+}
+
+// The label of a language's row: learning.chinese, learning.japanese, ...
+const char* gloss_row_key(const std::string& language) {
+    if (language == "en") return "learning.english";
+    if (language == "ja") return "learning.japanese";
+    if (language == "ko") return "learning.korean";
+    if (language == "fr") return "learning.french";
+    if (language == "de") return "learning.german";
+    if (language == "es") return "learning.spanish";
+    if (language == "ru") return "learning.russian";
+    return "learning.chinese";
+}
 
 constexpr UINT kPacksCheckedMessage = WM_APP + 50;    // wParam pack index + 1 (0: all); lParam result
 constexpr UINT kPackProgressMessage = WM_APP + 51;    // wParam pack index; lParam bytes done
@@ -124,33 +148,35 @@ void EditorApp::create_learning_panel(HWND panel) {
     RECT client = {};
     GetClientRect(panel, &client);
     const int x0 = kPanelPadLeft;
-    const int labels = label_width({"learning.chinese", "learning.english"});
+    const int labels = label_width({"learning.chinese", "learning.english", "learning.japanese",
+                                    "learning.korean", "learning.french", "learning.german",
+                                    "learning.spanish", "learning.russian"});
     int y = card_begin(panel, kPanelPadTop, tr("learning.card_translation"));
     const int top = y;
-    const int combo_x = make_aligned_label(tr("learning.chinese"), x0, labels, y, panel);
-    hChineseTarget_ = CreateWindowExW(
-        0, L"COMBOBOX", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS,
-        combo_x, y, S(180), S(300), panel,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChineseTargetId)), GetModuleHandle(nullptr),
-        nullptr);
-    y += kRowH;
-    make_aligned_label(tr("learning.english"), x0, labels, y, panel);
-    hEnglishTarget_ = CreateWindowExW(
-        0, L"COMBOBOX", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS,
-        combo_x, y, S(180), S(300), panel,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kEnglishTargetId)), GetModuleHandle(nullptr),
-        nullptr);
-    for (HWND combo : {hChineseTarget_, hEnglishTarget_}) {
+    const std::vector<std::string>& languages = glossary_languages();
+    int combo_x = 0;
+    for (size_t i = 0; i < languages.size(); ++i) {
+        const int x = make_aligned_label(tr(gloss_row_key(languages[i])), x0, labels, y, panel);
+        if (i == 0) combo_x = x;
+        HWND combo = CreateWindowExW(
+            0, L"COMBOBOX", L"",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED |
+                CBS_HASSTRINGS,
+            combo_x, y, S(130), S(300), panel,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(kGlossTargetFirstId + i)),
+            GetModuleHandle(nullptr), nullptr);
+        // The closed box holds "off" or a language name; the list also shows " (not downloaded)",
+        // so it opens wider.
+        SendMessageW(combo, CB_SETDROPPEDWIDTH, S(190), 0);
         SendMessageW(combo, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
         scroll_page_on_wheel(combo);
+        if (i < std::size(hGlossTargets_)) hGlossTargets_[i] = combo;
+        y += kRowH;
     }
-    y += kRowH;
     const int preview_width = S(250);
     const int preview_x = client.right - kPanelPadLeft - preview_width;
-    make_hint(tr("learning.hint"), x0, y, preview_x - x0 - S(16), panel);
-    y += S(40);
+    make_hint(tr("learning.hint"), x0, y, preview_x - x0 - S(16), panel, 3);
+    y += S(60);
     make_hint(tr("learning.keys_hint"), x0, y, preview_x - x0 - S(16), panel);
     y += S(40);
     const int preview_height = (std::max)(y - top, S(118));
@@ -353,8 +379,18 @@ LRESULT CALLBACK EditorApp::pack_list_proc(HWND window, UINT message, WPARAM wpa
     return DefWindowProcW(window, message, wparam, lparam);
 }
 
+bool EditorApp::source_has_packs(const std::string& source) const {
+    return std::any_of(packs_.begin(), packs_.end(),
+                       [&](const PackState& pack) { return pack.source == source; });
+}
+
+HWND EditorApp::gloss_combo(const std::string& language) const {
+    const int slot = gloss_target_slot(language);
+    return slot < 0 ? nullptr : hGlossTargets_[slot];
+}
+
 void EditorApp::fill_target_combo(HWND combo, const std::string& source,
-                                  const std::string& selected) {
+                                  const std::string& selected, bool grey_uninstalled) {
     if (!combo) return;
     SendMessageW(combo, CB_RESETCONTENT, 0, 0);
     combo_add(combo, tr("learning.off"));
@@ -365,7 +401,8 @@ void EditorApp::fill_target_combo(HWND combo, const std::string& source,
         const auto found = std::find_if(packs_.begin(), packs_.end(), [&](const PackState& p) {
             return p.source == source && p.target == targets[i];
         });
-        const bool installed = found != packs_.end() && found->installed;
+        const bool installed =
+            !grey_uninstalled || (found != packs_.end() && found->installed);
         std::wstring text = language_name(targets[i]);
         if (!installed) text += tr("learning.not_downloaded");
         combo_add(combo, text.c_str());
@@ -373,7 +410,8 @@ void EditorApp::fill_target_combo(HWND combo, const std::string& source,
         if (installed && targets[i] == selected) selection = static_cast<int>(i) + 1;
     }
     combo_set_index(combo, selection);
-    (combo == hChineseTarget_ ? last_chinese_target_ : last_english_target_) = selection;
+    const int slot = gloss_target_slot(source);
+    if (slot >= 0) last_gloss_target_[slot] = selection;
 }
 
 std::string EditorApp::combo_target(HWND combo, const std::string& source) const {
@@ -385,32 +423,42 @@ std::string EditorApp::combo_target(HWND combo, const std::string& source) const
 }
 
 void EditorApp::populate_learning() {
-    fill_target_combo(hChineseTarget_, "zh", config_.chinese_gloss_target);
-    fill_target_combo(hEnglishTarget_, "en", config_.english_gloss_target);
+    const std::vector<std::string>& languages = glossary_languages();
+    for (size_t i = 0; i < languages.size() && i < std::size(hGlossTargets_); ++i) {
+        fill_target_combo(hGlossTargets_[i], languages[i], config_.gloss_target(languages[i]),
+                          source_has_packs(languages[i]));
+    }
     set_check(hDigitsTranslation_, config_.digits_type_translation);
     if (hGlossPreview_) InvalidateRect(hGlossPreview_, nullptr, TRUE);
 }
 
 void EditorApp::read_learning(Config& config) {
-    if (!hChineseTarget_) return;
-    config.chinese_gloss_target = combo_target(hChineseTarget_, "zh");
-    config.english_gloss_target = combo_target(hEnglishTarget_, "en");
+    if (!hGlossTargets_[0]) return;
+    const std::vector<std::string>& languages = glossary_languages();
+    for (size_t i = 0; i < languages.size() && i < std::size(hGlossTargets_); ++i) {
+        const std::string target = combo_target(hGlossTargets_[i], languages[i]);
+        if (target.empty()) {
+            config.gloss_targets.erase(languages[i]);
+        } else {
+            config.gloss_targets[languages[i]] = target;
+        }
+    }
+    // Only Chinese and English candidates exist, so only their targets make the number keys
+    // (which type a candidate's translation) worth anything.
     config.digits_type_translation =
         get_check(hDigitsTranslation_) &&
-        (!config.chinese_gloss_target.empty() || !config.english_gloss_target.empty());
+        (!config.gloss_target("zh").empty() || !config.gloss_target("en").empty());
 }
 
 bool EditorApp::handle_learning_item(UINT message, LPARAM lparam) {
     if (message == WM_MEASUREITEM) {
         auto* measure = reinterpret_cast<MEASUREITEMSTRUCT*>(lparam);
-        if (measure->CtlID != kChineseTargetId && measure->CtlID != kEnglishTargetId) {
-            return false;
-        }
+        if (!is_gloss_target_id(static_cast<int>(measure->CtlID))) return false;
         measure->itemHeight = measure->itemID == static_cast<UINT>(-1) ? kCtrlH - S(8) : S(26);
         return true;
     }
     const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(lparam);
-    if (item->CtlID == kChineseTargetId || item->CtlID == kEnglishTargetId) {
+    if (is_gloss_target_id(static_cast<int>(item->CtlID))) {
         draw_target_item(*item);
         return true;
     }
@@ -454,10 +502,12 @@ void EditorApp::draw_gloss_preview(const DRAWITEMSTRUCT& item) {
     FillRect(dc, &rect, card_brush());
     fill_round_rect(dc, rect, S(6), colors.window, colors.border);
 
+    // The preview is a candidate window, and only Chinese and English candidates exist: the
+    // other languages' rows only decide what the selection translation goes to.
     std::string source = "zh";
-    std::string target = combo_target(hChineseTarget_, "zh");
+    std::string target = combo_target(gloss_combo("zh"), "zh");
     if (target.empty()) {
-        const std::string english = combo_target(hEnglishTarget_, "en");
+        const std::string english = combo_target(gloss_combo("en"), "en");
         if (!english.empty()) {
             source = "en";
             target = english;
@@ -697,19 +747,19 @@ void EditorApp::on_pack_action(int pack_index) {
 }
 
 bool EditorApp::handle_learning_command(int control_id, int notification) {
-    if (control_id == kChineseTargetId || control_id == kEnglishTargetId) {
+    if (is_gloss_target_id(control_id)) {
         if (notification != CBN_SELCHANGE) return true;
-        HWND combo = control_id == kChineseTargetId ? hChineseTarget_ : hEnglishTarget_;
-        int& last = control_id == kChineseTargetId ? last_chinese_target_ : last_english_target_;
+        const int slot = control_id - kGlossTargetFirstId;
+        HWND combo = hGlossTargets_[slot];
         const int index = combo_index(combo);
         if (index >= 0 && SendMessageW(combo, CB_GETITEMDATA, index, 0) == 0) {
             MessageBeep(MB_OK);  // not downloaded: stays as it was
-            combo_set_index(combo, last);
+            combo_set_index(combo, last_gloss_target_[slot]);
             return true;
         }
-        last = index;
+        last_gloss_target_[slot] = index;
         // Neither Chinese nor English candidates translated: the number keys have nothing to type.
-        if (combo_index(hChineseTarget_) <= 0 && combo_index(hEnglishTarget_) <= 0) {
+        if (combo_index(gloss_combo("zh")) <= 0 && combo_index(gloss_combo("en")) <= 0) {
             set_check(hDigitsTranslation_, false);
         }
         if (index > 0 && hVertical_) {  // translations show in the vertical layout

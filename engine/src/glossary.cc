@@ -260,11 +260,25 @@ std::string candidate_gloss(const std::string& chinese_target, const std::string
     return gloss;
 }
 
+const std::vector<std::string>& glossary_languages() {
+    static const std::vector<std::string> languages = {"zh", "en", "ja", "ko", "fr", "de", "es",
+                                                       "ru"};
+    return languages;
+}
+
 const std::vector<std::string>& glossary_targets(const std::string& source) {
-    static const std::vector<std::string> chinese = {"en", "ja", "ko", "fr", "de", "es", "ru"};
-    static const std::vector<std::string> english = {"zh", "ja", "ko", "fr", "de", "es", "ru"};
+    static const std::map<std::string, std::vector<std::string>> targets = [] {
+        std::map<std::string, std::vector<std::string>> all;
+        for (const std::string& from : glossary_languages()) {
+            for (const std::string& to : glossary_languages()) {
+                if (to != from) all[from].push_back(to);
+            }
+        }
+        return all;
+    }();
     static const std::vector<std::string> none;
-    return source == "zh" ? chinese : source == "en" ? english : none;
+    const auto found = targets.find(source);
+    return found == targets.end() ? none : found->second;
 }
 
 std::string glossary_pack_id(const std::string& source, const std::string& target) {

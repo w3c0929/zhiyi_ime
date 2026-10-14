@@ -272,17 +272,16 @@ void advance_candidate_revision(SessionEntry& entry, const CandidateStateToken& 
 }
 
 bool learning_mode_shown(const cxxime::Config& config) {
-    return (!config.chinese_gloss_target.empty() || !config.english_gloss_target.empty()) &&
-           config.layout != "horizontal";
+    return config.candidate_gloss_enabled() && config.layout != "horizontal";
 }
 
 bool translator_enabled(const cxxime::Config& config) {
     return config.mt_enable && !config.mt_device.empty();
 }
 
-const std::string& gloss_target(const cxxime::Config& config, const cxxime::Candidate& candidate) {
-    return candidate.source == cxxime::CandidateSource::kEnglish ? config.english_gloss_target
-                                                                 : config.chinese_gloss_target;
+std::string gloss_target(const cxxime::Config& config, const cxxime::Candidate& candidate) {
+    return config.gloss_target(candidate.source == cxxime::CandidateSource::kEnglish ? "en"
+                                                                                     : "zh");
 }
 
 // The translation the candidate window shows for `candidate`: from the language pack, or else
@@ -293,9 +292,9 @@ std::string shown_gloss(const cxxime::Config& config, const cxxime::Candidate& c
     if (asked) *asked = false;
     if (candidate.source == cxxime::CandidateSource::kSymbol) return {};
     std::string gloss = cxxime::candidate_gloss(
-        config.chinese_gloss_target, config.english_gloss_target, candidate.text,
-        candidate.syllables, candidate.source == cxxime::CandidateSource::kEnglish);
-    const std::string& target = gloss_target(config, candidate);
+        config.gloss_target("zh"), config.gloss_target("en"), candidate.text, candidate.syllables,
+        candidate.source == cxxime::CandidateSource::kEnglish);
+    const std::string target = gloss_target(config, candidate);
     if (gloss.empty() && translator_enabled(config) && !target.empty() &&
         MachineTranslator::instance().cached(target, candidate.text, &gloss) && asked) {
         *asked = true;
@@ -316,7 +315,7 @@ void add_glosses(const SessionEntry& entry, cxxime::CandidatePresentationPage& p
         bool asked = false;
         page.items[i].gloss = shown_gloss(config, candidate, &asked);
         // Not in the language pack nor asked yet: to the model, when on.
-        const std::string& target = gloss_target(config, candidate);
+        const std::string target = gloss_target(config, candidate);
         if (page.items[i].gloss.empty() && !asked &&
             candidate.source != cxxime::CandidateSource::kSymbol &&
             translator_enabled(config) && !target.empty() &&

@@ -576,8 +576,7 @@ ProcessResult Engine::process_key(const KeyEvent& event, const OutputOptions& op
     // (a browser would switch tabs); auto-repeat and the key-up are swallowed too.
     const Config* config = runtime_ ? &runtime_->config() : nullptr;
     const bool learning_keys =
-        config && (!config->chinese_gloss_target.empty() || !config->english_gloss_target.empty()) &&
-        config->layout != "horizontal";
+        config && config->candidate_gloss_enabled() && config->layout != "horizontal";
     const bool swapped_keys = learning_keys && config->digits_type_translation;
     const bool zero_picks = !SymbolProcessor::is_active(context_) &&
                             context_.selectable_candidate_count() >= 10;

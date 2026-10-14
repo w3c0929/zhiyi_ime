@@ -422,9 +422,23 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
     }
     config.learning_section_loaded = j.contains("learning") && j["learning"].is_object();
     if (config.learning_section_loaded) {
-        load_string(j["learning"], "chinese_target", config.chinese_gloss_target);
-        load_string(j["learning"], "english_target", config.english_gloss_target);
         auto& learning = j["learning"];
+        config.gloss_targets.clear();
+        if (learning.contains("gloss_targets") && learning["gloss_targets"].is_object()) {
+            for (const auto& [source, target] : learning["gloss_targets"].items()) {
+                if (target.is_string()) config.gloss_targets[source] = target.get<std::string>();
+            }
+        }
+        // Configurations written before learning.gloss_targets existed: one target for Chinese,
+        // one for English. The table wins where it has the language.
+        for (const auto& [source, key] :
+             {std::make_pair(std::string("zh"), "chinese_target"),
+              std::make_pair(std::string("en"), "english_target")}) {
+            if (config.gloss_targets.count(source) != 0) continue;
+            std::string legacy;
+            load_string(learning, key, legacy);
+            if (!legacy.empty()) config.gloss_targets[source] = legacy;
+        }
         load_bool(learning, "translator", config.mt_enable);
         load_string(learning, "translator_device", config.mt_device);
         load_int(learning, "translator_context_chars", config.mt_context_chars);
@@ -840,8 +854,13 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["privacy"]["collect_input"] = config.collect_input && config.experience_program;
     j["update"]["notify"] = config.update_notify;
     j["startup"]["autostart"] = config.autostart;
-    j["learning"]["chinese_target"] = config.chinese_gloss_target;
-    j["learning"]["english_target"] = config.english_gloss_target;
+    j["learning"]["gloss_targets"] = nlohmann::json::object();
+    for (const auto& [source, target] : config.gloss_targets) {
+        if (!target.empty()) j["learning"]["gloss_targets"][source] = target;
+    }
+    // Read by builds from before learning.gloss_targets existed.
+    j["learning"]["chinese_target"] = config.gloss_target("zh");
+    j["learning"]["english_target"] = config.gloss_target("en");
     j["learning"]["translator"] = config.mt_enable;
     j["learning"]["translator_device"] = config.mt_device;
     j["learning"]["translator_context_chars"] = config.mt_context_chars;

@@ -687,15 +687,26 @@ bool complete(const AiConfig& config, const std::string& system_prompt,
     return false;
 }
 
+// The language named in the translation prompt. The codes are glossary_languages()
+// (engine/include/cxxime/glossary.h, which this library cannot include): zh en ja ko fr de es ru.
+const char* prompt_language(const std::string& code) {
+    if (code == "zh") return "Chinese";
+    if (code == "en") return "English";
+    if (code == "ja") return "Japanese";
+    if (code == "ko") return "Korean";
+    if (code == "fr") return "French";
+    if (code == "de") return "German";
+    if (code == "es") return "Spanish";
+    if (code == "ru") return "Russian";
+    return nullptr;
+}
+
 bool translate(const AiConfig& config, const std::string& text, const std::string& target,
                std::string* translation, std::string* error, const std::atomic<bool>* cancel) {
-    const bool to_english = target == "en";
-    const std::string system =
-        to_english
-            ? "You translate into English. Output only the translation, without quotes, notes "
-              "or the original text."
-            : "You translate into Chinese. Output only the translation, without quotes, notes "
-              "or the original text.";
+    const char* name = prompt_language(target);
+    const std::string system = std::string("You translate into ") + (name ? name : "Chinese") +
+                               ". Output only the translation, without quotes, notes or the "
+                               "original text.";
     return complete(config, system, text, translation, error, cancel);
 }
 
