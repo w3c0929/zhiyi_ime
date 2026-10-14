@@ -17,6 +17,7 @@
 #include "editor_app.h"
 
 #include <algorithm>
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -432,15 +433,21 @@ void EditorApp::run_ai_test() {
     WaitCursor wait;
     std::string out;
     std::string error;
+    const auto started = std::chrono::steady_clock::now();
     const bool ok =
         ai::translate(candidate.ai, "今天天气很好，我们去公园散步吧。", "en", &out, &error, nullptr);
+    const long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  std::chrono::steady_clock::now() - started)
+                                  .count();
+    // "1234 ms · 成功：…": how long it took first, then what came back.
+    const std::wstring took = std::to_wstring(elapsed) + L" ms \u00B7 ";
     if (ok) {
         SetWindowTextW(hAiTestResult_,
-                       (std::wstring(tr("ai.test_ok")) + L" " + utf8_to_wstr(out)).c_str());
+                       (took + tr("ai.test_ok") + L" " + utf8_to_wstr(out)).c_str());
     } else {
         const std::string message = error.empty() ? ai::last_error() : error;
         SetWindowTextW(hAiTestResult_,
-                       (std::wstring(tr("ai.test_failed")) + L" " + utf8_to_wstr(message)).c_str());
+                       (took + tr("ai.test_failed") + L" " + utf8_to_wstr(message)).c_str());
     }
     // Only the key list: populate_ai() would reset every control from the saved configuration and
     // throw away the ticks and text the user has not applied yet.
