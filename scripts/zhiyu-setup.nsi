@@ -85,6 +85,11 @@ Section "Install"
   IfFileExists "$AppDir\zhiyu-server.exe" 0 +2
     Exec '"$AppDir\zhiyu-server.exe"'
 
+  ; A Start Menu folder of its own, so 知语 and upstream 知意 are easy to tell apart.
+  CreateDirectory "$SMPROGRAMS\${APP_NAME}"
+  CreateShortCut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}设置.lnk" "$AppDir\zhiyu-settings.exe"
+  CreateShortCut "$SMPROGRAMS\${APP_NAME}\Uninstall ${APP_NAME}.lnk" "$INSTDIR\uninstall.exe"
+
   WriteRegStr HKCU "Software\ZhiyuIME" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayName" "${APP_NAME} (${APP_NAME_EN})"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayVersion" "${VERSION}"
@@ -103,6 +108,7 @@ Section "Uninstall"
 
   !insertmacro UnregisterTsf
 
+  RMDir /r "$SMPROGRAMS\${APP_NAME}"
   RMDir /r "$INSTDIR"
 
   DeleteRegKey HKCU "${UNINST_KEY}"
