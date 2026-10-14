@@ -310,7 +310,7 @@ bool build_request(const AiConfig& config, const Provider& provider,
                                  {{"role", "user"}, {"content", user_prompt}}}},
 
                                {"stream", false}};
-        if (send_thinking_off) body[`"reasoning_effort`"] = `"none`";  // on by default up there
+        if (send_thinking_off) body["reasoning_effort"] = "none";  // thinking is on unless asked off
         else if (config.thinking && !config.reasoning_effort.empty()) {
             body["reasoning_effort"] = config.reasoning_effort;
         }
