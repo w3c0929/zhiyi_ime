@@ -75,8 +75,8 @@ void EditorApp::create_ai_panel(HWND panel) {
     const int x0 = kPanelPadLeft;
     const int labels = label_width({"ai.enabled", "ai.provider", "ai.base_url", "ai.model",
                                     "ai.key", "ai.mode", "ai.timeout", "ai.use_for"});
-    const int control_w = S(440);
-    const int hint_w = S(520);
+    const int control_w = S(300);  // fits the card without stretching across it
+    const int hint_w = S(420);
     int y = card_begin(panel, kPanelPadTop, tr("ai.card_service"));
 
     const int label_x = make_aligned_label(tr("ai.enabled"), x0, labels, y, panel);
