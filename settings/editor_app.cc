@@ -376,6 +376,7 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(ai.thinking);
     KEEP_PAGE_EDIT(ai.timeout_ms);
     KEEP_PAGE_EDIT(ai.keys);
+    KEEP_PAGE_EDIT(ai.keys_by_provider);
     KEEP_PAGE_EDIT(ai.use_for.translate);
     KEEP_PAGE_EDIT(ai.use_for.selection);
     KEEP_PAGE_EDIT(ai.use_for.english);
