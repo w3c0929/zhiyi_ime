@@ -34,6 +34,18 @@ std::wstring with_number(const wchar_t* text, std::size_t number) {
     return std::wstring(text) + L" " + std::to_wstring(number);
 }
 
+// A plain text box: make_edit (editor_controls.cc) is a number box (ES_NUMBER), which refuses
+// an address or a key with "you can only type digits here".
+HWND make_text_edit(int id, int x, int y, int width, HWND parent) {
+    HWND edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, x, y, width,
+                                S(kCtrlH), parent,
+                                reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+                                GetModuleHandle(nullptr), nullptr);
+    SendMessageW(edit, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
+    return edit;
+}
+
 void set_combo_text(HWND combo, const std::string& text) {
     SetWindowTextW(combo, utf8_to_wstr(text).c_str());
 }
@@ -82,7 +94,7 @@ void EditorApp::create_ai_panel(HWND panel) {
     y += kRowH;
 
     const int url_x = make_aligned_label(tr("ai.base_url"), x0, labels, y, panel);
-    hAiBaseUrl_ = make_edit(kAiBaseUrlId, url_x, y, control_w, panel);
+    hAiBaseUrl_ = make_text_edit(kAiBaseUrlId, url_x, y, control_w, panel);
     y += kRowH;
 
     // The model: a drop-down the service's own list goes into, still typable.
@@ -100,7 +112,7 @@ void EditorApp::create_ai_panel(HWND panel) {
     y += S(40);
 
     const int key_x = make_aligned_label(tr("ai.key"), x0, labels, y, panel);
-    hAiKey_ = make_edit(kAiKeyId, key_x, y, control_w, panel);
+    hAiKey_ = make_text_edit(kAiKeyId, key_x, y, control_w, panel);
     SendMessageW(hAiKey_, EM_SETPASSWORDCHAR, static_cast<WPARAM>(L'*'), 0);
     y += kRowH;
     hAiKeyHint_ = make_hint(tr("ai.key_hint"), key_x, y - S(6), hint_w, panel);
