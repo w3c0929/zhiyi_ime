@@ -105,6 +105,36 @@
   参考目录里上游命名的 `zhiyi-*` 会被 `File /r *.*` 打进包，务必删除。
 - 产物名以 `package_release.py` 的 `BUILT` 表为准（如 `zhiyu_tsf_x64.dll`）；
   改 CMake `OUTPUT_NAME` 时（`server/settings/tsf/legacy_ime/resource/installer` 各 `CMakeLists.txt`）要一起核对。
+- **`.ime` 必须复制进系统目录**：`zhiyu_ime_x64.ime` → `%WINDIR%\System32\zhiyu.ime`，
+  `zhiyu_ime_x86.ime` → `%WINDIR%\SysWOW64\zhiyu.ime`（注册表里的
+  `SYSTEM\CurrentControlSet\Control\Keyboard Layouts\E0210804` 指向 `zhiyu.ime`）。缺了文件**输入法加载不起来**，
+  看起来就是「装完了打不开」。（32 位安装器写 System32 会被重定向，需 `DisableX64FSRedirection`。）
+- **安装信息必须写 HKLM 的 64 位视图**：`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ZhiyuIME`
+  的 `InstallLocation` = **活动版本目录**（不带尾斜杠）。`shared/src/server_launcher.cc`、
+  `settings_launcher.cc` 都从那里读（`KEY_WOW64_64KEY`），只写 HKCU 会让
+  `start_server_on_demand()` 找不到 server——**后台服务永远不会被拉起**。
+- **要写自启动项**：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\ZhiyuIMEServer` =
+  `"<版本目录>\zhiyu-server.exe" --autostart`（`startup.autostart` 为 false 时该进程立即退出）。
+- **多版本布局**：`<基目录>\<版本号>.<8位十六进制>\`（`installer_lifecycle_state.cc` 的 `allocate_target()`）
+  + `<基目录>\maintenance\install-state.json` + 版本目录内的 `install-manifest.json`
+  （`package_release.py` 生成）与 `uninstall.exe`。升级装进**新**目录，不覆盖运行中的版本
+  （这正是以前升级出现 `zhiyuime.busy-*` 残留、文件被锁的根源）。
+
+## 九、模型资产（glossary / translator / voice）
+
+`update.h` 把语言包、翻译模型、语音模型的下载指向**本仓库**的三个 Release（`kDownloadPrefix` + `glossary/`、
+`translator/`、`voice/`）；上游的对应资产在 `dd1000001000/zhiyi_ime` 的同名 Release 里。
+
+- **不能把地址指回上游**：那些清单是**上游私钥**签的，而程序内置的是本仓库公钥
+  （`update/src/update_public_key.inc`），签名验证不过会被拒。
+- 正确做法：下载上游资产 → **丢弃上游的 `*.json.sig`** → 用本仓库私钥重签
+  （`python scripts/update_signing.py sign update-signing-key.pem <清单>`）→ 在本仓库建同名 Release 上传。
+- **必须 `--latest=false`**（`gh release create … --latest=false`）：否则会抢走 `/releases/latest`，
+  更新检查就会指向模型 Release。
+- 清单里**没有 URL**（`parse_*_manifest` 用 `download_prefix` 自己拼），所以上游清单内容可原样复用，只重签。
+- 现有内容：`glossary`（28 个 `.gloss` + `glossary.json`）、`translator`（`zhiyi-mt-v2-Q4_K_M.gguf` 396 MB +
+  `llama-b11480-vulkan-x64.zip` 32 MB）、`voice`（`model.int8.onnx` 239 MB + `tokens.txt` + `silero_vad.onnx`
+  + 两个 LICENSE 文件）。
 
 ## 七、不要提交
 
