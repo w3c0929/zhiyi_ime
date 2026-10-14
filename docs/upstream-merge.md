@@ -52,7 +52,12 @@
   `IPCResponse.translate_state / translate_text`；配置见 `engine/include/cxxime/config.h` 的
   `translate_selection_shortcut / translate_direct_insert / translate_device / translate_idle_seconds`。
   **合并上游时若上游也改 `ipc_protocol.h`，先确认它新增的枚举值 / flag 位不与 35、36 及我们已用的位冲突。**
-- 四页设置（常规 / 按键 / 词库 / 关于）。
+- **在线 AI（设置「AI」页，默认关闭）**：`shared/include/cxxime/ai_config.h`（配置）、
+  `shared/src/ai_client.cc`（约 30 家提供方的协议表、DPAPI 加密的多密钥、`list_models()`、
+  `thinking_levels()` 与 `apply_thinking()` 按服务商映射「关思考」字段）。
+  `server/src/translate_service.cc` 让划词翻译优先走线上、失败回退本地。
+  数据文件 `data/ai_thinking_levels.json`。**默认关，关着时行为与从前完全一致**——合并时别把它改成默认开。
+- 五页设置（常规 / 按键 / AI / 词库 / 关于）。
 
 ## 四、从上游合并的流程
 
@@ -91,9 +96,20 @@
 7. 更新 `scripts/zhiyu-scoop.json` 的 version/url/hash，并**一字不差**同步到 bucket
    `E:\09.同步\06.配置\myscoop\bucket\zhiyuime.json`。
 8. `gh release create vX -R w3c0929/zhiyi_ime scripts\zhiyu-vX-setup.exe scripts\latest.json scripts\latest.json.sig --title vX --target main --notes-file <说明文件>`
-   （`gh` 默认会认到 upstream 仓库，**务必带 `-R w3c0929/zhiyi_ime`**）
+   （`gh` 默认会认到 upstream 仓库，**务必带 `-R w3c0929/zhiyi_ime`**）。正文沿用上一版的格式：
+   「知语输入法 vX」+ 中文要点 + 空行 +「Zhiyu IME vX」+ 英文要点 + 末尾一行
+   `Install: run \`zhiyu-vX-setup.exe\` as administrator, or \`scoop install zhiyuime\`.`
 9. 提交并推送：`feat/translate-selection` 与 `main` 一起推；bucket 仓库提交后推
    （远端常有自动更新提交 → 先 `git pull --rebase origin main`）。
+10. **只给最终版本建 Release**：中间的过程/测试构建**不建** tag 与 Release（用户明确要求，
+    否则 Releases 列表被测试版淹没）。`latest.json` 每次发布**重新生成**（`make_release.py` 会连同
+    `latest.json.sig` 一起重签并写入 version/size/sha256 与中英说明），别沿用上一版的旧文件。
+11. 发布后自查（三条都过才算发成功）：
+    - `gh api repos/w3c0929/zhiyi_ime/releases/latest --jq .tag_name` → `vX`；
+    - 三个 Release 资产的 sha256 与本地 `scripts\` 下同名文件一致（`latest.json` 必须是刚生成的那份）；
+    - `raw.githubusercontent.com/w3c0929/myscoop/main/bucket/zhiyuime.json` 的 version/hash 与本地一致。
+12. 收尾清理：`scripts\zhiyu-v*-setup.exe` 只留**已发布版本**与最新版，中间测试包删掉
+    （每个约 129 MB）；`dist\` 同理。
 
 ## 六、发布/安装前必查的坑
 
@@ -125,8 +141,24 @@
   （`FileFunc.nsh`）。改完必须**实测一次装+卸**，看基目录是否整个消失。
 - `.nsi` 的注释**不能以 `\` 结尾**：NSIS 视作续行，会把下一行整行吃掉（编译只给一条 warning）。
   例：`Var BaseDir ; … maintenance\` 会吞掉后面的 `!macro` 行。
+- **加设置字段必同步 `KEEP_PAGE_EDIT`**（`settings/editor_app.cc`）：那是**逐字段手抄**的「本页自管、
+  保存时不覆盖」白名单，漏一个字段的症状是「改完保存又变回旧值」或「删掉的条目自己回来」
+  （磁盘值把界面值盖掉）。已漏过 `ai.thinking`、`ai.keys_by_provider`。
+  根治办法是按页面标脏（AI 页控件 ID 段 6000–6020），别再加手抄清单。
+- **设置控件类型**：文本输入框要用自建的 `make_text_edit`；`make_edit` 带 `ES_NUMBER`，只收数字。
+  另注意 `kCtrlH` 一类常量**已是缩放后的值**，用的时候别再套 `S()`。
+- **新增的文本数据文件必须进 `DATA_OVERLAY`**（`scripts/package_release.py`）：例 `data/ai_thinking_levels.json`。
+  漏了它就不会被打进安装包，运行时读不到（静态表/等级列表静默为空）。
+- **scoop manifest 必须是 UTF-8 带 BOM**：PowerShell 5.1 读无 BOM 文件按 ANSI 解，中文注释变乱码、
+  `ConvertFrom-Json` 直接失败。
+- **scoop 升级失败 exit code 13** = 旧的 `zhiyu-server` 还在跑、文件被占用（签名/覆盖写不进去）。
+  bucket 的 `installer.script` 已改成「读 HKLM `InstallLocation` → helper `force-stop-server` →
+  `Get-Process zhiyu-server \| Stop-Process -Force` 兜底 → 安装 → 回读注册表校验」，别退回只 `Start-Process` 的旧写法。
+- **改本仓库文件的换行**：本仓库多处是 **LF**；用 PowerShell 做整段替换时，LF 与 CRLF 两种匹配都要试，
+  否则替换静默不生效（或把 CRLF 写回 LF 文件里造成混杂）。单引号 here-string 里的反引号会**原样写入**
+  （曾导致 `.cc` 里出现 `0x60` 而编译失败）。
 
-## 九、模型资产（glossary / translator / voice）
+## 七、模型资产（glossary / translator / voice）
 
 `update.h` 把语言包、翻译模型、语音模型的下载指向**本仓库**的三个 Release（`kDownloadPrefix` + `glossary/`、
 `translator/`、`voice/`）；上游的对应资产在 `dd1000001000/zhiyi_ime` 的同名 Release 里。
@@ -142,7 +174,7 @@
   `llama-b11480-vulkan-x64.zip` 32 MB）、`voice`（`model.int8.onnx` 239 MB + `tokens.txt` + `silero_vad.onnx`
   + 两个 LICENSE 文件）。
 
-## 七、发布前必须等用户亲自测试
+## 八、发布前必须等用户亲自测试
 
 **构建完、提交推送完就停**：把「装哪个包、怎么验」告诉用户，**等他实机测试并明确说可以发布**再发
 （建 Release、传资产、更新 bucket 都算发布）。这是用户的明确要求，别再自动往下走到发布。
@@ -151,12 +183,12 @@
 （`ai_config.h`，默认关，只有 `zhiyu-server` 用）。改动若扩大联网面，要一并更新 `docs/privacy.md`
 与 `update.h` 的说明。
 
-## 八、不要提交
+## 九、不要提交
 
 `build-x64/`、`build-x86/`、`dist/`、`scripts/*-setup.exe`、`scripts/latest.json`、`scripts/latest.json.sig`
 （均已写入 `.gitignore`）。
 
-## 九、环境
+## 十、环境
 
 - 构建目录：`build-x64`（全量）、`build-x86`（只构建 `cxxime-tsf` / `cxxime-ime`）。
 - 工具：`makensis`（scoop `nsis`）、`gh`（已登录账号 w3c0929）、`7z`（scoop）、Python 3.12、CMake、MSVC。
