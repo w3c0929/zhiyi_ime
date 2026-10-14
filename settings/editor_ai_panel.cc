@@ -4,11 +4,15 @@
 // machine until it is turned on here — and each feature that may use it has its own switch, so
 // "let the API translate the selection" does not imply "let it see the voice input".
 //
-// The address and the model always show what actually runs: picking a service fills them with
-// that service's own, and "Get models" asks it for its list (ai_client.cc list_models — the same
-// path the chat calls take: /models, Ollama's /api/tags, Anthropic's /v1/models) and fills the
-// drop-down with it. Keys are stored DPAPI-protected (ai_client.h); several are kept, the list
-// shows them masked, and the eye button reveals what is being typed into the box.
+// Laid out like the AI settings of the SuMail project this borrows from (provider, keys,
+// address, model, reasoning level, test):
+//   * picking a service fills in its address and model, so the page always shows what will run;
+//   * several keys are kept per setup: the list picks which one is tried first and the button
+//     beside it drops one, while the eye reveals what is being typed;
+//   * "Detect" reads the address back and selects the service it belongs to;
+//   * "Get models" asks the service for its list (ai_client.cc list_models — /models, Ollama's
+//     /api/tags, Anthropic's /v1/models) and fills the drop-down.
+// Keys are stored DPAPI-protected (ai_client.h), never in clear.
 
 #include "editor_app.h"
 
@@ -26,15 +30,21 @@ namespace settings {
 
 namespace {
 
-// The page's own controls. The ids below 6000 are taken by the other pages (a collision shows
-// up as one page's button running another page's command), so 6000+ is this page's range.
+// The page's own controls. The ids below 6000 are taken by the other pages (a collision shows up
+// as one page's button running another page's command), so 6000+ is this page's range.
 constexpr int kAiRevealId = 6014;
 constexpr int kAiKeyAddId = 6015;
 constexpr int kAiKeyListId = 6016;
 constexpr int kAiKeyRemoveId = 6017;
+constexpr int kAiDetectId = 6018;
+constexpr int kAiEffortId = 6019;
 
 // The two modes, in the order of the combo (AiConfig::mode).
 const char* const kAiModeKeys[] = {"ai.mode_prefer_remote", "ai.mode_remote_only"};
+// The reasoning levels the combo offers; the first sends nothing (AiConfig::reasoning_effort).
+const char* const kAiEffortValues[] = {"", "low", "medium", "high"};
+const char* const kAiEffortKeys[] = {"ai.effort_default", "ai.effort_low", "ai.effort_medium",
+                                     "ai.effort_high"};
 
 std::wstring with_number(const wchar_t* text, std::size_t number) {
     return std::wstring(text) + L" " + std::to_wstring(number);
@@ -111,7 +121,7 @@ std::wstring masked_key(const std::string& key) {
 void EditorApp::create_ai_panel(HWND panel) {
     const int x0 = kPanelPadLeft;
     const int labels = label_width({"ai.enabled", "ai.provider", "ai.base_url", "ai.model",
-                                    "ai.key", "ai.mode", "ai.timeout", "ai.use_for"});
+                                    "ai.key", "ai.mode", "ai.timeout", "ai.use_for", "ai.effort"});
     const int control_w = S(300);
     const int hint_w = S(420);
     int y = card_begin(panel, kPanelPadTop, tr("ai.card_service"));
@@ -122,6 +132,7 @@ void EditorApp::create_ai_panel(HWND panel) {
     make_hint(tr("ai.enabled_hint"), label_x, y - S(8), hint_w, panel, 1);
     y += S(24);
 
+    // 服务商
     const int provider_x = make_aligned_label(tr("ai.provider"), x0, labels, y, panel);
     hAiProvider_ = make_list_combo(kAiProviderId, provider_x, y, control_w, 20, panel);
     for (const ai::Provider& provider : ai::providers()) {
@@ -129,44 +140,56 @@ void EditorApp::create_ai_panel(HWND panel) {
     }
     y += kRowH;
 
-    const int url_x = make_aligned_label(tr("ai.base_url"), x0, labels, y, panel);
-    hAiBaseUrl_ = make_text_edit(kAiBaseUrlId, url_x, y, control_w, panel);
-    y += kRowH;
-
-    const int model_x = make_aligned_label(tr("ai.model"), x0, labels, y, panel);
-    hAiModel_ = make_edit_combo(kAiModelId, model_x, y, control_w - S(116), 12, panel);
-    hAiModels_ = make_button(kAiModelsId, tr("ai.get_models"), model_x + control_w - S(110), y,
-                             S(110), panel);
-    y += kRowH;
-    hAiModelsHint_ = make_hint(tr("ai.model_hint"), model_x, y - S(8), hint_w, panel, 1);
-    y += S(24);
-
-    // The key row: the box, the eye, and Add (several keys are kept and used in turn).
+    // API 密钥：输入 + 显示/隐藏 + 添加；下面是已保存的密钥（选哪把先用哪把）与删除。
     const int key_x = make_aligned_label(tr("ai.key"), x0, labels, y, panel);
-    const int eye_w = S(46);
-    hAiKey_ = make_text_edit(kAiKeyId, key_x, y, S(180), panel);
+    hAiKey_ = make_text_edit(kAiKeyId, key_x, y, S(160), panel);
     SendMessageW(hAiKey_, EM_SETPASSWORDCHAR, static_cast<WPARAM>(L'\u25CF'), 0);
-    // The eye: a button whose label says what the next press does (an icon font glyph would be
-    // overridden by the button's own font).
-    hAiKeyReveal_ = make_button(kAiRevealId, tr("ai.key_show"), key_x + S(184), y, eye_w, panel);
-    hAiKeyAdd_ = make_button(kAiKeyAddId, tr("ai.key_add"), key_x + S(234), y, S(64), panel);
+    hAiKeyReveal_ = make_button(kAiRevealId, tr("ai.key_show"), key_x + S(164), y, S(46), panel);
+    hAiKeyAdd_ = make_button(kAiKeyAddId, tr("ai.key_add"), key_x + S(214), y, S(56), panel);
     y += kRowH;
-
-    // What is stored, and a way to drop one.
-    hAiKeyList_ = make_list_combo(kAiKeyListId, key_x, y, S(180), 6, panel);
-    hAiKeyRemove_ = make_button(kAiKeyRemoveId, tr("ai.key_remove"), key_x + S(184), y, S(96),
+    hAiKeyList_ = make_list_combo(kAiKeyListId, key_x, y, S(160), 6, panel);
+    hAiKeyRemove_ = make_button(kAiKeyRemoveId, tr("ai.key_remove"), key_x + S(164), y, S(106),
                                 panel);
     y += kRowH;
     hAiKeyHint_ = make_hint(tr("ai.key_hint"), key_x, y - S(8), hint_w, panel, 1);
     y += S(24);
 
+    // 服务地址（旁边「识别」：按地址认出服务商）
+    const int url_x = make_aligned_label(tr("ai.base_url"), x0, labels, y, panel);
+    hAiBaseUrl_ = make_text_edit(kAiBaseUrlId, url_x, y, control_w - S(70), panel);
+    hAiDetect_ = make_button(kAiDetectId, tr("ai.detect"), url_x + control_w - S(64), y, S(64),
+                             panel);
+    y += kRowH;
+    hAiModelsHint_ = make_hint(tr("ai.base_url_hint"), url_x, y - S(8), hint_w, panel, 1);
+    y += S(24);
+
+    // 模型（可输入，「获取模型」拉列表）
+    const int model_x = make_aligned_label(tr("ai.model"), x0, labels, y, panel);
+    hAiModel_ = make_edit_combo(kAiModelId, model_x, y, control_w - S(116), 12, panel);
+    hAiModels_ = make_button(kAiModelsId, tr("ai.get_models"), model_x + control_w - S(110), y,
+                             S(110), panel);
+    y += kRowH;
+
+    // 推理等级
+    const int effort_x = make_aligned_label(tr("ai.effort"), x0, labels, y, panel);
+    hAiEffort_ = make_list_combo(kAiEffortId, effort_x, y, S(160), 5, panel);
+    for (const char* key : kAiEffortKeys) combo_add(hAiEffort_, tr(key));
+    y += kRowH;
+
+    // 超时与模式
+    const int timeout_x = make_aligned_label(tr("ai.timeout"), x0, labels, y, panel);
+    hAiTimeout_ = make_edit(kAiTimeoutId, timeout_x, y, S(90), panel);
+    y += kRowH;
     const int mode_x = make_aligned_label(tr("ai.mode"), x0, labels, y, panel);
     hAiMode_ = make_list_combo(kAiModeId, mode_x, y, S(260), 4, panel);
     for (const char* key : kAiModeKeys) combo_add(hAiMode_, tr(key));
     y += kRowH;
 
-    const int timeout_x = make_aligned_label(tr("ai.timeout"), x0, labels, y, panel);
-    hAiTimeout_ = make_edit(kAiTimeoutId, timeout_x, y, S(90), panel);
+    hAiTest_ = make_button(kAiTestId, tr("ai.test"), timeout_x, y, S(110), panel);
+    hAiTestResult_ = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                     timeout_x + S(122), y + S(5), S(320), S(kFontPt + 8), panel,
+                                     nullptr, GetModuleHandle(nullptr), nullptr);
+    SendMessageW(hAiTestResult_, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
     y += kRowH;
     y = card_end(panel, y);
 
@@ -184,13 +207,8 @@ void EditorApp::create_ai_panel(HWND panel) {
     y += kRowH;
     hAiUseGlossary_ = make_check(kAiUseGlossaryId, tr("ai.use_glossary"), use_x, y, hint_w, panel);
     y += kRowH;
-
-    hAiTest_ = make_button(kAiTestId, tr("ai.test"), use_x, y, S(110), panel);
-    hAiTestResult_ = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
-                                     use_x + S(122), y + S(5), S(400), S(kFontPt + 8), panel,
-                                     nullptr, GetModuleHandle(nullptr), nullptr);
-    SendMessageW(hAiTestResult_, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
-    y += kRowH;
+    make_hint(tr("ai.use_for_hint"), use_x, y - S(8), hint_w, panel, 1);
+    y += S(24);
     card_end(panel, y);
 }
 
@@ -228,13 +246,18 @@ void EditorApp::populate_ai() {
     combo_set_index(hAiMode_, config_.ai.mode == "remote_only" ? 1 : 0);
     set_edit_int(hAiTimeout_, config_.ai.timeout_ms);
 
+    int effort = 0;
+    for (std::size_t i = 0; i < std::size(kAiEffortValues); ++i) {
+        if (config_.ai.reasoning_effort == kAiEffortValues[i]) effort = static_cast<int>(i);
+    }
+    combo_set_index(hAiEffort_, effort);
+
     set_check(hAiUseTranslate_, config_.ai.use_for.translate);
     set_check(hAiUseSelection_, config_.ai.use_for.selection);
     set_check(hAiUseEnglish_, config_.ai.use_for.english);
     set_check(hAiUseVoice_, config_.ai.use_for.voice);
     set_check(hAiUseGlossary_, config_.ai.use_for.glossary);
 
-    SetWindowTextW(hAiModelsHint_, tr("ai.model_hint"));
     refresh_ai_key_list();
 }
 
@@ -251,6 +274,11 @@ void EditorApp::read_ai(cxxime::Config& config) {
     wchar_t model[256] = {};
     GetWindowTextW(hAiModel_, model, static_cast<int>(std::size(model)));
     config.ai.model = wstr_to_utf8(model);
+    const int effort = combo_index(hAiEffort_);
+    config.ai.reasoning_effort =
+        effort >= 0 && effort < static_cast<int>(std::size(kAiEffortValues))
+            ? kAiEffortValues[effort]
+            : std::string();
     config.ai.mode = combo_index(hAiMode_) == 1 ? "remote_only" : "prefer_remote";
     config.ai.timeout_ms = (std::max)(1000, (std::min)(get_edit_int(hAiTimeout_), 120000));
     config.ai.use_for.translate = get_check(hAiUseTranslate_);
@@ -259,18 +287,24 @@ void EditorApp::read_ai(cxxime::Config& config) {
     config.ai.use_for.voice = get_check(hAiUseVoice_);
     config.ai.use_for.glossary = get_check(hAiUseGlossary_);
 
-    config.ai.keys = ai_keys_;
-    // A key typed here is protected and added once: the box is emptied, so a later read does
-    // not add it again, and the plain key is never kept anywhere.
+    // A key typed here is protected and added once: the box is emptied, so a later read does not
+    // add it again, and the plain key is never kept anywhere.
     const std::string typed = edit_text_utf8(hAiKey_);
     if (!typed.empty()) {
         const std::string stored = ai::protect_secret(typed);
         if (!stored.empty()) {
-            config.ai.keys.push_back(stored);
-            ai_keys_ = config.ai.keys;
+            ai_keys_.push_back(stored);
             SetWindowTextW(hAiKey_, L"");
         }
     }
+    // The list picks which key is tried first (the ones after it are the fallbacks), as SuMail's
+    // key drop-down does.
+    const int chosen = combo_index(hAiKeyList_);
+    if (chosen > 0 && chosen < static_cast<int>(ai_keys_.size())) {
+        std::rotate(ai_keys_.begin(), ai_keys_.begin() + chosen, ai_keys_.end());
+    }
+    config.ai.keys = ai_keys_;
+    refresh_ai_key_list();
 }
 
 void EditorApp::apply_ai_provider_defaults() {
@@ -289,7 +323,34 @@ void EditorApp::apply_ai_provider_defaults() {
     } else {
         set_combo_text(hAiModel_, std::string());
     }
-    SetWindowTextW(hAiModelsHint_, tr("ai.model_hint"));
+    SetWindowTextW(hAiModelsHint_, tr("ai.base_url_hint"));
+}
+
+// The address names the service: select it (and with it its own address and model). This is what
+// SuMail's "detect" does for an address pasted from a gateway.
+void EditorApp::detect_ai_provider() {
+    if (!hAiBaseUrl_) return;
+    const std::string address = edit_text_utf8(hAiBaseUrl_);
+    if (address.empty()) return;
+    const std::vector<ai::Provider>& providers = ai::providers();
+    for (std::size_t i = 0; i < providers.size(); ++i) {
+        const std::string known = providers[i].base_url;
+        if (known.empty()) continue;
+        if (address.find(known) != std::string::npos || known.find(address) != std::string::npos) {
+            combo_set_index(hAiProvider_, static_cast<int>(i));
+            set_combo_text(hAiBaseUrl_, known);
+            SendMessageW(hAiModel_, CB_RESETCONTENT, 0, 0);
+            const std::wstring wide = utf8_to_wstr(providers[i].model);
+            SendMessageW(hAiModel_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(wide.c_str()));
+            SendMessageW(hAiModel_, CB_SETCURSEL, 0, 0);
+            SetWindowTextW(hAiModelsHint_,
+                           (std::wstring(tr("ai.detected")) + L" " +
+                            utf8_to_wstr(providers[i].name))
+                               .c_str());
+            return;
+        }
+    }
+    SetWindowTextW(hAiModelsHint_, tr("ai.detect_failed"));
 }
 
 void EditorApp::fetch_ai_models() {
@@ -343,11 +404,10 @@ void EditorApp::run_ai_test() {
         const std::string message = error.empty() ? ai::last_error() : error;
         SetWindowTextW(hAiTestResult_,
                        (std::wstring(tr("ai.test_failed")) + L" " + utf8_to_wstr(message)).c_str());
-    
+    }
     // Only the key list: populate_ai() would reset every control from the saved configuration and
     // throw away the ticks and text the user has not applied yet.
     refresh_ai_key_list();
-}
 }
 
 bool EditorApp::handle_ai_command(int control_id, int notification) {
@@ -357,6 +417,9 @@ bool EditorApp::handle_ai_command(int control_id, int notification) {
         return true;
     case kAiModelsId:
         if (notification == BN_CLICKED) fetch_ai_models();
+        return true;
+    case kAiDetectId:
+        if (notification == BN_CLICKED) detect_ai_provider();
         return true;
     case kAiProviderId:
         // Another service: fill the address and the model with its own. The drop-down's own
