@@ -468,6 +468,36 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         config.translate_idle_seconds = std::clamp(config.translate_idle_seconds, 0, 3600);
     }
 
+    // Online AI (ai_config.h). Absent (and off) unless the user turned it on.
+    if (j.contains("ai") && j["ai"].is_object()) {
+        auto& ai = j["ai"];
+        load_bool(ai, "enabled", config.ai.enabled);
+        load_string(ai, "mode", config.ai.mode);
+        if (config.ai.mode != "remote_only") config.ai.mode = "prefer_remote";
+        load_string(ai, "provider", config.ai.provider);
+        load_string(ai, "base_url", config.ai.base_url);
+        load_string(ai, "model", config.ai.model);
+        load_double(ai, "temperature", config.ai.temperature);
+        config.ai.temperature = std::clamp(config.ai.temperature, 0.0, 2.0);
+        load_string(ai, "reasoning_effort", config.ai.reasoning_effort);
+        load_int(ai, "timeout_ms", config.ai.timeout_ms);
+        config.ai.timeout_ms = std::clamp(config.ai.timeout_ms, 1000, 120000);
+        if (ai.contains("keys") && ai["keys"].is_array()) {
+            config.ai.keys.clear();
+            for (const auto& key : ai["keys"]) {
+                if (key.is_string()) config.ai.keys.push_back(key.get<std::string>());
+            }
+        }
+        if (ai.contains("use_for") && ai["use_for"].is_object()) {
+            auto& use = ai["use_for"];
+            load_bool(use, "translate", config.ai.use_for.translate);
+            load_bool(use, "selection", config.ai.use_for.selection);
+            load_bool(use, "english", config.ai.use_for.english);
+            load_bool(use, "voice", config.ai.use_for.voice);
+            load_bool(use, "glossary", config.ai.use_for.glossary);
+        }
+    }
+
     bool switch_keys_loaded = true;
     if (j.contains("shortcuts") && j["shortcuts"].is_object()) {
         auto& shortcuts = j["shortcuts"];
@@ -814,6 +844,20 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["translate"]["direct_insert"] = config.translate_direct_insert;
     j["translate"]["device"] = config.translate_device;
     j["translate"]["idle_seconds"] = config.translate_idle_seconds;
+    j["ai"]["enabled"] = config.ai.enabled;
+    j["ai"]["mode"] = config.ai.mode;
+    j["ai"]["provider"] = config.ai.provider;
+    j["ai"]["base_url"] = config.ai.base_url;
+    j["ai"]["model"] = config.ai.model;
+    j["ai"]["temperature"] = config.ai.temperature;
+    j["ai"]["reasoning_effort"] = config.ai.reasoning_effort;
+    j["ai"]["timeout_ms"] = config.ai.timeout_ms;
+    j["ai"]["keys"] = config.ai.keys;
+    j["ai"]["use_for"]["translate"] = config.ai.use_for.translate;
+    j["ai"]["use_for"]["selection"] = config.ai.use_for.selection;
+    j["ai"]["use_for"]["english"] = config.ai.use_for.english;
+    j["ai"]["use_for"]["voice"] = config.ai.use_for.voice;
+    j["ai"]["use_for"]["glossary"] = config.ai.use_for.glossary;
 
     return j;
 }

@@ -4,6 +4,8 @@
 
 #include <algorithm>
 
+#include <cxxime/ai_client.h>
+
 namespace {
 
 // Whether the text is mostly Chinese (CJK): its translation goes to English, else to Chinese.
@@ -183,9 +185,30 @@ bool TranslateService::ensure_server(std::string* error) {
 void TranslateService::do_translate(uint32_t id, uint64_t generation, std::string text) {
     std::string result;
     std::string error;
-    if (ensure_server(&error)) {
+    const bool chinese = looks_chinese(text);
+
+    // The online AI first, when the user turned it on for the selection translation
+    // (Config::ai.use_for.translate). A failure falls back to the offline model, unless the
+    // mode is "remote_only".
+    std::shared_ptr<const cxxime::Config> config;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        config = config_;
+    }
+    bool remote_only = false;
+    if (config && cxxime::ai::usable_for(config->ai, &cxxime::AiUseFor::translate)) {
+        remote_only = config->ai.remote_only();
+        std::string translation;
+        std::string ai_error;
+        if (cxxime::ai::translate(config->ai, text, chinese ? "en" : "zh", &translation,
+                                  &ai_error, nullptr) &&
+            !translation.empty()) {
+            result = std::move(translation);
+        }
+    }
+
+    if (result.empty() && !remote_only && ensure_server(&error)) {
         last_used_ = std::chrono::steady_clock::now();
-        const bool chinese = looks_chinese(text);
         cxxime::mt::Item item;
         item.source = chinese ? "zh" : "en";
         item.target = chinese ? "en" : "zh";

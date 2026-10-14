@@ -11,6 +11,7 @@ else()
 endif()
 
 add_library(cxxime-shared STATIC
+    src/ai_client.cc
     src/key_event.cc
     src/keyboard_shortcut.cc
     src/data_path.cc
@@ -41,7 +42,7 @@ target_include_directories(cxxime-shared PRIVATE
     ${CXXIME_GENERATED_INCLUDE_DIR}
 )
 
-target_link_libraries(cxxime-shared PUBLIC shell32 bcrypt advapi32 user32)
+target_link_libraries(cxxime-shared PUBLIC shell32 bcrypt advapi32 user32 winhttp crypt32)
 if(CXXIME_ENABLE_HOST_DIAGNOSTICS)
     target_compile_definitions(cxxime-shared PRIVATE CXXIME_ENABLE_HOST_DIAGNOSTICS=1)
     target_link_libraries(cxxime-shared PUBLIC dwmapi)

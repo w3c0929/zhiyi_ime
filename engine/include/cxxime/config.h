@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <cxxime/ai_config.h>
 #include <cxxime/diagnostics_config.h>
 #include <cxxime/ipc_protocol.h>
 #include <cxxime/keyboard_shortcut.h>
@@ -165,6 +166,10 @@ struct Config {
     bool translate_direct_insert = false;  // true: replace the selection, no candidate window
     std::string translate_device;        // "" the CPU, else a card key (gpu_adapters.h)
     int translate_idle_seconds = 60;     // the model is unloaded after this long without a request
+
+    // Online AI (ai_config.h): off by default; the features it may serve are listed in
+    // AiUseFor. Written to and read from the "ai" object of the configuration file.
+    AiConfig ai;
     // Candidate paging besides PageUp/PageDown, pressed alone while candidates are shown:
     // shortcuts.page_up is "-", "," or "[", shortcuts.page_down "=", "." or "]". 0 ("" in the
     // file, and anything else found there) is none, the default.

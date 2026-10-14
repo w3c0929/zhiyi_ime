@@ -96,6 +96,24 @@
         "device": "",
         "idle_seconds": 60
     },
+    "ai": {
+        "enabled": false,
+        "mode": "prefer_remote",
+        "provider": "deepseek",
+        "base_url": "",
+        "model": "",
+        "temperature": 0.7,
+        "reasoning_effort": "",
+        "timeout_ms": 8000,
+        "keys": [],
+        "use_for": {
+            "translate": false,
+            "selection": false,
+            "english": false,
+            "voice": false,
+            "glossary": false
+        }
+    },
     "theme": "moon_light",
     "ui": {
         "language": "auto"
