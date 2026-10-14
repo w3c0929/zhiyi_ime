@@ -24,6 +24,7 @@
 
 Unicode true
 !include "MUI2.nsh"
+!include "FileFunc.nsh"
 !include "WinVer.nsh"
 !include "x64.nsh"
 
@@ -62,6 +63,7 @@ SetCompressor /SOLID lzma
 
 Var AppDir     ; <base>\<version>.<build id>
 Var OldActive  ; the version directory of the copy being replaced, if any
+Var BaseDir    ; the base directory holding the version directories and maintenance
 
 !macro RegisterTsf
   ExecWait '"$SYSDIR\regsvr32.exe" /s "$AppDir\zhiyu_tsf_x64.dll"'
@@ -169,9 +171,18 @@ Section "Uninstall"
   SetShellVarContext all
   SetRegView 64
 
+  ; The registered active version directory; the base directory is its parent. Do not rely on
+  ; $INSTDIR here: it is not the base, and the base is what holds maintenance\ and the version
+  ; directories that must be removed.
   ReadRegStr $AppDir HKLM "${UNINST_KEY}" "InstallLocation"
+  ${If} $AppDir != ""
+    ${GetParent} "$AppDir" $BaseDir
+  ${EndIf}
   ${If} $AppDir == ""
     StrCpy $AppDir "$INSTDIR"
+  ${EndIf}
+  ${If} $BaseDir == ""
+    StrCpy $BaseDir "$INSTDIR"
   ${EndIf}
 
   IfFileExists "$AppDir\zhiyu-installer-helper.exe" 0 +2
@@ -187,8 +198,8 @@ Section "Uninstall"
   RMDir /r "$SMPROGRAMS\${APP_NAME}"
   ; Removes the version directories, maintenance\ and any update\ staging left behind. Files
   ; still mapped into running programs (the TSF DLLs) are deleted at the next restart.
-  Delete "$INSTDIR\maintenance\install-state.json"
-  RMDir /r /REBOOTOK "$INSTDIR"
+  Delete "$BaseDir\maintenance\install-state.json"
+  RMDir /r /REBOOTOK "$BaseDir"
 SectionEnd
 
 Function .onInit
