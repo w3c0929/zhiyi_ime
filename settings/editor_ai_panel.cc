@@ -266,11 +266,7 @@ void EditorApp::populate_ai() {
     combo_set_index(hAiMode_, config_.ai.mode == "remote_only" ? 1 : 0);
     set_edit_int(hAiTimeout_, config_.ai.timeout_ms);
 
-    int effort = 0;
-    for (std::size_t i = 0; i < std::size(kAiEffortValues); ++i) {
-        if (config_.ai.reasoning_effort == kAiEffortValues[i]) effort = static_cast<int>(i);
-    }
-    combo_set_index(hAiEffort_, effort);
+    refresh_ai_effort_combo();  // the levels this service and model offer
     set_check(hAiThinking_, config_.ai.thinking);
     EnableWindow(hAiEffort_, config_.ai.thinking ? TRUE : FALSE);
 
@@ -297,10 +293,9 @@ void EditorApp::read_ai(cxxime::Config& config) {
     GetWindowTextW(hAiModel_, model, static_cast<int>(std::size(model)));
     config.ai.model = wstr_to_utf8(model);
     const int effort = combo_index(hAiEffort_);
-    config.ai.reasoning_effort =
-        effort >= 0 && effort < static_cast<int>(std::size(kAiEffortValues))
-            ? kAiEffortValues[effort]
-            : std::string();
+    config.ai.reasoning_effort = effort >= 1 && effort <= static_cast<int>(ai_effort_levels_.size())
+                                     ? ai_effort_levels_[static_cast<std::size_t>(effort - 1)]
+                                     : std::string();
     config.ai.thinking = get_check(hAiThinking_);
     config.ai.mode = combo_index(hAiMode_) == 1 ? "remote_only" : "prefer_remote";
     config.ai.timeout_ms = (std::max)(1000, (std::min)(get_edit_int(hAiTimeout_), 120000));
@@ -417,6 +412,7 @@ void EditorApp::fetch_ai_models() {
     GetWindowTextW(hAiModel_, current, static_cast<int>(std::size(current)));
     fill_model_combo(hAiModel_, models, wstr_to_utf8(current));
     SetWindowTextW(hAiModelsHint_, with_number(tr("ai.models_found"), models.size()).c_str());
+    refresh_ai_effort_combo();  // the model changed: its levels may differ
 }
 
 void EditorApp::run_ai_test() {
@@ -465,6 +461,30 @@ void EditorApp::show_ai_key_value() {
     SetWindowTextW(hAiKey_, utf8_to_wstr(plain).c_str());
 }
 
+// The reasoning levels this service and model offer go into the combo (SuMail takes them from the
+// engine the same way); a service that offers none leaves it greyed out.
+void EditorApp::refresh_ai_effort_combo() {
+    if (!hAiEffort_) return;
+    const std::vector<ai::Provider>& providers = ai::providers();
+    const int selected = combo_index(hAiProvider_);
+    const std::string provider = selected >= 0 && selected < static_cast<int>(providers.size())
+                                     ? providers[static_cast<std::size_t>(selected)].id
+                                     : config_.ai.provider;
+    wchar_t model[256] = {};
+    GetWindowTextW(hAiModel_, model, static_cast<int>(std::size(model)));
+    ai_effort_levels_ = ai::thinking_levels(provider, wstr_to_utf8(model));
+
+    SendMessageW(hAiEffort_, CB_RESETCONTENT, 0, 0);
+    combo_add(hAiEffort_, tr("ai.effort_default"));
+    int index = 0;
+    for (std::size_t i = 0; i < ai_effort_levels_.size(); ++i) {
+        combo_add(hAiEffort_, utf8_to_wstr(ai_effort_levels_[i]).c_str());
+        if (config_.ai.reasoning_effort == ai_effort_levels_[i]) index = static_cast<int>(i) + 1;
+    }
+    combo_set_index(hAiEffort_, index);
+    EnableWindow(hAiEffort_, ai_effort_levels_.empty() ? FALSE : TRUE);
+    EnableWindow(hAiThinking_, ai_effort_levels_.empty() ? FALSE : TRUE);
+}
 bool EditorApp::handle_ai_command(int control_id, int notification) {
     switch (control_id) {
     case kAiTestId:
@@ -476,6 +496,12 @@ bool EditorApp::handle_ai_command(int control_id, int notification) {
     case kAiDetectId:
         if (notification == BN_CLICKED) detect_ai_provider();
         return true;
+    case kAiModelId:
+        // Another model: its levels may differ.
+        if (notification == CBN_SELCHANGE || notification == CBN_EDITCHANGE) {
+            refresh_ai_effort_combo();
+        }
+        return false;
     case kAiProviderId:
         // Another service: fill the address and the model with its own. The drop-down's own
         // selection is left alone (populate_ai would set it straight back).

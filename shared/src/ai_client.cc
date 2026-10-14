@@ -7,6 +7,9 @@
 #include <cstring>
 #include <vector>
 
+#include <fstream>
+
+#include <cxxime/data_path.h>
 #include <windows.h>
 #include <wincrypt.h>
 #include <winhttp.h>
@@ -464,6 +467,79 @@ bool parse_response(Protocol protocol, const std::string& body, std::string* tex
 
 }  // namespace
 
+// SuMail's names for a few services differ from ours; the levels table is keyed by theirs.
+std::string levels_key(const std::string& provider) {
+    for (const auto& [from, to] : {std::pair{"kimi", "moonshotai"},
+                                   std::pair{"glm", "zai"},
+                                   std::pair{"kimi_coding", "kimi-coding"},
+                                   std::pair{"minimax_cn", "minimax-cn"},
+                                   std::pair{"ant_ling", "ant-ling"},
+                                   std::pair{"opencode_go", "opencode-go"},
+                                   std::pair{"xiaomi_token_cn", "xiaomi-token-plan-cn"},
+                                   std::pair{"xiaomi_token_ams", "xiaomi-token-plan-ams"},
+                                   std::pair{"qwen_token_plan", "qwen-token-plan"},
+                                   std::pair{"vercel", "vercel-ai-gateway"}}) {
+        if (provider == from) return to;
+    }
+    return provider;
+}
+
+// SuMail's per-provider list (its effortOptions), the fallback when the model table has nothing
+// for the service.
+const std::vector<std::string>* provider_levels(const std::string& provider) {
+    static const std::map<std::string, std::vector<std::string>> kByProvider = {
+        {"deepseek", {"low", "high", "max"}},
+        {"glm", {"low", "high", "xhigh", "max"}},
+        {"openai", {"none", "minimal", "low", "medium", "high", "xhigh", "max"}},
+        {"kimi", {"low", "high", "max"}},
+        {"groq", {"none", "low", "medium", "high"}},
+        {"zai", {"low", "high", "xhigh", "max"}},
+        {"anthropic", {"none", "minimal", "low", "medium", "high", "xhigh", "max"}},
+        {"google", {"none", "low", "medium", "high"}},
+        {"openrouter", {"none", "minimal", "low", "medium", "high", "xhigh", "max"}},
+        {"together", {"none", "low", "medium", "high", "max"}},
+        {"xai", {"none", "low", "medium", "high"}},
+        {"moonshotai", {"low", "high", "max"}},
+        {"qwen", {"none", "low", "medium", "high"}},
+        {"ant_ling", {"low", "medium", "high"}},
+        {"cerebras", {"low", "medium", "high"}},
+        {"fireworks", {"low", "medium", "high"}},
+        {"mistral", {"low", "medium", "high"}},
+        {"nvidia", {"low", "medium", "high"}},
+    };
+    const auto found = kByProvider.find(provider);
+    return found == kByProvider.end() ? nullptr : &found->second;
+}
+
+std::vector<std::string> thinking_levels(const std::string& provider, const std::string& model) {
+    static const nlohmann::json table = [] {
+        std::ifstream file(std::filesystem::path(cxxime::data_path("ai_thinking_levels.json")));
+        if (!file) return nlohmann::json::object();
+        std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        try {
+            return nlohmann::json::parse(text);
+        } catch (const std::exception&) {
+            return nlohmann::json::object();
+        }
+    }();
+    if (provider.empty() || provider == "custom" || provider == "ollama") return {};
+    const std::string key = levels_key(provider);
+    if (table.contains(key) && table[key].is_array()) {
+        for (const auto& row : table[key]) {
+            if (row.is_array() && row.size() == 2 && row[0].is_string() && row[0] == model &&
+                row[1].is_array()) {
+                return row[1].get<std::vector<std::string>>();
+            }
+        }
+        for (const auto& row : table[key]) {  // the model is not listed: this service's first one
+            if (row.is_array() && row.size() == 2 && row[1].is_array()) {
+                return row[1].get<std::vector<std::string>>();
+            }
+        }
+    }
+    const std::vector<std::string>* fallback = provider_levels(provider);
+    return fallback ? *fallback : std::vector<std::string>{};
+}
 const std::vector<Provider>& providers() { return table(); }
 
 const Provider* find_provider(const std::string& id) {

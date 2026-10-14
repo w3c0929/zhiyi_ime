@@ -54,6 +54,10 @@ bool usable_for(const AiConfig& config, bool AiUseFor::*use);
 // The provider a configuration asks for: its own when it names one, else the first entry.
 const Provider& selected_provider(const AiConfig& config);
 
+// The reasoning levels this service and model offer (SuMail's provider+model table, with
+// its per-provider list as the fallback). Empty: the service offers none -- send no level.
+std::vector<std::string> thinking_levels(const std::string& provider, const std::string& model);
+
 // One chat request. Blocking: run it on a worker thread. `cancel` is polled while it waits.
 // False with *error set when nothing usable came back.
 bool complete(const AiConfig& config, const std::string& system_prompt,

@@ -69,6 +69,7 @@ private:
     void refresh_ai_key_list();
     void show_ai_key_value();
     void detect_ai_provider();
+    void refresh_ai_effort_combo();
     bool handle_ai_command(int control_id, int notification);
     void show_panel(int idx);
     void release_fonts();
@@ -279,6 +280,7 @@ private:
     HWND hAiDetect_ = nullptr, hAiEffort_ = nullptr, hAiThinking_ = nullptr;
     // The stored (DPAPI-protected) keys: kept here so a page rebuild does not lose them.
     std::vector<std::string> ai_keys_;
+    std::vector<std::string> ai_effort_levels_;  // what this service/model offers
     std::vector<GpuAdapter> mt_choices_;  // list_translator_gpus() once installed, then the CPU
     enum class MtBusy { kNone, kChecking, kDownloading, kTesting } mt_busy_ = MtBusy::kNone;
     bool mt_remote_known_ = false;
