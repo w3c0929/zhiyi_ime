@@ -119,6 +119,12 @@
   + `<基目录>\maintenance\install-state.json` + 版本目录内的 `install-manifest.json`
   （`package_release.py` 生成）与 `uninstall.exe`。升级装进**新**目录，不覆盖运行中的版本
   （这正是以前升级出现 `zhiyuime.busy-*` 残留、文件被锁的根源）。
+- **卸载器里 `$INSTDIR` 不是基目录**（是版本目录）：`RMDir /r "$INSTDIR"` 只会删掉版本目录，
+  基目录里的 `maintenance\` 会留下，卸载后 `persist\zhiyuime` 不干净（与上游不一致）。
+  要从注册表的 `InstallLocation` 取活动版本目录、用 `${GetParent}` 反推基目录再删
+  （`FileFunc.nsh`）。改完必须**实测一次装+卸**，看基目录是否整个消失。
+- `.nsi` 的注释**不能以 `\` 结尾**：NSIS 视作续行，会把下一行整行吃掉（编译只给一条 warning）。
+  例：`Var BaseDir ; … maintenance\` 会吞掉后面的 `!macro` 行。
 
 ## 九、模型资产（glossary / translator / voice）
 
