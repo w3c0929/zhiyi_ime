@@ -1,0 +1,120 @@
+# 从上游合并与发布：维护铁律
+
+本仓库是 [w3c0929](https://github.com/w3c0929) 维护的 fork，产品名 **知语输入法 / Zhiyu IME**。
+它派生自上游 **知意输入法 / Zhiyi IME**（`dd1000001000/zhiyi_ime`），上游又派生自 `deanxyuan/cxx-ime`。
+
+**核心目标：本 fork 必须能与上游「知意输入法」在同一台机器上并存、互不影响。**
+凡是会破坏「身份隔离」「署名」「本 fork 自制功能」的改动，一律不做。
+
+远端：`origin` = `w3c0929/zhiyi_ime`，`upstream` = `dd1000001000/zhiyi_ime`。
+长期分支：`feat/translate-selection` 与 `main` 保持同点（一起推）。
+
+本文件是维护铁律；做「从上游合并」或「发版」前先读它。
+
+---
+
+## 一、红线：绝不修改
+
+这些是「身份 / 署名 / 磁盘格式 / 上游引用」，改了会破共存或失真：
+
+- 版权头：`Copyright (c) 2026 Zhiyi IME Contributors…`、`Modified by Zhiyi IME Contributors:`
+- 上游与仓库链接、署名：`w3c0929/zhiyi_ime`、`dd1000001000/zhiyi_ime`、`dd1000001000/zhiyi-glossary`、
+  `deanxyuan/cxx-ime`；`README*` / `NOTICE` / `THIRD_PARTY_NOTICES.txt` 里「based on 知意输入法」的表述
+- 磁盘格式标识（兼容旧数据，不能改）：`zhiyi-wordlist`、`zhiyi-user-backup`、`zhiyi_prompt`、`zhiyi-mt-1`
+- 环境变量 `ZHIYI_UPDATE_TEST_BASE`；`.gitignore` 的 `/scripts/zhiyi-setup.nsi`
+- 上游基准图表 `docs/media/compare.zh-CN.svg`、`translator.zh-CN.svg`（其中「知意 1.1/1.2/1.5.4/v2」是**上游版本标签**）
+- 语言示例 `engine/src/word_list_read.cc` 里的 `zhi'yi → 知意`（“知晓其意”，不是产品名）
+- **用户的财产**：scoop bucket 里上游版 `zhiyiime.json` 必须与 `zhiyuime.json` **并存**，且两份结构
+  完全对齐（字段顺序、autoupdate、installer/post_uninstall 步骤、三处 roots 等）。只做**新增 / 并列修改**，
+  **绝不改名、替换或删除** `zhiyiime.json`。
+
+## 二、本 fork 的身份（共存核心，别改回去）
+
+| 项 | 值 |
+|---|---|
+| TSF CLSID | `{94f5f388-9732-439e-a73f-ebc4e6f4a64b}` |
+| TSF Profile GUID | `{a549be94-7073-440d-b293-acf8820a527b}` |
+| 注册表键 | `Software\ZhiyuIME` |
+| 数据目录 / 本地缓存 | `%USERPROFILE%\zhiyu` / `%LOCALAPPDATA%\zhiyu` |
+| 互斥体、窗口类、日志前缀 | `ZhiyuIME*`、`[ZhiyuIME]` |
+| 产物名 | `zhiyu-server.exe`、`zhiyu-settings.exe`、`zhiyu_tsf_x64\|x86.dll`、`zhiyu_ime_x64\|x86.ime`、`zhiyu-resources.dll`、`zhiyu-installer-helper.exe` |
+| 用户可见名 | 知语输入法 / Zhiyu IME |
+
+定义处：`shared/include/cxxime/text_service_profile.h`（CLSID/Profile）、`shared/src/data_path.cc`（路径/注册表）、
+`data/ui.*.json`（界面串）、`resource/cxxime-resources.rc` + `tsf/src/resource_loader.cc`（IME 显示名）、
+`shared/include/cxxime/settings_route.h`（设置窗口标题）。
+图标：`resource/zhiyu.ico`（由 `resource/make_icons.py` 生成，`.rc` 引用此名）。
+
+## 三、本 fork 自制功能（合并上游时不可破坏）
+
+- **划词翻译**：快捷键 `Ctrl+C+C`。协议见 `shared/include/cxxime/ipc_protocol.h`：
+  `IPCCommand::TRANSLATE_SELECTION = 35`、`TRANSLATE_STATUS = 36`，`IPCRequest.translate_text`，
+  `IPCResponse.translate_state / translate_text`；配置见 `engine/include/cxxime/config.h` 的
+  `translate_selection_shortcut / translate_direct_insert / translate_device / translate_idle_seconds`。
+  **合并上游时若上游也改 `ipc_protocol.h`，先确认它新增的枚举值 / flag 位不与 35、36 及我们已用的位冲突。**
+- 四页设置（常规 / 按键 / 词库 / 关于）。
+
+## 四、从上游合并的流程
+
+1. `git fetch upstream --tags`；`base=$(git merge-base HEAD upstream/main)`；
+   `git log --oneline $base..upstream/main` 列出待合并提交。
+2. **上游常有「提交 + 回退」成对出现**（例：`c77a7f5` 与 `e97dd9a` 净效果为零）。
+   先 `git diff <较早> <较晚>`（或 `git diff $base..upstream/main`）看**净改动**，别无脑全合。
+3. 逐个 `git show --stat` / `git show <sha>` 评估与本地功能的冲突点。
+4. 工作区通常有大量未提交改动 → **不要用 `git cherry-pick`**（因 dirty tree 会失败或搞乱）。
+   改为**手动把上游改动套进工作区**，保留本地品牌与自制功能。
+5. 套用时同步品牌：`zhiyi→zhiyu`、`知意→知语`、`知意输入法→知语输入法`、`Zhiyi IME→Zhiyu IME`
+   （红线清单里的除外）。
+6. 若上游带来**新的双拼方案或词典数据**，**必须重新生成词典包**：
+   ```
+   python scripts/prepare_dictionary_bundle.py --data-dir data --output-dir dist-data \
+       --topn-builder build-x64\tools\topn_index\Release\topn_builder.exe
+   ```
+   否则 `package_release.py` 的二进制数据取自「参考安装目录」，不会带上新数据，用户选了会**静默回退**。
+7. 构建验证（都要 exit=0）：
+   ```
+   cmake --build build-x64 --config Release
+   cmake --build build-x86 --config Release --target cxxime-tsf cxxime-ime
+   ```
+   （x86 **不**构建 server；`cmake --build build-x86` 默认会连 server 一起编并失败。）
+
+## 五、发布流程（已走通）
+
+1. 改 `VERSION`（并加 `docs/release-notes/<版本>.{zh-CN,en-US}.md`）。
+2. 构建（见第四节第 7 步）。
+3. `python scripts/package_release.py --reference "<上一版已安装目录，或 7z 解出的安装包>" --version X --out dist`
+4. 清理产出里残留的**上游命名文件**（`zhiyi-server.exe`、`zhiyi_tsf_*.dll`、`zhiyi_ime_*.ime`…）；
+   把重新生成的 `pinyin.*`、`wubi86.*`、`dictionary_manifest.json` 拷进 `dist\zhiyu-vX\data\`。
+5. `makensis /INPUTCHARSET UTF8 /DVERSION=X "/DSRCDIR=<dist 绝对路径>" scripts\zhiyu-setup.nsi`
+   （脚本是 UTF-8 无 BOM，**必须**带 `/INPUTCHARSET UTF8`）
+6. `python scripts/make_release.py --version X --installer scripts\zhiyu-vX-setup.exe --notes-zh … --notes-en …`
+7. 更新 `scripts/zhiyu-scoop.json` 的 version/url/hash，并**一字不差**同步到 bucket
+   `E:\09.同步\06.配置\myscoop\bucket\zhiyuime.json`。
+8. `gh release create vX -R w3c0929/zhiyi_ime scripts\zhiyu-vX-setup.exe scripts\latest.json scripts\latest.json.sig --title vX --target main --notes-file <说明文件>`
+   （`gh` 默认会认到 upstream 仓库，**务必带 `-R w3c0929/zhiyi_ime`**）
+9. 提交并推送：`feat/translate-selection` 与 `main` 一起推；bucket 仓库提交后推
+   （远端常有自动更新提交 → 先 `git pull --rebase origin main`）。
+
+## 六、发布/安装前必查的坑
+
+- **NSIS 开始菜单位置**：elevated 安装器必须 `SetShellVarContext all`，否则菜单项落到「当前用户」
+  （`%APPDATA%\…\Start Menu`）而不是「所有用户」（`%ProgramData%\…\Start Menu`）。
+- **升级前先停 `zhiyu-server`**：否则旧目录里的 DLL 被正在运行的 App 映射，卸载删不干净，
+  留下 `D:\scoop\persist\zhiyuime\zhiyuime.busy-*` 残留（关掉这些 App 或重启系统后才能删）。
+- `package_release.py` **只覆盖文本配置**（`DATA_OVERLAY`），二进制数据来自参考目录；
+  参考目录里上游命名的 `zhiyi-*` 会被 `File /r *.*` 打进包，务必删除。
+- 产物名以 `package_release.py` 的 `BUILT` 表为准（如 `zhiyu_tsf_x64.dll`）；
+  改 CMake `OUTPUT_NAME` 时（`server/settings/tsf/legacy_ime/resource/installer` 各 `CMakeLists.txt`）要一起核对。
+
+## 七、不要提交
+
+`build-x64/`、`build-x86/`、`dist/`、`scripts/*-setup.exe`、`scripts/latest.json`、`scripts/latest.json.sig`
+（均已写入 `.gitignore`）。
+
+## 八、环境
+
+- 构建目录：`build-x64`（全量）、`build-x86`（只构建 `cxxime-tsf` / `cxxime-ime`）。
+- 工具：`makensis`（scoop `nsis`）、`gh`（已登录账号 w3c0929）、`7z`（scoop）、Python 3.12、CMake、MSVC。
+- 安装验证要点：`HKLM\SOFTWARE\Microsoft\CTF\TIP\{94f5f388-…}\LanguageProfile` 下应有「知语输入法」；
+  `HKCU\Software\ZhiyuIME`、卸载项 `…\Uninstall\ZhiyuIME` 应存在；`zhiyu-server` 与上游 `zhiyi-server`
+  应能同时运行、数据目录互不相干。

@@ -121,4 +121,5 @@ build_laya.bat                        :: Ninja Release 构建，产物在 build\
 | [用户词库与候选偏好](user-dictionary.md) | 用户词、学习记录与固定顺序的存储 |
 | [IPC 架构设计](ipc-architecture.md) | 命名管道、IOCP 事件循环、关闭协议 |
 | [共享资源预加载](shared-resources.md) | 共享资源、全局状态与热重载 |
+| [从上游合并与发布：维护铁律](upstream-merge.md) | 本 fork 的维护红线、身份标识、合并与发布流程 |
 | [可观测性与 Benchmark](observability.md) | QueryTrace、TSF 事件追踪、日志、基准 |
