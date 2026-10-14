@@ -497,6 +497,7 @@ bool EditorApp::handle_ai_command(int control_id, int notification) {
         if (stored.empty()) return true;
         ai_keys_.push_back(stored);
         config_.ai.keys = ai_keys_;
+        config_.ai.keys_by_provider[config_.ai.provider] = ai_keys_;
         SetWindowTextW(hAiKey_, L"");
         refresh_ai_key_list();
         return true;
@@ -511,6 +512,11 @@ bool EditorApp::handle_ai_command(int control_id, int notification) {
         if (selected < 0 || selected >= static_cast<int>(ai_keys_.size())) return true;
         ai_keys_.erase(ai_keys_.begin() + selected);
         config_.ai.keys = ai_keys_;
+        config_.ai.keys_by_provider[config_.ai.provider] = ai_keys_;
+        config_.ai.keys_by_provider[config_.ai.provider] = ai_keys_;
+        // The value box must not keep the removed key's text: reading the page would take it for a
+        // new key and store it again.
+        SetWindowTextW(hAiKey_, L"");
         refresh_ai_key_list();
         return true;
     }
