@@ -160,9 +160,9 @@ const BYTE kEntropy[] = {'z', 'h', 'i', 'y', 'u', 'i', 'm', 'e', 'a', 'i'};
 
 // ---- HTTP ------------------------------------------------------------------------------------
 
-bool http_post(const std::wstring& url, const std::vector<std::wstring>& headers,
-               const std::string& body, int timeout_ms, std::string* response,
-               std::string* error) {
+bool http_request(const wchar_t* method, const std::wstring& url,
+                  const std::vector<std::wstring>& headers, const std::string* body,
+                  int timeout_ms, std::string* response, std::string* error) {
     URL_COMPONENTS parts = {};
     parts.dwStructSize = sizeof(parts);
     parts.dwSchemeLength = static_cast<DWORD>(-1);
@@ -190,7 +190,7 @@ bool http_post(const std::wstring& url, const std::vector<std::wstring>& headers
     bool ok = false;
     HINTERNET connect = WinHttpConnect(session, host.c_str(), parts.nPort, 0);
     HINTERNET request = connect
-                            ? WinHttpOpenRequest(connect, L"POST", path.c_str(), nullptr,
+                            ? WinHttpOpenRequest(connect, method, path.c_str(), nullptr,
                                                  WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
                                                  parts.nScheme == INTERNET_SCHEME_HTTPS
                                                      ? WINHTTP_FLAG_SECURE
@@ -202,8 +202,9 @@ bool http_post(const std::wstring& url, const std::vector<std::wstring>& headers
                                      WINHTTP_ADDREQ_FLAG_ADD);
         }
         if (WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-                               const_cast<char*>(body.data()), static_cast<DWORD>(body.size()),
-                               static_cast<DWORD>(body.size()), 0) &&
+                               body ? const_cast<char*>(body->data()) : nullptr,
+                               body ? static_cast<DWORD>(body->size()) : 0,
+                               body ? static_cast<DWORD>(body->size()) : 0, 0) &&
             WinHttpReceiveResponse(request, nullptr)) {
             DWORD status = 0;
             DWORD size = sizeof(status);
@@ -532,8 +533,8 @@ bool complete(const AiConfig& config, const std::string& system_prompt,
         }
         std::string body;
         std::string failure;
-        if (!http_post(request.url, request.headers, request.body,
-                       (std::max)(1000, config.timeout_ms), &body, &failure)) {
+        if (!http_request(L"POST", request.url, request.headers, &request.body,
+                          (std::max)(1000, config.timeout_ms), &body, &failure)) {
             g_last_error = failure;
             continue;  // the next key may still work
         }
@@ -557,6 +558,108 @@ bool translate(const AiConfig& config, const std::string& text, const std::strin
             : "You translate into Chinese. Output only the translation, without quotes, notes "
               "or the original text.";
     return complete(config, system, text, translation, error, cancel);
+}
+
+bool list_models(const AiConfig& config, std::vector<std::string>* models, std::string* error,
+                 const std::atomic<bool>* cancel) {
+    g_last_error.clear();
+    if (!models) return false;
+    models->clear();
+    if (config.keys.empty()) {
+        g_last_error = "no API key is configured";
+        if (error) *error = g_last_error;
+        return false;
+    }
+    const Provider& provider = selected_provider(config);
+    const std::string base = trim_slashes(effective_base_url(config));
+    if (base.empty()) {
+        g_last_error = "a service address is needed";
+        if (error) *error = g_last_error;
+        return false;
+    }
+    // Ollama has no /models: its own list lives at /api/tags (below the /v1 the chat call uses).
+    const bool ollama =
+        std::string(provider.id) == "ollama" || base.find(":11434") != std::string::npos;
+    std::string url;
+    if (ollama) {
+        std::string root = base;
+        if (root.size() > 3 && root.compare(root.size() - 3, 3, "/v1") == 0) {
+            root.erase(root.size() - 3);
+        }
+        url = root + "/api/tags";
+    } else if (provider.protocol == Protocol::kAnthropicMessages) {
+        url = base + "/v1/models";
+    } else {
+        url = base + "/models";  // OpenAI-compatible, Mistral and Google alike
+    }
+    const std::wstring wide_url = utf8_to_wide(url);
+
+    for (const std::string& stored : config.keys) {
+        if (cancel && cancel->load()) {
+            g_last_error = "cancelled";
+            if (error) *error = g_last_error;
+            return false;
+        }
+        std::string key;
+        if (!unprotect_secret(stored, &key) || key.empty()) continue;
+        const std::wstring wide_key = utf8_to_wide(key);
+        std::vector<std::wstring> headers;
+        headers.push_back(L"Accept: application/json");
+        switch (provider.protocol) {
+        case Protocol::kAnthropicMessages:
+            headers.push_back(L"anthropic-version: 2023-06-01");
+            headers.push_back(L"x-api-key: " + wide_key);
+            break;
+        case Protocol::kGoogleGenerativeAi:
+            headers.push_back(L"x-goog-api-key: " + wide_key);
+            break;
+        default:
+            if (!wide_key.empty()) headers.push_back(L"Authorization: Bearer " + wide_key);
+            break;
+        }
+
+        std::string body;
+        std::string failure;
+        if (!http_request(L"GET", wide_url, headers, nullptr, (std::max)(1000, config.timeout_ms),
+                          &body, &failure)) {
+            g_last_error = failure;
+            continue;
+        }
+        nlohmann::json json;
+        try {
+            json = nlohmann::json::parse(body);
+        } catch (const std::exception&) {
+            g_last_error = "the service answered something unexpected";
+            continue;
+        }
+        // OpenAI-compatible, Anthropic and Ollama answer "data" or "models"; Google's ids carry
+        // a "models/" prefix.
+        for (const char* key_name : {"data", "models"}) {
+            if (!json.contains(key_name) || !json[key_name].is_array()) continue;
+            for (const auto& item : json[key_name]) {
+                std::string id;
+                if (item.is_object()) {
+                    if (item.contains("id") && item["id"].is_string()) {
+                        id = item["id"].get<std::string>();
+                    } else if (item.contains("name") && item["name"].is_string()) {
+                        id = item["name"].get<std::string>();
+                    }
+                }
+                constexpr const char* kPrefix = "models/";
+                if (id.compare(0, 7, kPrefix) == 0) id.erase(0, 7);
+                if (!id.empty()) models->push_back(id);
+            }
+        }
+        if (!models->empty()) {
+            std::sort(models->begin(), models->end());
+            models->erase(std::unique(models->begin(), models->end()), models->end());
+            if (error) error->clear();
+            return true;
+        }
+        g_last_error = "the service answered without a model list";
+    }
+    if (error) *error = g_last_error.empty() ? "the request failed" : g_last_error;
+    return false;
 }
 
 }  // namespace ai

@@ -134,6 +134,7 @@ constexpr int kAiUseEnglishId = 6009;
 constexpr int kAiUseVoiceId = 6010;
 constexpr int kAiUseGlossaryId = 6011;
 constexpr int kAiTestId = 6012;
+constexpr int kAiModelsId = 6013;  // "Get models"
 HWND make_web_link(int id, const wchar_t* text, int x, int y, int width, HWND parent);
 HWND make_button(int id, const wchar_t* text, int x, int y, int width, HWND parent);
 HWND make_radio(int id, const wchar_t* text, int x, int y, int width, HWND parent, bool group);

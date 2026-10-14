@@ -64,6 +64,8 @@ private:
     void populate_ai();
     void read_ai(cxxime::Config& config);
     void run_ai_test();
+    void apply_ai_provider_defaults();
+    void fetch_ai_models();
     bool handle_ai_command(int control_id, int notification);
     void show_panel(int idx);
     void release_fonts();
@@ -268,7 +270,7 @@ private:
     HWND hAiUseTranslate_ = nullptr, hAiUseSelection_ = nullptr, hAiUseEnglish_ = nullptr;
     HWND hAiUseVoice_ = nullptr, hAiUseGlossary_ = nullptr;
     HWND hAiTest_ = nullptr, hAiTestResult_ = nullptr, hAiKeyHint_ = nullptr;
-    HWND hAiAddressHint_ = nullptr;
+    HWND hAiModels_ = nullptr, hAiModelsHint_ = nullptr;
     // The stored (DPAPI-protected) keys: kept here so a page rebuild does not lose them.
     std::vector<std::string> ai_keys_;
     std::vector<GpuAdapter> mt_choices_;  // list_translator_gpus() once installed, then the CPU

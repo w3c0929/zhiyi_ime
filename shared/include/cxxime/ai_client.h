@@ -60,6 +60,11 @@ bool complete(const AiConfig& config, const std::string& system_prompt,
               const std::string& user_prompt, std::string* text, std::string* error,
               const std::atomic<bool>* cancel);
 
+// The model ids the service offers (GET {base}/models; Ollama /api/tags; Anthropic
+// /v1/models; Google /models). Blocking, like complete(); one try per key.
+bool list_models(const AiConfig& config, std::vector<std::string>* models, std::string* error,
+                 const std::atomic<bool>* cancel);
+
 // "translate `text` into `target`" ("zh" / "en" / ...): a prompt plus complete().
 bool translate(const AiConfig& config, const std::string& text, const std::string& target,
                std::string* translation, std::string* error, const std::atomic<bool>* cancel);
