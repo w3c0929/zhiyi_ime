@@ -45,7 +45,7 @@ std::wstring with_number(const wchar_t* text, std::size_t number) {
 HWND make_text_edit(int id, int x, int y, int width, HWND parent) {
     HWND edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, x, y, width,
-                                S(kCtrlH), parent,
+                                kCtrlH, parent,
                                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
                                 GetModuleHandle(nullptr), nullptr);
     SendMessageW(edit, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
@@ -58,7 +58,7 @@ HWND make_list_combo(int id, int x, int y, int width, int drop_rows, HWND parent
     HWND combo = CreateWindowExW(0, L"COMBOBOX", L"",
                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
                                      CBS_DROPDOWNLIST,
-                                 x, y, width, S(kCtrlH * drop_rows), parent,
+                                 x, y, width, kCtrlH * drop_rows, parent,
                                  reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
                                  GetModuleHandle(nullptr), nullptr);
     SendMessageW(combo, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
@@ -69,7 +69,7 @@ HWND make_list_combo(int id, int x, int y, int width, int drop_rows, HWND parent
 HWND make_edit_combo(int id, int x, int y, int width, int drop_rows, HWND parent) {
     HWND combo = CreateWindowExW(0, L"COMBOBOX", L"",
                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWN,
-                                 x, y, width, S(kCtrlH * drop_rows), parent,
+                                 x, y, width, kCtrlH * drop_rows, parent,
                                  reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
                                  GetModuleHandle(nullptr), nullptr);
     SendMessageW(combo, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
