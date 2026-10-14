@@ -31,6 +31,7 @@
     "ai.keys_stored": "Keys stored:",
     "ai.key_add": "Add",
     "ai.key_remove": "Remove",
+    "ai.key_in_use": " (in use)",
     "ai.key_show": "Show",
     "ai.key_hide": "Hide",
     "ai.detect": "Detect",

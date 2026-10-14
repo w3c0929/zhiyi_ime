@@ -31,6 +31,7 @@
     "ai.keys_stored": "已保存密钥：",
     "ai.key_add": "添加",
     "ai.key_remove": "删除所选",
+    "ai.key_in_use": "（使用中）",
     "ai.key_show": "显示",
     "ai.key_hide": "隐藏",
     "ai.detect": "识别",

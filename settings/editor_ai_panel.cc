@@ -141,15 +141,16 @@ void EditorApp::create_ai_panel(HWND panel) {
     }
     y += kRowH;
 
-    // API 密钥：输入 + 显示/隐藏 + 添加；下面是已保存的密钥（选哪把先用哪把）与删除。
+    // API 密钥（两行，与 SuMail 一致）：上一行是当前用哪把，尾部 ✕ 删除；下一行输入新密钥，
+    // 末尾的按钮显示/隐藏输入内容。输入的新密钥在应用/保存时自动加密加入，不需要"添加"按钮。
     const int key_x = make_aligned_label(tr("ai.key"), x0, labels, y, panel);
-    hAiKey_ = make_text_edit(kAiKeyId, key_x, y, S(160), panel);
-    SendMessageW(hAiKey_, EM_SETPASSWORDCHAR, static_cast<WPARAM>(L'\u25CF'), 0);
-    hAiKeyReveal_ = make_button(kAiRevealId, tr("ai.key_show"), key_x + S(164), y, S(46), panel);
-    hAiKeyAdd_ = make_button(kAiKeyAddId, tr("ai.key_add"), key_x + S(214), y, S(56), panel);
+    const int key_w = S(230);
+    hAiKeyList_ = make_list_combo(kAiKeyListId, key_x, y, key_w, 6, panel);
+    hAiKeyRemove_ = make_button(kAiKeyRemoveId, L"\u2715", key_x + key_w + S(4), y, S(30), panel);
     y += kRowH;
-    hAiKeyList_ = make_list_combo(kAiKeyListId, key_x, y, S(160), 6, panel);
-    hAiKeyRemove_ = make_button(kAiKeyRemoveId, tr("ai.key_remove"), key_x + S(164), y, S(106),
+    hAiKey_ = make_text_edit(kAiKeyId, key_x, y, key_w, panel);
+    SendMessageW(hAiKey_, EM_SETPASSWORDCHAR, static_cast<WPARAM>(L'\u25CF'), 0);
+    hAiKeyReveal_ = make_button(kAiRevealId, tr("ai.key_show"), key_x + key_w + S(4), y, S(52),
                                 panel);
     y += kRowH;
     hAiKeyHint_ = make_hint(tr("ai.key_hint"), key_x, y - S(8), hint_w, panel, 1);
@@ -219,11 +220,14 @@ void EditorApp::create_ai_panel(HWND panel) {
 void EditorApp::refresh_ai_key_list() {
     if (!hAiKeyList_) return;
     SendMessageW(hAiKeyList_, CB_RESETCONTENT, 0, 0);
+    int index = 0;
     for (const std::string& stored : ai_keys_) {
         std::string key;
-        const std::wstring text =
+        std::wstring text =
             cxxime::ai::unprotect_secret(stored, &key) ? masked_key(key) : L"********";
+        if (index == 0) text += std::wstring(L" ") + tr("ai.key_in_use");
         SendMessageW(hAiKeyList_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(text.c_str()));
+        ++index;
     }
     if (!ai_keys_.empty()) SendMessageW(hAiKeyList_, CB_SETCURSEL, 0, 0);
     SetWindowTextW(hAiKeyHint_, with_number(tr("ai.keys_stored"), ai_keys_.size()).c_str());
