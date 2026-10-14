@@ -20,6 +20,7 @@ inline constexpr int kLearningPanel = 6;  // page index of Learning
 inline constexpr int kPrivacyPanel = 7;   // page index of Privacy
 inline constexpr int kUpdatePanel = 8;    // page index of Updates
 inline constexpr int kAboutPanel = 9;     // page index of About
+inline constexpr int kAiPanel = 10;       // page index of AI
 // Makes the Word lists page again after an import or a removal (posted from its buttons).
 inline constexpr UINT kRebuildWordListsMessage = WM_APP + 90;
 
@@ -117,6 +118,20 @@ constexpr int kTranslatorId = 5020;
 constexpr int kTranslatorDeviceId = 5021;
 constexpr int kTranslatorActionId = 5022;
 constexpr int kTranslatorRemoveId = 5023;
+// The AI page (editor_ai_panel.cc, docs/ai.md).
+constexpr int kAiEnabledId = 5030;
+constexpr int kAiProviderId = 5031;
+constexpr int kAiBaseUrlId = 5032;
+constexpr int kAiModelId = 5033;
+constexpr int kAiKeyId = 5034;
+constexpr int kAiModeId = 5035;
+constexpr int kAiTimeoutId = 5036;
+constexpr int kAiUseTranslateId = 5037;
+constexpr int kAiUseSelectionId = 5038;
+constexpr int kAiUseEnglishId = 5039;
+constexpr int kAiUseVoiceId = 5040;
+constexpr int kAiUseGlossaryId = 5041;
+constexpr int kAiTestId = 5042;
 HWND make_web_link(int id, const wchar_t* text, int x, int y, int width, HWND parent);
 HWND make_button(int id, const wchar_t* text, int x, int y, int width, HWND parent);
 HWND make_radio(int id, const wchar_t* text, int x, int y, int width, HWND parent, bool group);

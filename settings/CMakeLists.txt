@@ -3,6 +3,7 @@ project(cxxime-settings CXX)
 add_executable(cxxime-settings WIN32
     main.cc
     editor_about_panel.cc
+    editor_ai_panel.cc
     editor_app.cc
     editor_app.h
     editor_app_internal.h

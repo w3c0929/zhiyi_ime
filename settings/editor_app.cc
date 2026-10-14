@@ -32,10 +32,12 @@ constexpr int kApplyId = 2003;
 
 const char* const kPanelKeys[] = {"nav.general",  "nav.fuzzy",   "nav.keys",
                                   "nav.dictionary", "nav.wordlists", "nav.voice",
-                                  "nav.learning", "nav.privacy",  "nav.update",  "nav.about"};
+                                  "nav.learning", "nav.privacy",  "nav.update",  "nav.about",
+                                  "nav.ai"};
 // Segoe Fluent Icons / MDL2 Assets glyphs for the pages above.
 const wchar_t kPanelIcons[] = {0xE713, 0xE8D2, 0xE765, 0xE82D, 0xE8F1,
-                               0xE720, 0xE7BE, 0xE72E, 0xE895, 0xE946};
+                               0xE720, 0xE7BE, 0xE72E, 0xE895, 0xE946,
+                               0xE99A};
 
 UINT settings_navigate_message() {
     static const UINT message = RegisterWindowMessageW(cxxime::kSettingsNavigateMessage);
@@ -52,6 +54,8 @@ int settings_panel_index(cxxime::SettingsPanel panel) {
         return kWordListPanel;
     case cxxime::SettingsPanel::kVoice:
         return kVoicePanel;
+    case cxxime::SettingsPanel::kAi:
+        return kAiPanel;
     case cxxime::SettingsPanel::kDiagnostics:
         return kPrivacyPanel;
     case cxxime::SettingsPanel::kUpdate:
@@ -228,6 +232,9 @@ void EditorApp::create_controls(HWND window) {
     create_privacy_panel(hPanels_[kPrivacyPanel]);
     create_update_panel(hPanels_[kUpdatePanel]);
     create_about_panel(hPanels_[kAboutPanel], panel_width);
+    make_panel_scrollable(hPanels_[kAiPanel]);
+    create_ai_panel(hPanels_[kAiPanel]);
+    update_panel_scroll(hPanels_[kAiPanel]);
 
     const struct {
         int id;
@@ -359,6 +366,20 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(voice_itn);
     KEEP_PAGE_EDIT(translate_selection_shortcut);
     KEEP_PAGE_EDIT(translate_direct_insert);
+    KEEP_PAGE_EDIT(ai.enabled);
+    KEEP_PAGE_EDIT(ai.mode);
+    KEEP_PAGE_EDIT(ai.provider);
+    KEEP_PAGE_EDIT(ai.base_url);
+    KEEP_PAGE_EDIT(ai.model);
+    KEEP_PAGE_EDIT(ai.temperature);
+    KEEP_PAGE_EDIT(ai.reasoning_effort);
+    KEEP_PAGE_EDIT(ai.timeout_ms);
+    KEEP_PAGE_EDIT(ai.keys);
+    KEEP_PAGE_EDIT(ai.use_for.translate);
+    KEEP_PAGE_EDIT(ai.use_for.selection);
+    KEEP_PAGE_EDIT(ai.use_for.english);
+    KEEP_PAGE_EDIT(ai.use_for.voice);
+    KEEP_PAGE_EDIT(ai.use_for.glossary);
 #undef KEEP_PAGE_EDIT
     // The switch keys move together, so a merge never repeats a key.
     if (!(ui.ascii_switch_key == before.ascii_switch_key) ||

@@ -59,6 +59,12 @@ private:
     void on_privacy_check(int control_id);
     void create_update_panel(HWND panel);
     void create_about_panel(HWND panel, int panel_width);
+    // AI (editor_ai_panel.cc, docs/ai.md): the optional online service.
+    void create_ai_panel(HWND panel);
+    void populate_ai();
+    void read_ai(cxxime::Config& config);
+    void run_ai_test();
+    bool handle_ai_command(int control_id, int notification);
     void show_panel(int idx);
     void release_fonts();
 
@@ -177,7 +183,7 @@ private:
     HWND make_hint(const wchar_t* text, int x, int y, int width, HWND parent, int lines = 2);
     int panel_ = 0;
     cxxime::SettingsPanel initial_panel_ = cxxime::SettingsPanel::kInput;
-    static constexpr int kPanelCount = 10;
+    static constexpr int kPanelCount = 11;
     HWND hPanels_[kPanelCount] = {};
 
     // General
@@ -256,6 +262,15 @@ private:
     int last_chinese_target_ = 0, last_english_target_ = 0;  // combo indexes
     HWND hTranslator_ = nullptr, hTranslatorDevice_ = nullptr, hTranslatorStatus_ = nullptr;
     HWND hTranslatorAction_ = nullptr, hTranslatorRemove_ = nullptr, hTranslatorHint_ = nullptr;
+    // AI (editor_ai_panel.cc)
+    HWND hAiEnabled_ = nullptr, hAiProvider_ = nullptr, hAiBaseUrl_ = nullptr;
+    HWND hAiModel_ = nullptr, hAiKey_ = nullptr, hAiMode_ = nullptr, hAiTimeout_ = nullptr;
+    HWND hAiUseTranslate_ = nullptr, hAiUseSelection_ = nullptr, hAiUseEnglish_ = nullptr;
+    HWND hAiUseVoice_ = nullptr, hAiUseGlossary_ = nullptr;
+    HWND hAiTest_ = nullptr, hAiTestResult_ = nullptr, hAiKeyHint_ = nullptr;
+    HWND hAiAddressHint_ = nullptr;
+    // The stored (DPAPI-protected) keys: kept here so a page rebuild does not lose them.
+    std::vector<std::string> ai_keys_;
     std::vector<GpuAdapter> mt_choices_;  // list_translator_gpus() once installed, then the CPU
     enum class MtBusy { kNone, kChecking, kDownloading, kTesting } mt_busy_ = MtBusy::kNone;
     bool mt_remote_known_ = false;

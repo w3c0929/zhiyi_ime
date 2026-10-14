@@ -28,6 +28,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
             if (wcscmp(argv[i], cxxime::kSettingsPanelArgument) == 0 && i + 1 < argc) {
                 if (wcscmp(argv[i + 1], cxxime::kSettingsDictionaryArgument) == 0) {
                     initialPanel = cxxime::SettingsPanel::kDictionary;
+                } else if (wcscmp(argv[i + 1], cxxime::kSettingsAiArgument) == 0) {
+                    initialPanel = cxxime::SettingsPanel::kAi;
                 }
                 ++i;
             } else if (wcscmp(argv[i], L"--data") == 0 && i + 1 < argc) {

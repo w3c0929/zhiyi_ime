@@ -471,6 +471,7 @@ void EditorApp::populate_controls() {
     populate_learning();
     populate_translator();
     populate_voice();
+    populate_ai();
     update_enabled_controls();
 }
 
@@ -516,6 +517,7 @@ bool EditorApp::read_controls(bool report_errors) {
     read_learning(c);
     read_translator(c);
     read_voice(c);
+    read_ai(c);
     c.fuzzy_pinyin = get_check(hFuzzyEnabled_);
     c.fuzzy_groups = 0;
     for (int i = 0; i < kFuzzyGroupCount; ++i) {
@@ -696,6 +698,7 @@ bool EditorApp::handle_command(int control_id, int notification) {
         return handle_learning_command(control_id, notification) ||
                handle_voice_command(control_id, notification) ||
                handle_translator_command(control_id, notification) ||
+               handle_ai_command(control_id, notification) ||
                handle_update_command(control_id, notification);
     }
 }

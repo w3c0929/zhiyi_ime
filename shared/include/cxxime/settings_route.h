@@ -19,6 +19,7 @@ enum class SettingsPanel : uint32_t {
     kUpdate = 8,
     kWordLists = 9,
     kVoice = 10,
+    kAi = 11,
 };
 
 inline constexpr wchar_t kSettingsWindowTitle[] = L"知语输入法设置";
@@ -26,6 +27,7 @@ inline constexpr wchar_t kSettingsWindowClass[] = L"ZhiyuIMESettingsClass5";
 inline constexpr wchar_t kSettingsNavigateMessage[] = L"ZhiyuIME.Settings.Navigate";
 inline constexpr wchar_t kSettingsPanelArgument[] = L"--panel";
 inline constexpr wchar_t kSettingsDictionaryArgument[] = L"dictionary";
+inline constexpr wchar_t kSettingsAiArgument[] = L"ai";
 
 } // namespace cxxime
 
