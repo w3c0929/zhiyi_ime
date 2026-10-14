@@ -142,12 +142,21 @@
   `llama-b11480-vulkan-x64.zip` 32 MB）、`voice`（`model.int8.onnx` 239 MB + `tokens.txt` + `silero_vad.onnx`
   + 两个 LICENSE 文件）。
 
-## 七、不要提交
+## 七、发布前必须等用户亲自测试
+
+**构建完、提交推送完就停**：把「装哪个包、怎么验」告诉用户，**等他实机测试并明确说可以发布**再发
+（建 Release、传资产、更新 bucket 都算发布）。这是用户的明确要求，别再自动往下走到发布。
+
+范围提醒：本 fork 的联网面只有两处——**设置程序的更新检查/模型下载**，以及**可选的在线 AI**
+（`ai_config.h`，默认关，只有 `zhiyu-server` 用）。改动若扩大联网面，要一并更新 `docs/privacy.md`
+与 `update.h` 的说明。
+
+## 八、不要提交
 
 `build-x64/`、`build-x86/`、`dist/`、`scripts/*-setup.exe`、`scripts/latest.json`、`scripts/latest.json.sig`
 （均已写入 `.gitignore`）。
 
-## 八、环境
+## 九、环境
 
 - 构建目录：`build-x64`（全量）、`build-x86`（只构建 `cxxime-tsf` / `cxxime-ime`）。
 - 工具：`makensis`（scoop `nsis`）、`gh`（已登录账号 w3c0929）、`7z`（scoop）、Python 3.12、CMake、MSVC。

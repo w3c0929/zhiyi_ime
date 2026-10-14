@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Zhiyi IME Contributors. GPL-3.0-only.
 //
 // Updates from GitHub Releases. The settings program checks when it opens (Config::update_notify)
-// or on request (Settings > Updates); nothing else in the IME uses the network.
+// or on request (Settings > Updates). Apart from that, and the optional online AI
+// (ai_config.h — off by default, and only the server uses it), nothing in the IME uses the
+// network.
 //
 // Every release has two extra assets next to the installer (scripts/update_signing.py):
 //   latest.json      {"version", "file", "url", "size", "sha256", "published", "notes": {lang}}
