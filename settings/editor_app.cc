@@ -373,6 +373,7 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(ai.model);
     KEEP_PAGE_EDIT(ai.temperature);
     KEEP_PAGE_EDIT(ai.reasoning_effort);
+    KEEP_PAGE_EDIT(ai.thinking);
     KEEP_PAGE_EDIT(ai.timeout_ms);
     KEEP_PAGE_EDIT(ai.keys);
     KEEP_PAGE_EDIT(ai.use_for.translate);
