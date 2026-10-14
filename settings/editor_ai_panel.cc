@@ -144,14 +144,14 @@ void EditorApp::create_ai_panel(HWND panel) {
     // API 密钥（两行，与 SuMail 一致）：上一行选"用哪把"（右端 ✕ 删除）；下一行是这把密钥的值
     // （默认圆点，右端按钮显示/隐藏，点开能看全）。改它就是改这一把，输入另一把再保存就是新增。
     const int key_x = make_aligned_label(tr("ai.key"), x0, labels, y, panel);
-    const int key_w = S(240);
+    const int key_w = S(200);
     hAiKeyList_ = make_list_combo(kAiKeyListId, key_x, y, key_w, 6, panel);
-    hAiKeyRemove_ = make_button(kAiKeyRemoveId, L"\u2715", key_x + key_w - S(28), y, S(26), panel);
+    hAiKeyRemove_ = make_button(kAiKeyRemoveId, L"\u2715", key_x + key_w + S(8), y, S(56), panel);
     y += kRowH;
     hAiKey_ = make_text_edit(kAiKeyId, key_x, y, key_w, panel);
     SendMessageW(hAiKey_, EM_SETPASSWORDCHAR, static_cast<WPARAM>(L'\u25CF'), 0);
     SendMessageW(hAiKey_, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(tr("ai.key_placeholder")));
-    hAiKeyReveal_ = make_button(kAiRevealId, tr("ai.key_show"), key_x + key_w - S(52), y, S(50),
+    hAiKeyReveal_ = make_button(kAiRevealId, tr("ai.key_show"), key_x + key_w + S(8), y, S(56),
                                 panel);
     y += kRowH;
     hAiKeyHint_ = make_hint(tr("ai.key_hint"), key_x, y - S(8), hint_w, panel, 1);
