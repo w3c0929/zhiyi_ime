@@ -85,7 +85,7 @@ const std::vector<Provider>& table() {
         {"vercel", "Vercel AI Gateway", "https://ai-gateway.vercel.sh",
          "anthropic/claude-sonnet-4.5", Protocol::kAnthropicMessages},
         {"opencode_go", "OpenCode Go", "https://opencode.ai/zen/go/v1", "deepseek-v4-flash",
-         Protocol::kOpenAiCompletions},
+         Protocol::kOpenAiCompletions, "x-opencode-session"},
         {"opencode", "OpenCode Zen", "https://opencode.ai/zen/v1", "deepseek-v4-flash",
          Protocol::kOpenAiCompletions},
         {"ollama", "Ollama（本机）", "http://localhost:11434/v1", "qwen2.5:7b",
@@ -268,8 +268,19 @@ struct Request {
     std::string body;
 };
 
-bool build_request(const AiConfig& config, Protocol protocol, const std::string& system_prompt,
-                   const std::string& user_prompt, const std::string& key, Request* request) {
+// Some services route by an extra header whose value is ours to choose (OpenCode Go); one id
+// per process is enough to look like a single session.
+const std::string& session_id() {
+    static const std::string kSession = [] {
+        return "zhiyu-" + std::to_string(GetCurrentProcessId()) + "-" +
+               std::to_string(GetTickCount64());
+    }();
+    return kSession;
+}
+
+bool build_request(const AiConfig& config, const Provider& provider,
+                   const std::string& system_prompt, const std::string& user_prompt,
+                   const std::string& key, Request* request) {
     const std::string base = trim_slashes(effective_base_url(config));
     const std::string model = effective_model(config);
     if (base.empty() || model.empty()) {
@@ -277,15 +288,20 @@ bool build_request(const AiConfig& config, Protocol protocol, const std::string&
         return false;
     }
     const std::wstring wide_key = utf8_to_wide(key);
+    const std::wstring extra =
+        (provider.extra_header && *provider.extra_header)
+            ? utf8_to_wide(std::string(provider.extra_header) + ": " + session_id())
+            : std::wstring();
 
-    switch (protocol) {
+    switch (provider.protocol) {
     case Protocol::kOpenAiCompletions:
     case Protocol::kMistralConversations: {
         const std::string path =
-            protocol == Protocol::kMistralConversations ? "/v1/chat/completions"
-                                                        : "/chat/completions";
+            provider.protocol == Protocol::kMistralConversations ? "/v1/chat/completions"
+                                                                 : "/chat/completions";
         request->url = utf8_to_wide(base + path);
         request->headers.push_back(L"Content-Type: application/json");
+        if (!extra.empty()) request->headers.push_back(extra);
         if (!wide_key.empty()) request->headers.push_back(L"Authorization: Bearer " + wide_key);
         nlohmann::json body = {{"model", model},
                                {"messages",
@@ -300,6 +316,7 @@ bool build_request(const AiConfig& config, Protocol protocol, const std::string&
     case Protocol::kAnthropicMessages: {
         request->url = utf8_to_wide(base + "/v1/messages");
         request->headers.push_back(L"Content-Type: application/json");
+        if (!extra.empty()) request->headers.push_back(extra);
         request->headers.push_back(L"anthropic-version: 2023-06-01");
         if (!wide_key.empty()) request->headers.push_back(L"x-api-key: " + wide_key);
         nlohmann::json body = {
@@ -317,6 +334,7 @@ bool build_request(const AiConfig& config, Protocol protocol, const std::string&
             request->headers.push_back(L"x-goog-api-key: " + wide_key);
         }
         request->headers.push_back(L"Content-Type: application/json");
+        if (!extra.empty()) request->headers.push_back(extra);
         nlohmann::json body = {
             {"systemInstruction", {{"parts", {{{"text", system_prompt}}}}}},
             {"contents", {{{"role", "user"}, {"parts", {{{"text", user_prompt}}}}}}},
@@ -399,6 +417,14 @@ const Provider* find_provider(const std::string& id) {
         if (id == provider.id) return &provider;
     }
     return nullptr;
+}
+
+const Provider& selected_provider(const AiConfig& config) {
+    // An id that is not in the table: the last entry ("custom"), whose address and model are
+    // the user's — an empty one is then reported as such instead of silently using another
+    // service.
+    const Provider* provider = find_provider(config.provider);
+    return provider ? *provider : table().back();
 }
 
 const char* protocol_name(Protocol protocol) {
@@ -488,8 +514,7 @@ bool complete(const AiConfig& config, const std::string& system_prompt,
         if (error) *error = g_last_error;
         return false;
     }
-    const Provider* provider = find_provider(config.provider);
-    const Protocol protocol = provider ? provider->protocol : Protocol::kOpenAiCompletions;
+    const Provider& provider = selected_provider(config);
 
     // One try per key: a refused key (401/429) is not worth retrying with itself.
     for (const std::string& stored : config.keys) {
@@ -501,7 +526,7 @@ bool complete(const AiConfig& config, const std::string& system_prompt,
         std::string key;
         if (!unprotect_secret(stored, &key) || key.empty()) continue;
         Request request;
-        if (!build_request(config, protocol, system_prompt, user_prompt, key, &request)) {
+        if (!build_request(config, provider, system_prompt, user_prompt, key, &request)) {
             if (error) *error = g_last_error;
             return false;
         }
@@ -512,7 +537,7 @@ bool complete(const AiConfig& config, const std::string& system_prompt,
             g_last_error = failure;
             continue;  // the next key may still work
         }
-        if (parse_response(protocol, body, text)) {
+        if (parse_response(provider.protocol, body, text)) {
             if (error) error->clear();
             return true;
         }
