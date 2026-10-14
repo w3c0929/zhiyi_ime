@@ -82,6 +82,24 @@ Section "Install"
   FileOpen $0 "$AppDir\.zhiyu-install-complete" w
   FileClose $0
 
+  ; The legacy IMM module must live in the system directory under the name zhiyu.ime:
+  ; the Keyboard Layouts entry written during registration (register.cpp) names it, and
+  ; without the file the input method cannot be loaded. Upstream does the same (zhiyi.ime).
+  ; A 32-bit installer's writes to System32 are redirected to SysWOW64, hence the
+  ; DisableX64FSRedirection around the 64-bit copy.
+  ${If} ${RunningX64}
+    ${DisableX64FSRedirection}
+    SetOutPath "$WINDIR\System32"
+    File /oname=zhiyu.ime "${SRCDIR}\zhiyu_ime_x64.ime"
+    ${EnableX64FSRedirection}
+    SetOutPath "$WINDIR\SysWOW64"
+    File /oname=zhiyu.ime "${SRCDIR}\zhiyu_ime_x86.ime"
+  ${Else}
+    SetOutPath "$WINDIR\System32"
+    File /oname=zhiyu.ime "${SRCDIR}\zhiyu_ime_x86.ime"
+  ${EndIf}
+  SetOutPath "$AppDir"
+
   !insertmacro RegisterTsf
 
   IfFileExists "$AppDir\zhiyu-server.exe" 0 +2
@@ -110,6 +128,16 @@ Section "Uninstall"
     ExecWait '"$AppDir\zhiyu-installer-helper.exe" force-stop-server "$AppDir"'
 
   !insertmacro UnregisterTsf
+
+  ; Remove the IMM module installed into the system directory.
+  ${If} ${RunningX64}
+    ${DisableX64FSRedirection}
+    Delete "$WINDIR\System32\zhiyu.ime"
+    ${EnableX64FSRedirection}
+    Delete "$WINDIR\SysWOW64\zhiyu.ime"
+  ${Else}
+    Delete "$WINDIR\System32\zhiyu.ime"
+  ${EndIf}
 
   RMDir /r "$SMPROGRAMS\${APP_NAME}"
   RMDir /r "$INSTDIR"
