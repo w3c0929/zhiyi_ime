@@ -141,16 +141,16 @@ void EditorApp::create_ai_panel(HWND panel) {
     }
     y += kRowH;
 
-    // API 密钥（两行，与 SuMail 一致）：上一行是当前用哪把，尾部 ✕ 删除；下一行输入新密钥，
-    // 末尾的按钮显示/隐藏输入内容。输入的新密钥在应用/保存时自动加密加入，不需要"添加"按钮。
+    // API 密钥（两行，与 SuMail 一致）：上一行选"用哪把"（右端 ✕ 删除）；下一行是这把密钥的值
+    // （默认圆点，右端按钮显示/隐藏，点开能看全）。改它就是改这一把，输入另一把再保存就是新增。
     const int key_x = make_aligned_label(tr("ai.key"), x0, labels, y, panel);
-    const int key_w = S(230);
+    const int key_w = S(240);
     hAiKeyList_ = make_list_combo(kAiKeyListId, key_x, y, key_w, 6, panel);
-    hAiKeyRemove_ = make_button(kAiKeyRemoveId, L"\u2715", key_x + key_w + S(4), y, S(30), panel);
+    hAiKeyRemove_ = make_button(kAiKeyRemoveId, L"\u2715", key_x + key_w - S(28), y, S(26), panel);
     y += kRowH;
     hAiKey_ = make_text_edit(kAiKeyId, key_x, y, key_w, panel);
     SendMessageW(hAiKey_, EM_SETPASSWORDCHAR, static_cast<WPARAM>(L'\u25CF'), 0);
-    hAiKeyReveal_ = make_button(kAiRevealId, tr("ai.key_show"), key_x + key_w + S(4), y, S(52),
+    hAiKeyReveal_ = make_button(kAiRevealId, tr("ai.key_show"), key_x + key_w - S(52), y, S(50),
                                 panel);
     y += kRowH;
     hAiKeyHint_ = make_hint(tr("ai.key_hint"), key_x, y - S(8), hint_w, panel, 1);
@@ -231,6 +231,7 @@ void EditorApp::refresh_ai_key_list() {
     }
     if (!ai_keys_.empty()) SendMessageW(hAiKeyList_, CB_SETCURSEL, 0, 0);
     SetWindowTextW(hAiKeyHint_, with_number(tr("ai.keys_stored"), ai_keys_.size()).c_str());
+    show_ai_key_value();
 }
 
 void EditorApp::populate_ai() {
@@ -297,14 +298,22 @@ void EditorApp::read_ai(cxxime::Config& config) {
     config.ai.use_for.voice = get_check(hAiUseVoice_);
     config.ai.use_for.glossary = get_check(hAiUseGlossary_);
 
-    // A key typed here is protected and added once: the box is emptied, so a later read does not
-    // add it again, and the plain key is never kept anywhere.
+    // Row two is the key in use and is editable: a value that is not among the stored ones is a
+    // new key and is added (SuMail's box adds one the same way); an unchanged one is left alone,
+    // so the same key is never stored twice.
     const std::string typed = edit_text_utf8(hAiKey_);
     if (!typed.empty()) {
-        const std::string stored = ai::protect_secret(typed);
-        if (!stored.empty()) {
-            ai_keys_.push_back(stored);
-            SetWindowTextW(hAiKey_, L"");
+        bool known = false;
+        for (const std::string& stored : ai_keys_) {
+            std::string plain;
+            if (ai::unprotect_secret(stored, &plain) && plain == typed) {
+                known = true;
+                break;
+            }
+        }
+        if (!known) {
+            const std::string protected_key = ai::protect_secret(typed);
+            if (!protected_key.empty()) ai_keys_.push_back(protected_key);
         }
     }
     // The list picks which key is tried first (the ones after it are the fallbacks), as SuMail's
@@ -420,6 +429,17 @@ void EditorApp::run_ai_test() {
     refresh_ai_key_list();
 }
 
+// Row two shows the value of the key the list has selected (dots unless revealed).
+void EditorApp::show_ai_key_value() {
+    if (!hAiKey_) return;
+    const int selected = hAiKeyList_ ? combo_index(hAiKeyList_) : 0;
+    std::string plain;
+    if (selected >= 0 && selected < static_cast<int>(ai_keys_.size())) {
+        cxxime::ai::unprotect_secret(ai_keys_[static_cast<std::size_t>(selected)], &plain);
+    }
+    SetWindowTextW(hAiKey_, utf8_to_wstr(plain).c_str());
+}
+
 bool EditorApp::handle_ai_command(int control_id, int notification) {
     switch (control_id) {
     case kAiTestId:
@@ -463,6 +483,10 @@ bool EditorApp::handle_ai_command(int control_id, int notification) {
         refresh_ai_key_list();
         return true;
     }
+    case kAiKeyListId:
+        // Another key picked: row two shows that one's value.
+        if (notification == CBN_SELCHANGE) show_ai_key_value();
+        return true;
     case kAiKeyRemoveId: {
         if (notification != BN_CLICKED) return true;
         const int selected = combo_index(hAiKeyList_);

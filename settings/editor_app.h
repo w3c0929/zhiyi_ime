@@ -67,6 +67,7 @@ private:
     void apply_ai_provider_defaults();
     void fetch_ai_models();
     void refresh_ai_key_list();
+    void show_ai_key_value();
     void detect_ai_provider();
     bool handle_ai_command(int control_id, int notification);
     void show_panel(int idx);
