@@ -13,6 +13,7 @@ point makensis at your own installer script over the produced folder, or ship th
 setup.exe exists, run scripts/make_release.py to build and sign latest.json.
 """
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -78,6 +79,31 @@ def overlay_repo_data(out_dir):
     return written
 
 
+# The lifecycle (installer/src/installer_lifecycle_*.cc) keeps a list of a version directory's
+# files; the installer copies this file into the version directory along with the rest.
+MANIFEST_NAME = "install-manifest.json"
+MANIFEST_SKIP = {MANIFEST_NAME, ".zhiyu-install-complete"}
+# Written by the installer (WriteUninstaller) rather than shipped, but part of the version.
+MANIFEST_EXTRA = ("uninstall.exe",)
+
+
+def write_install_manifest(out_dir):
+    files = []
+    for root, _dirs, names in os.walk(out_dir):
+        for name in names:
+            if name in MANIFEST_SKIP:
+                continue
+            relative = os.path.relpath(os.path.join(root, name), out_dir)
+            files.append(relative.replace(os.sep, "/"))
+    files = sorted(set(files).union(MANIFEST_EXTRA))
+    manifest = {"format": "zhiyu-install-manifest", "version": 1, "files": files}
+    path = os.path.join(out_dir, MANIFEST_NAME)
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(manifest, file, ensure_ascii=False, indent=2)
+        file.write("\n")
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(description="Assemble a release folder and zip.")
     parser.add_argument("--reference", required=True, help="an installed copy to take data from")
@@ -100,6 +126,7 @@ def main():
     print("overwriting repository data:")
     for name in overlay_repo_data(out_dir):
         print(f"  data\\{name}")
+    print(f"writing {write_install_manifest(out_dir)}")
 
     archive = os.path.join(args.out, f"zhiyu-v{args.version}")
     shutil.make_archive(archive, "zip", args.out, f"zhiyu-v{args.version}")
