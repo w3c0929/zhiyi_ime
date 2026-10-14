@@ -50,6 +50,8 @@ void EditorApp::create_ai_panel(HWND panel) {
     for (const ai::Provider& provider : ai::providers()) {
         combo_add(hAiProvider_, utf8_to_wstr(provider.name).c_str());
     }
+    // Thirty-odd entries: a tall enough drop-down to browse.
+    set_combo_drop_count(hAiProvider_, 20);
     y += kRowH;
 
     const int url_x = make_aligned_label(tr("ai.base_url"), x0, labels, y, panel);
@@ -211,12 +213,9 @@ bool EditorApp::handle_ai_command(int control_id, int notification) {
     case kAiTestId:
         if (notification == BN_CLICKED) run_ai_test();
         return true;
-    case kAiEnabledId:
-    case kAiProviderId:
-        // The service row and the key count are worth refreshing after a change.
-        if (notification == BN_CLICKED || notification == CBN_SELCHANGE) populate_ai();
-        return true;
     default:
+        // Nothing else here: the provider is left alone while the page is open, so picking one
+        // in the drop-down sticks (populate_ai would set it straight back).
         return false;
     }
 }

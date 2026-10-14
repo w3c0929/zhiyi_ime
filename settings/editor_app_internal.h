@@ -118,20 +118,22 @@ constexpr int kTranslatorId = 5020;
 constexpr int kTranslatorDeviceId = 5021;
 constexpr int kTranslatorActionId = 5022;
 constexpr int kTranslatorRemoveId = 5023;
-// The AI page (editor_ai_panel.cc, docs/ai.md).
-constexpr int kAiEnabledId = 5030;
-constexpr int kAiProviderId = 5031;
-constexpr int kAiBaseUrlId = 5032;
-constexpr int kAiModelId = 5033;
-constexpr int kAiKeyId = 5034;
-constexpr int kAiModeId = 5035;
-constexpr int kAiTimeoutId = 5036;
-constexpr int kAiUseTranslateId = 5037;
-constexpr int kAiUseSelectionId = 5038;
-constexpr int kAiUseEnglishId = 5039;
-constexpr int kAiUseVoiceId = 5040;
-constexpr int kAiUseGlossaryId = 5041;
-constexpr int kAiTestId = 5042;
+// The AI page (editor_ai_panel.cc, docs/ai.md). 6000+: the ranges below 6000 are taken
+// (word lists use 5030 and 5100/5300/5500 upward, voice 5801), and a collision shows up as one
+// page's button running another page's command.
+constexpr int kAiEnabledId = 6000;
+constexpr int kAiProviderId = 6001;
+constexpr int kAiBaseUrlId = 6002;
+constexpr int kAiModelId = 6003;
+constexpr int kAiKeyId = 6004;
+constexpr int kAiModeId = 6005;
+constexpr int kAiTimeoutId = 6006;
+constexpr int kAiUseTranslateId = 6007;
+constexpr int kAiUseSelectionId = 6008;
+constexpr int kAiUseEnglishId = 6009;
+constexpr int kAiUseVoiceId = 6010;
+constexpr int kAiUseGlossaryId = 6011;
+constexpr int kAiTestId = 6012;
 HWND make_web_link(int id, const wchar_t* text, int x, int y, int width, HWND parent);
 HWND make_button(int id, const wchar_t* text, int x, int y, int width, HWND parent);
 HWND make_radio(int id, const wchar_t* text, int x, int y, int width, HWND parent, bool group);
