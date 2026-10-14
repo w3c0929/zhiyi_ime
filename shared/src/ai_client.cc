@@ -279,6 +279,56 @@ const std::string& session_id() {
     return kSession;
 }
 
+// How a service wants to be told about thinking (SuMail's detectCompat + applyThinkingCompat).
+// A provider whose name or address is not one of these uses the standard reasoning_effort.
+std::string thinking_format_for(const Provider& provider, const std::string& base) {
+    std::string url = base;
+    for (char& c : url) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
+    }
+    const std::string id = provider.id;
+    const auto has = [&](const char* text) { return url.find(text) != std::string::npos; };
+    if (id == "deepseek" || has("deepseek.com")) return "deepseek";
+    if (id == "zai" || has("api.z.ai") || has("open.bigmodel.cn")) return "zai";
+    if (id == "qwen" || has("dashscope")) return "qwen";
+    if (id == "openrouter" || has("openrouter.ai")) return "openrouter";
+    if (id == "together" || has("api.together.")) return "together";
+    if (id == "ant_ling" || has("api.ant-ling.com")) return "ant-ling";
+    return {};
+}
+
+// Writes the thinking switch and the level the way this service expects. Thinking is on for most
+// of them unless it is asked off, and each family asks differently:
+//   deepseek, zai  thinking: {type: enabled|disabled} (+ reasoning_effort when on; zai keeps the
+//                  reasoning of the previous turn)
+//   qwen           enable_thinking: true|false
+//   chat template  chat_template_kwargs: {enable_thinking, preserve_thinking}
+//   otherwise      reasoning_effort: <level>, or "none" to turn it off
+void apply_thinking(nlohmann::json* body, const std::string& format, bool enabled,
+                    const std::string& effort) {
+    const std::string level = effort.empty() ? std::string("high") : effort;
+    if (format == "deepseek" || format == "zai") {
+        nlohmann::json thinking = {{"type", enabled ? "enabled" : "disabled"}};
+        if (enabled && format == "zai") thinking["clear_thinking"] = false;
+        (*body)["thinking"] = thinking;
+        if (enabled) (*body)["reasoning_effort"] = level;
+        return;
+    }
+    if (format == "qwen") {
+        (*body)["enable_thinking"] = enabled;
+        return;
+    }
+    if (format == "qwen-chat-template") {
+        (*body)["chat_template_kwargs"] = {{"enable_thinking", enabled},
+                                           {"preserve_thinking", true}};
+        return;
+    }
+    if (format == "chat-template") {
+        (*body)["chat_template_kwargs"] = {{"enable_thinking", enabled}};
+        return;
+    }
+    (*body)["reasoning_effort"] = enabled ? level : std::string("none");
+}
 bool build_request(const AiConfig& config, const Provider& provider,
                    const std::string& system_prompt, const std::string& user_prompt,
                    const std::string& key, bool send_thinking_off, Request* request) {
@@ -310,7 +360,7 @@ bool build_request(const AiConfig& config, const Provider& provider,
                                  {{"role", "user"}, {"content", user_prompt}}}},
 
                                {"stream", false}};
-        if (send_thinking_off) body["reasoning_effort"] = "none";  // thinking is on unless asked off
+        if (!send_thinking_off) apply_thinking(&body, thinking_format_for(provider, base), config.thinking, config.reasoning_effort);
         else if (config.thinking && !config.reasoning_effort.empty()) {
             body["reasoning_effort"] = config.reasoning_effort;
         }
