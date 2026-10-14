@@ -66,6 +66,7 @@ private:
     void run_ai_test();
     void apply_ai_provider_defaults();
     void fetch_ai_models();
+    void refresh_ai_key_list();
     bool handle_ai_command(int control_id, int notification);
     void show_panel(int idx);
     void release_fonts();
@@ -267,6 +268,8 @@ private:
     // AI (editor_ai_panel.cc)
     HWND hAiEnabled_ = nullptr, hAiProvider_ = nullptr, hAiBaseUrl_ = nullptr;
     HWND hAiModel_ = nullptr, hAiKey_ = nullptr, hAiMode_ = nullptr, hAiTimeout_ = nullptr;
+    HWND hAiKeyReveal_ = nullptr, hAiKeyAdd_ = nullptr, hAiKeyList_ = nullptr;
+    HWND hAiKeyRemove_ = nullptr;
     HWND hAiUseTranslate_ = nullptr, hAiUseSelection_ = nullptr, hAiUseEnglish_ = nullptr;
     HWND hAiUseVoice_ = nullptr, hAiUseGlossary_ = nullptr;
     HWND hAiTest_ = nullptr, hAiTestResult_ = nullptr, hAiKeyHint_ = nullptr;

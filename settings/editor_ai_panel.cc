@@ -5,11 +5,10 @@
 // "let the API translate the selection" does not imply "let it see the voice input".
 //
 // The address and the model always show what actually runs: picking a service fills them with
-// that service's own, and "Get models" asks the service for its list (ai_client.cc list_models,
-// the same path the chat calls take: /models, Ollama's /api/tags, Anthropic's /v1/models) and
-// fills the drop-down with it. The model box can still be typed in. A key typed into the key box
-// is DPAPI-protected as soon as the page is read and the box is emptied, so the plain key is
-// never written anywhere.
+// that service's own, and "Get models" asks it for its list (ai_client.cc list_models — the same
+// path the chat calls take: /models, Ollama's /api/tags, Anthropic's /v1/models) and fills the
+// drop-down with it. Keys are stored DPAPI-protected (ai_client.h); several are kept, the list
+// shows them masked, and the eye button reveals what is being typed into the box.
 
 #include "editor_app.h"
 
@@ -27,6 +26,13 @@ namespace settings {
 
 namespace {
 
+// The page's own controls. The ids below 6000 are taken by the other pages (a collision shows
+// up as one page's button running another page's command), so 6000+ is this page's range.
+constexpr int kAiRevealId = 6014;
+constexpr int kAiKeyAddId = 6015;
+constexpr int kAiKeyListId = 6016;
+constexpr int kAiKeyRemoveId = 6017;
+
 // The two modes, in the order of the combo (AiConfig::mode).
 const char* const kAiModeKeys[] = {"ai.mode_prefer_remote", "ai.mode_remote_only"};
 
@@ -34,8 +40,8 @@ std::wstring with_number(const wchar_t* text, std::size_t number) {
     return std::wstring(text) + L" " + std::to_wstring(number);
 }
 
-// A plain text box: make_edit (editor_controls.cc) is a number box (ES_NUMBER), which refuses
-// an address or a key with "you can only type digits here".
+// A plain text box: make_edit (editor_controls.cc) is a number box (ES_NUMBER), which refuses an
+// address or a key with "you can only type digits here".
 HWND make_text_edit(int id, int x, int y, int width, HWND parent) {
     HWND edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, x, y, width,
@@ -44,6 +50,30 @@ HWND make_text_edit(int id, int x, int y, int width, HWND parent) {
                                 GetModuleHandle(nullptr), nullptr);
     SendMessageW(edit, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
     return edit;
+}
+
+// A drop-down made like make_combo but without its wheel-to-the-page redirect, so the open list
+// scrolls with the wheel (thirty-odd services do not fit at once).
+HWND make_list_combo(int id, int x, int y, int width, int drop_rows, HWND parent) {
+    HWND combo = CreateWindowExW(0, L"COMBOBOX", L"",
+                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
+                                     CBS_DROPDOWNLIST,
+                                 x, y, width, S(kCtrlH * drop_rows), parent,
+                                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+                                 GetModuleHandle(nullptr), nullptr);
+    SendMessageW(combo, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
+    return combo;
+}
+
+// The same, but the box takes a typed-in value too (the model).
+HWND make_edit_combo(int id, int x, int y, int width, int drop_rows, HWND parent) {
+    HWND combo = CreateWindowExW(0, L"COMBOBOX", L"",
+                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWN,
+                                 x, y, width, S(kCtrlH * drop_rows), parent,
+                                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+                                 GetModuleHandle(nullptr), nullptr);
+    SendMessageW(combo, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
+    return combo;
 }
 
 void set_combo_text(HWND combo, const std::string& text) {
@@ -69,61 +99,71 @@ void fill_model_combo(HWND combo, const std::vector<std::string>& models,
     }
 }
 
+// "oc_s……-2WK": enough to tell two stored keys apart without putting one on the screen.
+std::wstring masked_key(const std::string& key) {
+    const std::wstring wide = utf8_to_wstr(key);
+    if (wide.size() <= 10) return L"********";
+    return wide.substr(0, 4) + L"\u2026\u2026" + wide.substr(wide.size() - 4);
+}
+
 }  // namespace
 
 void EditorApp::create_ai_panel(HWND panel) {
     const int x0 = kPanelPadLeft;
     const int labels = label_width({"ai.enabled", "ai.provider", "ai.base_url", "ai.model",
                                     "ai.key", "ai.mode", "ai.timeout", "ai.use_for"});
-    const int control_w = S(300);  // fits the card without stretching across it
+    const int control_w = S(300);
     const int hint_w = S(420);
     int y = card_begin(panel, kPanelPadTop, tr("ai.card_service"));
 
     const int label_x = make_aligned_label(tr("ai.enabled"), x0, labels, y, panel);
-    hAiEnabled_ = make_check(kAiEnabledId, tr("ai.enabled_check"), label_x, y, control_w, panel);
+    hAiEnabled_ = make_check(kAiEnabledId, tr("ai.enabled_check"), label_x, y, hint_w, panel);
     y += kRowH;
-    make_hint(tr("ai.enabled_hint"), label_x, y - S(6), hint_w, panel);
-    y += S(40);
+    make_hint(tr("ai.enabled_hint"), label_x, y - S(8), hint_w, panel, 1);
+    y += S(24);
 
     const int provider_x = make_aligned_label(tr("ai.provider"), x0, labels, y, panel);
-    hAiProvider_ = make_combo(kAiProviderId, provider_x, y, control_w, panel);
+    hAiProvider_ = make_list_combo(kAiProviderId, provider_x, y, control_w, 20, panel);
     for (const ai::Provider& provider : ai::providers()) {
         combo_add(hAiProvider_, utf8_to_wstr(provider.name).c_str());
     }
-    set_combo_drop_count(hAiProvider_, 20);  // thirty-odd entries: tall enough to browse
     y += kRowH;
 
     const int url_x = make_aligned_label(tr("ai.base_url"), x0, labels, y, panel);
     hAiBaseUrl_ = make_text_edit(kAiBaseUrlId, url_x, y, control_w, panel);
     y += kRowH;
 
-    // The model: a drop-down the service's own list goes into, still typable.
     const int model_x = make_aligned_label(tr("ai.model"), x0, labels, y, panel);
-    hAiModel_ = CreateWindowExW(0, L"COMBOBOX", L"",
-                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWN,
-                                model_x, y, control_w - S(120), S(kCtrlH * 12), panel,
-                                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kAiModelId)),
-                                GetModuleHandle(nullptr), nullptr);
-    SendMessageW(hAiModel_, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
-    hAiModels_ = make_button(kAiModelsId, tr("ai.get_models"), model_x + control_w - S(112), y,
-                             S(112), panel);
+    hAiModel_ = make_edit_combo(kAiModelId, model_x, y, control_w - S(116), 12, panel);
+    hAiModels_ = make_button(kAiModelsId, tr("ai.get_models"), model_x + control_w - S(110), y,
+                             S(110), panel);
     y += kRowH;
-    hAiModelsHint_ = make_hint(tr("ai.model_hint"), model_x, y - S(6), hint_w, panel, 1);
-    y += S(40);
+    hAiModelsHint_ = make_hint(tr("ai.model_hint"), model_x, y - S(8), hint_w, panel, 1);
+    y += S(24);
 
+    // The key row: the box, the eye, and Add (several keys are kept and used in turn).
     const int key_x = make_aligned_label(tr("ai.key"), x0, labels, y, panel);
-    hAiKey_ = make_text_edit(kAiKeyId, key_x, y, control_w, panel);
-    SendMessageW(hAiKey_, EM_SETPASSWORDCHAR, static_cast<WPARAM>(L'*'), 0);
+    const int eye_w = S(46);
+    hAiKey_ = make_text_edit(kAiKeyId, key_x, y, S(180), panel);
+    SendMessageW(hAiKey_, EM_SETPASSWORDCHAR, static_cast<WPARAM>(L'\u25CF'), 0);
+    // The eye: a button whose label says what the next press does (an icon font glyph would be
+    // overridden by the button's own font).
+    hAiKeyReveal_ = make_button(kAiRevealId, tr("ai.key_show"), key_x + S(184), y, eye_w, panel);
+    hAiKeyAdd_ = make_button(kAiKeyAddId, tr("ai.key_add"), key_x + S(234), y, S(64), panel);
     y += kRowH;
-    hAiKeyHint_ = make_hint(tr("ai.key_hint"), key_x, y - S(6), hint_w, panel);
-    y += S(40);
+
+    // What is stored, and a way to drop one.
+    hAiKeyList_ = make_list_combo(kAiKeyListId, key_x, y, S(180), 6, panel);
+    hAiKeyRemove_ = make_button(kAiKeyRemoveId, tr("ai.key_remove"), key_x + S(184), y, S(96),
+                                panel);
+    y += kRowH;
+    hAiKeyHint_ = make_hint(tr("ai.key_hint"), key_x, y - S(8), hint_w, panel, 1);
+    y += S(24);
 
     const int mode_x = make_aligned_label(tr("ai.mode"), x0, labels, y, panel);
-    hAiMode_ = make_combo(kAiModeId, mode_x, y, S(260), panel);
+    hAiMode_ = make_list_combo(kAiModeId, mode_x, y, S(260), 4, panel);
     for (const char* key : kAiModeKeys) combo_add(hAiMode_, tr(key));
     y += kRowH;
-    make_hint(tr("ai.mode_hint"), mode_x, y - S(6), hint_w, panel);
-    y += S(40);
 
     const int timeout_x = make_aligned_label(tr("ai.timeout"), x0, labels, y, panel);
     hAiTimeout_ = make_edit(kAiTimeoutId, timeout_x, y, S(90), panel);
@@ -144,17 +184,28 @@ void EditorApp::create_ai_panel(HWND panel) {
     y += kRowH;
     hAiUseGlossary_ = make_check(kAiUseGlossaryId, tr("ai.use_glossary"), use_x, y, hint_w, panel);
     y += kRowH;
-    make_hint(tr("ai.use_for_hint"), use_x, y - S(6), hint_w, panel);
-    y += S(40);
 
     hAiTest_ = make_button(kAiTestId, tr("ai.test"), use_x, y, S(110), panel);
-    // A status line beside the button, like the translator's.
     hAiTestResult_ = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT,
-                                     use_x + S(122), y + S(5), S(430), S(kFontPt + 8), panel,
+                                     use_x + S(122), y + S(5), S(400), S(kFontPt + 8), panel,
                                      nullptr, GetModuleHandle(nullptr), nullptr);
     SendMessageW(hAiTestResult_, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
     y += kRowH;
     card_end(panel, y);
+}
+
+// The stored keys, masked, into the list; the hint says how many there are.
+void EditorApp::refresh_ai_key_list() {
+    if (!hAiKeyList_) return;
+    SendMessageW(hAiKeyList_, CB_RESETCONTENT, 0, 0);
+    for (const std::string& stored : ai_keys_) {
+        std::string key;
+        const std::wstring text =
+            cxxime::ai::unprotect_secret(stored, &key) ? masked_key(key) : L"********";
+        SendMessageW(hAiKeyList_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(text.c_str()));
+    }
+    if (!ai_keys_.empty()) SendMessageW(hAiKeyList_, CB_SETCURSEL, 0, 0);
+    SetWindowTextW(hAiKeyHint_, with_number(tr("ai.keys_stored"), ai_keys_.size()).c_str());
 }
 
 void EditorApp::populate_ai() {
@@ -184,7 +235,7 @@ void EditorApp::populate_ai() {
     set_check(hAiUseGlossary_, config_.ai.use_for.glossary);
 
     SetWindowTextW(hAiModelsHint_, tr("ai.model_hint"));
-    SetWindowTextW(hAiKeyHint_, with_number(tr("ai.keys_stored"), ai_keys_.size()).c_str());
+    refresh_ai_key_list();
 }
 
 void EditorApp::read_ai(cxxime::Config& config) {
@@ -309,6 +360,38 @@ bool EditorApp::handle_ai_command(int control_id, int notification) {
         // selection is left alone (populate_ai would set it straight back).
         if (notification == CBN_SELCHANGE) apply_ai_provider_defaults();
         return true;
+    case kAiRevealId: {
+        // The eye: show what is being typed, put it back to dots on the next press.
+        if (notification != BN_CLICKED) return true;
+        static bool revealed = false;
+        revealed = !revealed;
+        SendMessageW(hAiKey_, EM_SETPASSWORDCHAR,
+                     revealed ? 0 : static_cast<WPARAM>(L'\u25CF'), 0);
+        SetWindowTextW(hAiKeyReveal_, revealed ? tr("ai.key_hide") : tr("ai.key_show"));
+        InvalidateRect(hAiKey_, nullptr, TRUE);
+        return true;
+    }
+    case kAiKeyAddId: {
+        if (notification != BN_CLICKED) return true;
+        const std::string typed = edit_text_utf8(hAiKey_);
+        if (typed.empty()) return true;
+        const std::string stored = ai::protect_secret(typed);
+        if (stored.empty()) return true;
+        ai_keys_.push_back(stored);
+        config_.ai.keys = ai_keys_;
+        SetWindowTextW(hAiKey_, L"");
+        refresh_ai_key_list();
+        return true;
+    }
+    case kAiKeyRemoveId: {
+        if (notification != BN_CLICKED) return true;
+        const int selected = combo_index(hAiKeyList_);
+        if (selected < 0 || selected >= static_cast<int>(ai_keys_.size())) return true;
+        ai_keys_.erase(ai_keys_.begin() + selected);
+        config_.ai.keys = ai_keys_;
+        refresh_ai_key_list();
+        return true;
+    }
     default:
         return false;
     }
