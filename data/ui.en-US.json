@@ -32,6 +32,8 @@
     "ai.key_add": "Add",
     "ai.key_remove": "Remove",
     "ai.key_in_use": " (in use)",
+    "ai.key_none": "Pick a saved key",
+    "ai.key_placeholder": "Type an API key, or leave it empty to use the environment",
     "ai.key_show": "Show",
     "ai.key_hide": "Hide",
     "ai.detect": "Detect",

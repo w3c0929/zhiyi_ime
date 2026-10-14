@@ -150,6 +150,7 @@ void EditorApp::create_ai_panel(HWND panel) {
     y += kRowH;
     hAiKey_ = make_text_edit(kAiKeyId, key_x, y, key_w, panel);
     SendMessageW(hAiKey_, EM_SETPASSWORDCHAR, static_cast<WPARAM>(L'\u25CF'), 0);
+    SendMessageW(hAiKey_, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(tr("ai.key_placeholder")));
     hAiKeyReveal_ = make_button(kAiRevealId, tr("ai.key_show"), key_x + key_w - S(52), y, S(50),
                                 panel);
     y += kRowH;
@@ -220,6 +221,12 @@ void EditorApp::create_ai_panel(HWND panel) {
 void EditorApp::refresh_ai_key_list() {
     if (!hAiKeyList_) return;
     SendMessageW(hAiKeyList_, CB_RESETCONTENT, 0, 0);
+    if (ai_keys_.empty()) {  // nothing saved yet: the list says so, as SuMail's does
+        SendMessageW(hAiKeyList_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(tr("ai.key_none")));
+        SetWindowTextW(hAiKeyHint_, with_number(tr("ai.keys_stored"), 0).c_str());
+        SetWindowTextW(hAiKey_, L"");
+        return;
+    }
     int index = 0;
     for (const std::string& stored : ai_keys_) {
         std::string key;
@@ -236,7 +243,11 @@ void EditorApp::refresh_ai_key_list() {
 
 void EditorApp::populate_ai() {
     if (!hAiEnabled_) return;
-    ai_keys_ = config_.ai.keys;
+    // Each service keeps its own keys: show the selected one's.
+    const auto stored_for_provider = config_.ai.keys_by_provider.find(config_.ai.provider);
+    ai_keys_ = stored_for_provider != config_.ai.keys_by_provider.end()
+                   ? stored_for_provider->second
+                   : config_.ai.keys;
 
     set_check(hAiEnabled_, config_.ai.enabled);
 
@@ -333,6 +344,13 @@ void EditorApp::apply_ai_provider_defaults() {
     if (index < 0 || index >= static_cast<int>(providers.size())) return;
     const ai::Provider& provider = providers[static_cast<std::size_t>(index)];
     // What is shown is what runs: the service's own address and model (both empty for "custom").
+    // Keys belong to the service they were made for: keep this one, bring up the other.
+    config_.ai.keys_by_provider[config_.ai.provider] = ai_keys_;
+    config_.ai.provider = provider.id;
+    const auto for_new = config_.ai.keys_by_provider.find(config_.ai.provider);
+    ai_keys_ = for_new != config_.ai.keys_by_provider.end() ? for_new->second
+                                                          : std::vector<std::string>{};
+    refresh_ai_key_list();
     set_combo_text(hAiBaseUrl_, provider.base_url);
     SendMessageW(hAiModel_, CB_RESETCONTENT, 0, 0);
     if (provider.model[0] != '\0') {

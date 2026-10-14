@@ -32,6 +32,8 @@
     "ai.key_add": "添加",
     "ai.key_remove": "删除所选",
     "ai.key_in_use": "（使用中）",
+    "ai.key_none": "选择已保存的 Key",
+    "ai.key_placeholder": "输入 API 密钥，或留空使用环境认证",
     "ai.key_show": "显示",
     "ai.key_hide": "隐藏",
     "ai.detect": "识别",

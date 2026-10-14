@@ -8,6 +8,7 @@
 #ifndef CXXIME_AI_CONFIG_H_
 #define CXXIME_AI_CONFIG_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -39,6 +40,9 @@ struct AiConfig {
     std::string reasoning_effort;  // "" = do not send one
     int timeout_ms = 8000;
     std::vector<std::string> keys;  // DPAPI-protected, base64 (ai_secret in ai_client.h)
+    // A key is only valid for the service it was made for, so each provider keeps its own list;
+    // keys above mirrors the selected provider's list, which is what the client uses.
+    std::map<std::string, std::vector<std::string>> keys_by_provider;
     AiUseFor use_for;
     // Off: the reasoning level is not sent at all (SuMail's thinking switch).
     bool thinking = true;

@@ -489,6 +489,21 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
                 if (key.is_string()) config.ai.keys.push_back(key.get<std::string>());
             }
         }
+        if (ai.contains("keys_by_provider") && ai["keys_by_provider"].is_object()) {
+            config.ai.keys_by_provider.clear();
+            for (const auto& [name, list] : ai["keys_by_provider"].items()) {
+                if (!list.is_array()) continue;
+                for (const auto& key : list) {
+                    if (key.is_string()) {
+                        config.ai.keys_by_provider[name].push_back(key.get<std::string>());
+                    }
+                }
+            }
+        }
+        // An older file kept one flat list: that was the selected provider's, so it becomes its.
+        if (!config.ai.keys.empty() && config.ai.keys_by_provider.empty()) {
+            config.ai.keys_by_provider[config.ai.provider] = config.ai.keys;
+        }
         if (ai.contains("use_for") && ai["use_for"].is_object()) {
             auto& use = ai["use_for"];
             load_bool(use, "translate", config.ai.use_for.translate);
@@ -855,6 +870,7 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["ai"]["thinking"] = config.ai.thinking;
     j["ai"]["timeout_ms"] = config.ai.timeout_ms;
     j["ai"]["keys"] = config.ai.keys;
+    j["ai"]["keys_by_provider"] = config.ai.keys_by_provider;
     j["ai"]["use_for"]["translate"] = config.ai.use_for.translate;
     j["ai"]["use_for"]["selection"] = config.ai.use_for.selection;
     j["ai"]["use_for"]["english"] = config.ai.use_for.english;
