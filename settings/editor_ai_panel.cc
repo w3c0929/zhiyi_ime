@@ -38,6 +38,7 @@ constexpr int kAiKeyListId = 6016;
 constexpr int kAiKeyRemoveId = 6017;
 constexpr int kAiDetectId = 6018;
 constexpr int kAiEffortId = 6019;
+constexpr int kAiThinkingId = 6020;
 
 // The two modes, in the order of the combo (AiConfig::mode).
 const char* const kAiModeKeys[] = {"ai.mode_prefer_remote", "ai.mode_remote_only"};
@@ -174,6 +175,8 @@ void EditorApp::create_ai_panel(HWND panel) {
     const int effort_x = make_aligned_label(tr("ai.effort"), x0, labels, y, panel);
     hAiEffort_ = make_list_combo(kAiEffortId, effort_x, y, S(160), 5, panel);
     for (const char* key : kAiEffortKeys) combo_add(hAiEffort_, tr(key));
+    // 思考模式：关掉就完全不发推理等级（SuMail 的 thinking 开关）。
+    hAiThinking_ = make_check(kAiThinkingId, tr("ai.thinking"), effort_x + S(170), y, S(240), panel);
     y += kRowH;
 
     // 超时与模式
@@ -251,6 +254,8 @@ void EditorApp::populate_ai() {
         if (config_.ai.reasoning_effort == kAiEffortValues[i]) effort = static_cast<int>(i);
     }
     combo_set_index(hAiEffort_, effort);
+    set_check(hAiThinking_, config_.ai.thinking);
+    EnableWindow(hAiEffort_, config_.ai.thinking ? TRUE : FALSE);
 
     set_check(hAiUseTranslate_, config_.ai.use_for.translate);
     set_check(hAiUseSelection_, config_.ai.use_for.selection);
@@ -279,6 +284,7 @@ void EditorApp::read_ai(cxxime::Config& config) {
         effort >= 0 && effort < static_cast<int>(std::size(kAiEffortValues))
             ? kAiEffortValues[effort]
             : std::string();
+    config.ai.thinking = get_check(hAiThinking_);
     config.ai.mode = combo_index(hAiMode_) == 1 ? "remote_only" : "prefer_remote";
     config.ai.timeout_ms = (std::max)(1000, (std::min)(get_edit_int(hAiTimeout_), 120000));
     config.ai.use_for.translate = get_check(hAiUseTranslate_);
@@ -425,6 +431,10 @@ bool EditorApp::handle_ai_command(int control_id, int notification) {
         // Another service: fill the address and the model with its own. The drop-down's own
         // selection is left alone (populate_ai would set it straight back).
         if (notification == CBN_SELCHANGE) apply_ai_provider_defaults();
+        return true;
+    case kAiThinkingId:
+        // The level is meaningless without it: grey it out.
+        if (notification == BN_CLICKED) EnableWindow(hAiEffort_, get_check(hAiThinking_) ? TRUE : FALSE);
         return true;
     case kAiRevealId: {
         // The eye: show what is being typed, put it back to dots on the next press.

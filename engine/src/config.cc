@@ -480,6 +480,7 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         load_double(ai, "temperature", config.ai.temperature);
         config.ai.temperature = std::clamp(config.ai.temperature, 0.0, 2.0);
         load_string(ai, "reasoning_effort", config.ai.reasoning_effort);
+        load_bool(ai, "thinking", config.ai.thinking);
         load_int(ai, "timeout_ms", config.ai.timeout_ms);
         config.ai.timeout_ms = std::clamp(config.ai.timeout_ms, 1000, 120000);
         if (ai.contains("keys") && ai["keys"].is_array()) {
@@ -851,6 +852,7 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["ai"]["model"] = config.ai.model;
     j["ai"]["temperature"] = config.ai.temperature;
     j["ai"]["reasoning_effort"] = config.ai.reasoning_effort;
+    j["ai"]["thinking"] = config.ai.thinking;
     j["ai"]["timeout_ms"] = config.ai.timeout_ms;
     j["ai"]["keys"] = config.ai.keys;
     j["ai"]["use_for"]["translate"] = config.ai.use_for.translate;

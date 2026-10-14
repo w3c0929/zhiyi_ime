@@ -37,6 +37,7 @@
     "ai.detected": "已识别为",
     "ai.detect_failed": "未识别出服务商，请手动选择",
     "ai.effort": "推理等级",
+    "ai.thinking": "思考模式",
     "ai.effort_default": "默认",
     "ai.effort_low": "低",
     "ai.effort_medium": "中",

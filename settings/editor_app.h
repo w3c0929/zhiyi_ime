@@ -275,7 +275,7 @@ private:
     HWND hAiUseVoice_ = nullptr, hAiUseGlossary_ = nullptr;
     HWND hAiTest_ = nullptr, hAiTestResult_ = nullptr, hAiKeyHint_ = nullptr;
     HWND hAiModels_ = nullptr, hAiModelsHint_ = nullptr;
-    HWND hAiDetect_ = nullptr, hAiEffort_ = nullptr;
+    HWND hAiDetect_ = nullptr, hAiEffort_ = nullptr, hAiThinking_ = nullptr;
     // The stored (DPAPI-protected) keys: kept here so a page rebuild does not lose them.
     std::vector<std::string> ai_keys_;
     std::vector<GpuAdapter> mt_choices_;  // list_translator_gpus() once installed, then the CPU

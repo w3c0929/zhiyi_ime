@@ -37,6 +37,7 @@
     "ai.detected": "Detected:",
     "ai.detect_failed": "Service not recognised; pick one by hand",
     "ai.effort": "Reasoning",
+    "ai.thinking": "Thinking",
     "ai.effort_default": "Default",
     "ai.effort_low": "Low",
     "ai.effort_medium": "Medium",

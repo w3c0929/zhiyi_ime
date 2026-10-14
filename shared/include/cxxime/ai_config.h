@@ -40,6 +40,8 @@ struct AiConfig {
     int timeout_ms = 8000;
     std::vector<std::string> keys;  // DPAPI-protected, base64 (ai_secret in ai_client.h)
     AiUseFor use_for;
+    // Off: the reasoning level is not sent at all (SuMail's thinking switch).
+    bool thinking = true;
 
     bool uses(bool AiUseFor::*use) const { return enabled && use_for.*use; }
     bool remote_only() const { return mode == "remote_only"; }

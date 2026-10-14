@@ -310,7 +310,9 @@ bool build_request(const AiConfig& config, const Provider& provider,
                                  {{"role", "user"}, {"content", user_prompt}}}},
                                {"temperature", config.temperature},
                                {"stream", false}};
-        if (!config.reasoning_effort.empty()) body["reasoning_effort"] = config.reasoning_effort;
+        if (config.thinking && !config.reasoning_effort.empty()) {
+            body["reasoning_effort"] = config.reasoning_effort;
+        }
         request->body = body.dump();
         return true;
     }
