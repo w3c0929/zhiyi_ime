@@ -343,8 +343,11 @@ void EditorApp::run_ai_test() {
         const std::string message = error.empty() ? ai::last_error() : error;
         SetWindowTextW(hAiTestResult_,
                        (std::wstring(tr("ai.test_failed")) + L" " + utf8_to_wstr(message)).c_str());
-    }
-    populate_ai();  // the stored key count may have changed
+    
+    // Only the key list: populate_ai() would reset every control from the saved configuration and
+    // throw away the ticks and text the user has not applied yet.
+    refresh_ai_key_list();
+}
 }
 
 bool EditorApp::handle_ai_command(int control_id, int notification) {
