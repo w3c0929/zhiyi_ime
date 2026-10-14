@@ -151,8 +151,11 @@
   另注意 `kCtrlH` 一类常量**已是缩放后的值**，用的时候别再套 `S()`。
 - **新增的文本数据文件必须进 `DATA_OVERLAY`**（`scripts/package_release.py`）：例 `data/ai_thinking_levels.json`。
   漏了它就不会被打进安装包，运行时读不到（静态表/等级列表静默为空）。
-- **scoop manifest 必须是 UTF-8 带 BOM**：PowerShell 5.1 读无 BOM 文件按 ANSI 解，中文注释变乱码、
-  `ConvertFrom-Json` 直接失败。
+- **JSON 一律 UTF-8 无 BOM，`bucket\` 下的文件尤其不许有 BOM**（用户的明确要求，2026-10-14）。
+  写文件要用 `[IO.File]::WriteAllBytes` 或 `UTF8Encoding($false)`：`Out-File` / `>` 在 PS 5.1 会写成
+  UTF-16，`Set-Content -Encoding UTF8`（5.1）也会**加** BOM。实测 `scoop info` 读无 BOM 的 manifest
+  中文完全正常（上游 `zhiyiime.json` 本来也没有 BOM），反倒是 PS 5.1 的 `ConvertFrom-Json` 会被 BOM
+  绊倒（`Invalid JSON primitive`）——**早前"必须带 BOM"那条结论是错的，已作废**。
 - **scoop 升级失败 exit code 13** = 旧的 `zhiyu-server` 还在跑、文件被占用（签名/覆盖写不进去）。
   bucket 的 `installer.script` 已改成「读 HKLM `InstallLocation` → helper `force-stop-server` →
   `Get-Process zhiyu-server \| Stop-Process -Force` 兜底 → 安装 → 回读注册表校验」，别退回只 `Start-Process` 的旧写法。
