@@ -66,6 +66,8 @@ Var AppDir  ; <root>\<version>
 !macroend
 
 Section "Install"
+  ; Start Menu shortcuts go to the all-users folder, next to upstream 知意's.
+  SetShellVarContext all
   StrCpy $AppDir "$INSTDIR\${VERSION}"
 
   ; An older copy may be running: let its helper stop it (and release the TSF DLLs).
@@ -102,6 +104,7 @@ Section "Install"
 SectionEnd
 
 Section "Uninstall"
+  SetShellVarContext all
   StrCpy $AppDir "$INSTDIR\${VERSION}"
   IfFileExists "$AppDir\zhiyu-installer-helper.exe" 0 +2
     ExecWait '"$AppDir\zhiyu-installer-helper.exe" force-stop-server "$AppDir"'
