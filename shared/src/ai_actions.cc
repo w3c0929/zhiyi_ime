@@ -39,6 +39,11 @@ AiAction action_from_json(const nlohmann::json& row) {
     if (row.contains("timeout_ms") && row["timeout_ms"].is_number_integer()) {
         action.timeout_ms = (std::max)(1000, row["timeout_ms"].get<int>());
     }
+    if (row.contains("languages") && row["languages"].is_array()) {
+        for (const auto& language : row["languages"]) {
+            if (language.is_string()) action.languages.push_back(language.get<std::string>());
+        }
+    }
     return action;
 }
 
@@ -59,9 +64,11 @@ std::vector<AiAction> load() {
     for (const auto& row : parsed["actions"]) {
         if (!row.is_object()) continue;
         AiAction action = action_from_json(row);
-        // An action without an id, a prompt or a name has nothing to run or show.
-        if (action.id.empty() || action.prompt.empty() ||
-            (action.label.empty() && action.label_en.empty())) {
+        // An action without an id or a name has nothing to show. A prompt it must have too, unless
+        // it is one that picks a language (the translate action): that work is the translation's,
+        // which has a prompt of its own (docs/ai.md).
+        if (action.id.empty() || (action.label.empty() && action.label_en.empty()) ||
+            (action.prompt.empty() && action.languages.empty())) {
             continue;
         }
         actions.push_back(std::move(action));

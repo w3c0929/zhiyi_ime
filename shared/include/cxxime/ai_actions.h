@@ -24,6 +24,10 @@ struct AiAction {
     bool replace = true;
     int max_input_chars = 8000;  // a longer selection is refused with a note, never cut
     int timeout_ms = 20000;
+    // An action that translates (the "translate" one, docs/ai.md): the languages it offers, the
+    // first being the default. The choice (ai.translate_language) replaces {{language}} in the
+    // prompt; the \fy command changes it from the input box. Empty for the other actions.
+    std::vector<std::string> languages;
 };
 
 // The actions of data/ai_actions.json, in the file's order; empty when the file is missing or

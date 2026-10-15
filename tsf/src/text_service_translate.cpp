@@ -611,8 +611,17 @@ void TextService::_start_ai_action(std::size_t index, const std::wstring& source
     const std::wstring label =
         selection_from_utf8(cxxime::ai_action_label(action, _config.ui_language));
     _present_translate_window(L"正在" + label + L"…", text, note, caret);
-    if (!_send_selected_text(cxxime::kTextUploadAiAction, action.id, selection_to_utf8(text), text,
-                             action.replace && !cut, note)) {
+    // An action with a language list is a translation: it goes to the translation service (online
+    // first, the offline model when that fails), and the tag is the language rather than the id.
+    const bool translates = !action.languages.empty();
+    const std::string tag = translates
+                                ? (_config.ai.translate_language.empty() ? action.languages.front()
+                                                                        : _config.ai.translate_language)
+                                : action.id;
+    const std::uint32_t purpose =
+        translates ? cxxime::kTextUploadAiTranslate : cxxime::kTextUploadAiAction;
+    if (!_send_selected_text(purpose, tag, selection_to_utf8(text), text, action.replace && !cut,
+                             note)) {
         _present_translate_window(L"无法完成：与后台服务的连接断开", text, std::wstring(), caret);
     }
 }

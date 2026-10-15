@@ -240,6 +240,10 @@ enum class IPCCommand : uint32_t {
 // service answers TEXT_RESULT_POLL / TEXT_RESULT_READ.
 constexpr uint32_t kTextUploadTranslate = 1;  // the selection translation (TranslateService)
 constexpr uint32_t kTextUploadAiAction = 2;   // an AI action (AiActionService)
+// The "translate" action: the translation service's work (online first, the offline model when
+// that fails) into the language the action's list has selected (ai.translate_language), so it is
+// the same service the translate key uses rather than an AI action of its own.
+constexpr uint32_t kTextUploadAiTranslate = 3;
 
 // IPCResponse::voice_state.
 constexpr uint32_t kVoiceIdle = 0;        // nothing (never started, dropped, or nothing heard)

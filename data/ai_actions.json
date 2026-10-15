@@ -6,6 +6,15 @@
     },
     "actions": [
         {
+            "id": "translate",
+            "label": "翻译",
+            "label_en": "Translate",
+            "insert": "replace",
+            "max_input_chars": 8000,
+            "timeout_ms": 20000,
+            "languages": ["en", "zh", "ja", "ko", "fr", "de", "es", "ru", "vi", "pt", "it", "ar"]
+        },
+        {
             "id": "polish",
             "label": "润色",
             "label_en": "Polish",
@@ -31,6 +40,15 @@
             "insert": "replace",
             "max_input_chars": 8000,
             "timeout_ms": 20000
+        },
+        {
+            "id": "summarize",
+            "label": "摘要",
+            "label_en": "Summarize",
+            "prompt": "Summarize the text the user selected, in the same language, as a short paragraph. Output only the summary, with no title, list marks, quotes or preamble.",
+            "insert": "preview",
+            "max_input_chars": 32000,
+            "timeout_ms": 60000
         }
     ]
 }

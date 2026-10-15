@@ -550,6 +550,7 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
                 if (value.is_boolean()) config.ai.action_disabled[id] = value.get<bool>();
             }
         }
+        load_string(ai, "translate_language", config.ai.translate_language);
     }
 
     bool switch_keys_loaded = true;
@@ -923,6 +924,7 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["ai"]["action_key"] = ai_action_key_string(config.ai.action_key);
     j["ai"]["action_keys"] = config.ai.action_keys;
     j["ai"]["action_disabled"] = config.ai.action_disabled;
+    j["ai"]["translate_language"] = config.ai.translate_language;
 
     return j;
 }

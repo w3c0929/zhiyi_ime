@@ -382,6 +382,7 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(ai.use_for.voice);
     KEEP_PAGE_EDIT(ai.use_for.glossary);
     KEEP_PAGE_EDIT(ai.action_key);
+    KEEP_PAGE_EDIT(ai.translate_language);
     KEEP_PAGE_EDIT(ai.action_keys);
     KEEP_PAGE_EDIT(ai.action_disabled);
 #undef KEEP_PAGE_EDIT

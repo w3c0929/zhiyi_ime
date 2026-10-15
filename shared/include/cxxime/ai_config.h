@@ -56,6 +56,9 @@ struct AiConfig {
     KeyboardShortcut action_key;
     std::map<std::string, std::string> action_keys;
     std::map<std::string, bool> action_disabled;
+    // What the "translate" action translates into: a language code from that action's own list
+    // (ai_actions.json). Changed on the AI page, or from the input box with \fy.
+    std::string translate_language = "en";
 
     bool uses(bool AiUseFor::*use) const { return enabled && use_for.*use; }
     bool remote_only() const { return mode == "remote_only"; }

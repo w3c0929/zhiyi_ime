@@ -46,7 +46,13 @@ constexpr int kAiThinkingId = 6020;
 constexpr int kAiActionKeyId = 6021;       // AI actions on the selection: the menu key
 constexpr int kAiActionListFirstId = 6022;  // .. 6029: one checkbox per action (in the menu)
 constexpr int kAiActionKeyFirstId = 6040;   // .. 6047: one key box per action
+constexpr int kAiActionLangFirstId = 6050;  // .. 6057: one language box (the translate action)
 constexpr std::size_t kAiActionRowMax = 8;  // more actions than the page has room for
+
+// The name of a language code, as the learning page names them (data/ui.*.json, "lang.<code>").
+std::wstring language_name(const std::string& code) {
+    return std::wstring(tr(("lang." + code).c_str()));
+}
 
 // A key that cannot work for an AI action: it is one press on its own, so the translate key's own
 // combination would be taken by the translation first.
@@ -277,6 +283,7 @@ void EditorApp::create_ai_panel(HWND panel) {
 
     hAiActionRows_.clear();
     hAiActionKeys_.clear();
+    hAiActionLangs_.clear();
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
     if (!actions.empty()) {
         const int row_x = make_aligned_label(tr("ai.action_list"), x0, labels, y, panel);
@@ -294,6 +301,17 @@ void EditorApp::create_ai_panel(HWND panel) {
                                                                 : KeyChoice::none());
             });
             hAiActionKeys_.push_back(key);
+            // An action that picks a language (the translate one): which language it goes into.
+            HWND language = nullptr;
+            if (!actions[i].languages.empty()) {
+                language = make_list_combo(kAiActionLangFirstId + static_cast<int>(i),
+                                           row_x + S(370), row_y, S(150),
+                                           static_cast<int>(actions[i].languages.size()), panel);
+                for (const std::string& code : actions[i].languages) {
+                    combo_add(language, language_name(code).c_str());
+                }
+            }
+            hAiActionLangs_.push_back(language);
         }
         y += kRowH * static_cast<int>((std::min)(actions.size(), kAiActionRowMax));
     }
@@ -373,6 +391,14 @@ void EditorApp::populate_ai() {
             cxxime::parse_ai_action_key(stored->second, &shortcut);
         }
         key_capture_set(hAiActionKeys_[i], action_key_choice(shortcut));
+        if (i < hAiActionLangs_.size() && hAiActionLangs_[i]) {
+            const std::vector<std::string>& languages = actions[i].languages;
+            const auto chosen = std::find(languages.begin(), languages.end(),
+                                          config_.ai.translate_language);
+            combo_set_index(hAiActionLangs_[i], chosen == languages.end()
+                                                    ? 0
+                                                    : static_cast<int>(chosen - languages.begin()));
+        }
     }
 
     refresh_ai_key_list();
@@ -414,6 +440,13 @@ void EditorApp::read_ai(cxxime::Config& config) {
         const cxxime::KeyboardShortcut shortcut =
             action_key_shortcut(key_capture_get(hAiActionKeys_[i]));
         if (shortcut.enabled()) config.ai.action_keys[id] = cxxime::ai_action_key_string(shortcut);
+        if (i < hAiActionLangs_.size() && hAiActionLangs_[i]) {
+            const std::vector<std::string>& languages = actions[i].languages;
+            const int index = combo_index(hAiActionLangs_[i]);
+            if (index >= 0 && index < static_cast<int>(languages.size())) {
+                config.ai.translate_language = languages[static_cast<std::size_t>(index)];
+            }
+        }
     }
 
     // Row two is the key in use and is editable: a value that is not among the stored ones is a

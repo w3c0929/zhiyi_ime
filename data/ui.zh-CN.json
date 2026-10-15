@@ -378,6 +378,10 @@
     "lang.de": "德语",
     "lang.es": "西班牙语",
     "lang.ru": "俄语",
+    "lang.vi": "越南语",
+    "lang.pt": "葡萄牙语",
+    "lang.it": "意大利语",
+    "lang.ar": "阿拉伯语",
 
     "error.load": "配置加载失败：",
     "error.save": "后台服务未能保存并应用配置。",

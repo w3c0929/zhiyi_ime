@@ -43,6 +43,14 @@ bool is_gloss_target_id(int control_id) {
            control_id < kGlossTargetFirstId + static_cast<int>(glossary_languages().size());
 }
 
+// The rows of the candidate translation card. A candidate is Chinese or English, so those are the
+// two languages with a row; what a selection in another language is translated into is the AI
+// actions' business now (docs/ai.md).
+const std::vector<std::string>& gloss_row_sources() {
+    static const std::vector<std::string> sources = {"zh", "en"};
+    return sources;
+}
+
 // The label of a language's row: learning.chinese, learning.japanese, ...
 const char* gloss_row_key(const std::string& language) {
     if (language == "en") return "learning.english";
@@ -153,7 +161,9 @@ void EditorApp::create_learning_panel(HWND panel) {
                                     "learning.spanish", "learning.russian"});
     int y = card_begin(panel, kPanelPadTop, tr("learning.card_translation"));
     const int top = y;
-    const std::vector<std::string>& languages = glossary_languages();
+    // Two rows only: Chinese and English are the candidates an input method has. What a selection
+    // in another language is translated into is the AI actions' business now (docs/ai.md).
+    const std::vector<std::string>& languages = gloss_row_sources();
     int combo_x = 0;
     for (size_t i = 0; i < languages.size(); ++i) {
         const int x = make_aligned_label(tr(gloss_row_key(languages[i])), x0, labels, y, panel);
@@ -423,7 +433,7 @@ std::string EditorApp::combo_target(HWND combo, const std::string& source) const
 }
 
 void EditorApp::populate_learning() {
-    const std::vector<std::string>& languages = glossary_languages();
+    const std::vector<std::string>& languages = gloss_row_sources();
     for (size_t i = 0; i < languages.size() && i < std::size(hGlossTargets_); ++i) {
         fill_target_combo(hGlossTargets_[i], languages[i], config_.gloss_target(languages[i]),
                           source_has_packs(languages[i]));
@@ -434,7 +444,7 @@ void EditorApp::populate_learning() {
 
 void EditorApp::read_learning(Config& config) {
     if (!hGlossTargets_[0]) return;
-    const std::vector<std::string>& languages = glossary_languages();
+    const std::vector<std::string>& languages = gloss_row_sources();
     for (size_t i = 0; i < languages.size() && i < std::size(hGlossTargets_); ++i) {
         const std::string target = combo_target(hGlossTargets_[i], languages[i]);
         if (target.empty()) {

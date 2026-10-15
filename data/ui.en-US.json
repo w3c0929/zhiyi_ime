@@ -378,6 +378,10 @@
     "lang.de": "German",
     "lang.es": "Spanish",
     "lang.ru": "Russian",
+    "lang.vi": "Vietnamese",
+    "lang.pt": "Portuguese",
+    "lang.it": "Italian",
+    "lang.ar": "Arabic",
 
     "error.load": "Could not load the configuration: ",
     "error.save": "The IME service could not save and apply the configuration.",

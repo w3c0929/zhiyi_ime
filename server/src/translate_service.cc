@@ -174,10 +174,11 @@ void TranslateService::update_config(const std::shared_ptr<const cxxime::Config>
     config_ = config;
 }
 
-void TranslateService::request(uint32_t id, const std::string& text) {
+void TranslateService::request(uint32_t id, const std::string& text, const std::string& target) {
     uint64_t generation = 0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        requested_target_ = target;
         if (text.empty()) {
             phase_ = Phase::kIdle;
             owner_ = id;
@@ -295,13 +296,19 @@ void TranslateService::do_translate(uint32_t id, uint64_t generation, std::strin
     std::string error;
 
     std::shared_ptr<const cxxime::Config> config;
+    std::string requested_target;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         config = config_;
+        requested_target = requested_target_;
     }
     const std::string source = detect_source_language(text);
+    // What this request asked for (the translate action's language), else the learning page's row
+    // for the text's language, else the old Chinese into English rule.
     const std::string target =
-        config ? translation_target(*config, source) : (source == "zh" ? "en" : "zh");
+        !requested_target.empty()
+            ? requested_target
+            : (config ? translation_target(*config, source) : (source == "zh" ? "en" : "zh"));
 
     // The online AI first, when the user turned it on for the selection translation
     // (Config::ai.use_for.translate). A failure falls back to the offline model, unless the

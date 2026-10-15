@@ -60,7 +60,9 @@ private:
     AiActionService ai_action_;
     struct TextUpload {
         uint32_t purpose = 0;
-        std::string action_id;  // AI actions: what to run once the text arrived
+        // AI actions: the action to run; the translate action: the language to translate into
+        // (both come in the request's search_query field).
+        std::string action_id;
         uint64_t expected_bytes = 0;
         std::string text;
     };

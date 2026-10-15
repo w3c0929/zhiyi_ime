@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 
+#include <cxxime/ai_actions.h>
 #include <cxxime/candidate.h>
 #include <cxxime/experience_log.h>
 #include <cxxime/data_path.h>
@@ -752,7 +753,8 @@ bool ServerApp::handle_text_command(const cxxime::IPCRequest& request,
         upload.expected_bytes = request.modifiers;
         upload.text.clear();
         if ((upload.purpose != cxxime::kTextUploadTranslate &&
-             upload.purpose != cxxime::kTextUploadAiAction) ||
+             upload.purpose != cxxime::kTextUploadAiAction &&
+             upload.purpose != cxxime::kTextUploadAiTranslate) ||
             upload.expected_bytes > kMaxTextUploadBytes) {
             text_uploads_.erase(request.session_id);
             response.status = cxxime::IPCStatus::ERR_INVALID_REQUEST;
@@ -784,7 +786,8 @@ bool ServerApp::handle_text_command(const cxxime::IPCRequest& request,
     case cxxime::IPCCommand::TEXT_RESULT_READ: {
         std::string result;
         uint32_t state = cxxime::kTranslateIdle;
-        if (request.key_code == cxxime::kTextUploadTranslate) {
+        if (request.key_code == cxxime::kTextUploadTranslate ||
+            request.key_code == cxxime::kTextUploadAiTranslate) {
             state = translate_.peek_status(request.session_id, &result);
         } else if (request.key_code == cxxime::kTextUploadAiAction) {
             state = ai_action_.peek_status(request.session_id, &result);
@@ -824,6 +827,18 @@ void ServerApp::finish_text_upload(uint32_t session_id) {
     text_uploads_.erase(found);
     if (upload.purpose == cxxime::kTextUploadTranslate) {
         translate_.request(session_id, std::move(upload.text));
+    } else if (upload.purpose == cxxime::kTextUploadAiTranslate) {
+        // The translate action: the translation service's work, into the language the client sent
+        // (ai.translate_language; the tag carries it for this purpose). A language the action does
+        // not offer — an old configuration, a hand-edited file — falls back to its first one.
+        std::string target = upload.action_id;
+        if (const cxxime::AiAction* action = cxxime::find_ai_action("translate")) {
+            if (std::find(action->languages.begin(), action->languages.end(), target) ==
+                action->languages.end()) {
+                target = action->languages.empty() ? std::string() : action->languages.front();
+            }
+        }
+        translate_.request(session_id, std::move(upload.text), target);
     } else if (upload.purpose == cxxime::kTextUploadAiAction) {
         ai_action_.request(session_id, upload.action_id, std::move(upload.text));
     }
