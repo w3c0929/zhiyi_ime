@@ -564,7 +564,8 @@ HRESULT apply_composition_text(TextService* service, ITfContext* context, TfEdit
 
 HRESULT insert_at_selection(ITfContext* context,
                             TfEditCookie ec,
-                            const std::wstring& text) {
+                            const std::wstring& text,
+                            bool as_correction) {
     if (!context || text.empty())
         return E_INVALIDARG;
 
@@ -581,8 +582,12 @@ HRESULT insert_at_selection(ITfContext* context,
     if (FAILED(hr) || !pRange) {
         return FAILED(hr) ? hr : E_FAIL;
     }
-    hr = pRange->SetText(
-        ec, TF_ST_CORRECTION, text.c_str(), static_cast<LONG>(text.length()));
+    // TF_ST_CORRECTION tells the program the text corrects what was in the range — true of a
+    // composition's own commit, and what an app may use to fold the change into the edit before it.
+    // An answer from the AI is not a correction of anything: it goes in as an ordinary edit, which
+    // the program's own undo then takes back like typing (docs/ai.md).
+    const DWORD flags = as_correction ? TF_ST_CORRECTION : 0;
+    hr = pRange->SetText(ec, flags, text.c_str(), static_cast<LONG>(text.length()));
     if (SUCCEEDED(hr)) {
         hr = set_selection_to_range(context, ec, pRange);
     }
@@ -593,7 +598,8 @@ HRESULT insert_at_selection(ITfContext* context,
 // The text written under the selection rather than over it (an AI action whose insert mode is
 // "below"): the caret goes after the last selected character, and insert_at_selection — which
 // writes at the selection — then puts the text there. Everything the user selected stays.
-HRESULT insert_under_selection(ITfContext* context, TfEditCookie ec, const std::wstring& text) {
+HRESULT insert_under_selection(ITfContext* context, TfEditCookie ec, const std::wstring& text,
+                               bool as_correction) {
     if (!context || text.empty())
         return E_INVALIDARG;
     TF_SELECTION selection = {};
@@ -603,7 +609,7 @@ HRESULT insert_under_selection(ITfContext* context, TfEditCookie ec, const std::
         set_selection_to_range(context, ec, selection.range);
         selection.range->Release();
     }
-    return insert_at_selection(context, ec, text);
+    return insert_at_selection(context, ec, text, as_correction);
 }
 
 HRESULT commit_to_context(TextService* service, ITfContext* context, TfEditCookie ec,
@@ -627,7 +633,7 @@ HRESULT commit_to_context(TextService* service, ITfContext* context, TfEditCooki
     }
     return matches && service->get_composition()
         ? clear_and_end_composition(service, context, ec, &text)
-        : insert_at_selection(context, ec, text);
+        : insert_at_selection(context, ec, text, /*as_correction=*/true);
 }
 
 } // namespace
@@ -733,8 +739,8 @@ STDMETHODIMP EditSession::DoEditSession(TfEditCookie ec) {
     if ((_action == Action::INSERT_TEXT || _action == Action::INSERT_TEXT_UNDER_SELECTION) &&
         !_text.empty()) {
         _actionResult = _action == Action::INSERT_TEXT
-                            ? insert_at_selection(_context, ec, _text)
-                            : insert_under_selection(_context, ec, _text);
+                            ? insert_at_selection(_context, ec, _text, _asCorrection)
+                            : insert_under_selection(_context, ec, _text, _asCorrection);
         if (FAILED(_actionResult) && _service) {
             _service->handle_composition_edit_failure(
                 _compositionEditGeneration, _compositionEditContextIdentity);

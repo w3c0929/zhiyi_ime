@@ -285,14 +285,23 @@ void EditorApp::create_ai_panel(HWND panel) {
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
     if (!actions.empty()) {
         const int row_x = make_aligned_label(tr("ai.action_list"), x0, labels, y, panel);
+        // A row is its action's name, then its key box right beside it: the checkbox is as wide as
+        // the longest name, so the box does not float far off to the right.
+        int widest = 0;
+        for (const cxxime::AiAction& action : actions) {
+            const std::wstring label = utf8_to_wstr(cxxime::ai_action_label(action, ui_language_));
+            widest = (std::max)(widest, text_width(label.c_str()));
+        }
+        const int name_w = widest + S(30);  // the checkbox itself, drawn before the name
         for (std::size_t i = 0; i < actions.size() && i < kAiActionRowMax; ++i) {
             const int row_y = y + static_cast<int>(i) * kRowH;
             hAiActionRows_.push_back(make_check(
                 kAiActionListFirstId + static_cast<int>(i),
                 utf8_to_wstr(cxxime::ai_action_label(actions[i], ui_language_)).c_str(), row_x,
-                row_y, S(200), panel));
-            HWND key = create_key_capture(kAiActionKeyFirstId + static_cast<int>(i),
-                                          row_x + S(210), row_y, S(150), kCtrlH, panel, true);
+                row_y, name_w, panel));
+            const int key_x = row_x + name_w + S(10);
+            HWND key = create_key_capture(kAiActionKeyFirstId + static_cast<int>(i), key_x, row_y,
+                                          S(150), kCtrlH, panel, true);
             key_capture_set_allow_common(key, false);
             key_capture_set_check(key, [this](const KeyChoice& choice) -> std::wstring {
                 return action_key_notice(choice, hTranslateKey_ ? key_capture_get(hTranslateKey_)
@@ -303,7 +312,7 @@ void EditorApp::create_ai_panel(HWND panel) {
             HWND language = nullptr;
             if (!actions[i].languages.empty()) {
                 language = make_list_combo(kAiActionLangFirstId + static_cast<int>(i),
-                                           row_x + S(370), row_y, S(150),
+                                           key_x + S(160), row_y, S(150),
                                            static_cast<int>(actions[i].languages.size()), panel);
                 for (const std::string& code : actions[i].languages) {
                     combo_add(language, language_name(code).c_str());

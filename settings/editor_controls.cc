@@ -305,6 +305,16 @@ int make_label(const wchar_t* text, int x, int y, HWND parent) {
     return x + width + S(8);
 }
 
+int text_width(const wchar_t* text) {
+    HDC dc = GetDC(nullptr);
+    HGDIOBJ old_font = SelectObject(dc, get_font());
+    SIZE size = {};
+    GetTextExtentPoint32W(dc, text, static_cast<int>(wcslen(text)), &size);
+    SelectObject(dc, old_font);
+    ReleaseDC(nullptr, dc);
+    return static_cast<int>(size.cx);
+}
+
 int label_width(std::initializer_list<const char*> keys) {
     HDC dc = GetDC(nullptr);
     HGDIOBJ old_font = SelectObject(dc, get_font());

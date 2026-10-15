@@ -57,6 +57,9 @@ public:
         _compositionEditContextIdentity = context_identity;
     }
     void set_commit_before_preedit(const std::wstring& text) { _commitBeforePreedit = text; }
+    // Whether the text corrects what it replaces (TF_ST_CORRECTION). False for an AI answer: it is
+    // an ordinary edit, and the program's own undo takes it back like typing (docs/ai.md).
+    void set_as_correction(bool as_correction) { _asCorrection = as_correction; }
     bool get_caret_rect(RECT& out) const {
         if (_resultValid) {
             out = _resultRect;
@@ -81,6 +84,7 @@ private:
     bool _registeredWrite = false;
     std::wstring _text;
     std::wstring _commitBeforePreedit;
+    bool _asCorrection = true;
     size_t _selectionOffset = 0;
     bool _hasSelectionOffset = false;
     size_t _convertedPrefixUtf16 = 0;

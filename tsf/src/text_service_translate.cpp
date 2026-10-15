@@ -394,15 +394,18 @@ void TextService::_poll_translation() {
     }
     const bool deliver = answered && !no_answer;
 
+    // An answer is an ordinary edit, not a "correction": that way the program's own undo (Ctrl+Z)
+    // takes it back exactly as it takes back typing (docs/ai.md). The input method has no undo of
+    // its own, and wants none.
     if (deliver && _textInsert == cxxime::AiActionInsert::kReplace) {
-        insert_text(translation, true);  // replaces the selection
+        insert_text(translation, true, nullptr, false, false);  // replaces the selection
     } else if (deliver && _textInsert == cxxime::AiActionInsert::kBelow) {
         // Under the selection, on a line of its own (a summary is read under the text it
         // summarizes). The note — only the beginning of a long selection was worked on — rides
         // along as the last line: there is no window here to say it in.
         std::wstring inserted = L"\r\n" + translation;
         if (!note.empty()) inserted += L"\r\n" + note;
-        insert_text(inserted, true, nullptr, true);
+        insert_text(inserted, true, nullptr, true, false);
     } else {
         // The cached caret may be stale (nothing typed): ask for it now, like the candidate
         // window does, so the window opens at the selection.

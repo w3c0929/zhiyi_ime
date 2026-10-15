@@ -154,7 +154,8 @@ STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie ecWrite,
 }
 
 HRESULT TextService::insert_text(const std::wstring& text, bool sync,
-                                 uint64_t* request_generation, bool under_selection) {
+                                 uint64_t* request_generation, bool under_selection,
+                                 bool as_correction) {
     const uint64_t generation = begin_composition_edit_request();
     if (request_generation) {
         *request_generation = generation;
@@ -184,6 +185,7 @@ HRESULT TextService::insert_text(const std::wstring& text, bool sync,
     edit_session->set_action(under_selection ? EditSession::Action::INSERT_TEXT_UNDER_SELECTION
                                              : EditSession::Action::INSERT_TEXT,
                              text);
+    edit_session->set_as_correction(as_correction);
     edit_session->set_composition_edit_request(generation, _effectiveEditTarget.context_identity);
 
     HRESULT edit_hr = E_FAIL;

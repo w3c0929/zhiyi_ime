@@ -96,6 +96,9 @@ HWND make_page_button(int id, const wchar_t* text, int x, int y, int width, int 
 // Width of a right-aligned label column: the widest of these labels (lengths differ between
 // languages).
 int label_width(std::initializer_list<const char*> keys);
+// How wide `text` is drawn in the panel's font: a control beside it can be placed right after it
+// instead of at a guessed offset.
+int text_width(const wchar_t* text);
 int make_label(const wchar_t* text, int x, int y, HWND parent);
 void make_aligned_label(const wchar_t* text, int y, HWND parent);
 int make_aligned_label(const wchar_t* text, int x, int width, int y, HWND parent);

@@ -152,7 +152,10 @@
 - **长选区**：超过 `translate.max_selection_chars`（默认 32000 字）或该动作的 `max_input_chars`
   时，只处理前面那一段并提示「（只处理了前 N 字）」；要**替换**选区的动作此时改成**只显示**——免得把
   没处理的部分丢了（写在下方的那种不受影响，它本来就不动原文，提示作为最后一行跟着写进去）。
-- **撤销**：替换走的是一次编辑（与「划词翻译 → 直接上屏」同一条路），`Ctrl+Z` 一步还原。
+- **撤销：完全交给程序自己的 `Ctrl+Z`**。输入法**不碰撤销**——它不拦截 `Ctrl+Z`（带 Ctrl/Alt 的组合键一律放行给程序，
+  `engine/src/engine.cc` 里就写着这条规则），也没有自己的撤销栈。写入的文字是一次**普通编辑**（不带
+  `TF_ST_CORRECTION` 这个「这是对原有文字的更正」标记），所以程序就把这次改动当成"打字覆盖"来记，
+  `Ctrl+Z` 一步收回；写在下方的那种（摘要 + 提示行）也是一次编辑，一并收回。
 - 实现：`shared/src/ai_actions.cc`（读动作）、`shared/src/ai_client.cc`（`run_action`，含去引号/
   去「以下是…」这类包装）、`server/src/ai_action_service.cc`（后台线程跑、结果留内存供分块取回）、
   `tsf/src/text_service_translate.cpp`（菜单与写回）。

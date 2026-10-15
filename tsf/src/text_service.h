@@ -128,8 +128,12 @@ public:
 
     // Helper. `under_selection` writes the text after the selection instead of over it — an AI
     // action whose insert mode is "below" (a summary belongs under the text it summarizes).
+    // `as_correction` marks the edit as correcting what it replaces, which is what a composition's
+    // own commit wants; an AI answer passes false so that the program sees an ordinary edit, undone
+    // by its own Ctrl+Z (docs/ai.md).
     HRESULT insert_text(const std::wstring& text, bool sync = false,
-                        uint64_t* request_generation = nullptr, bool under_selection = false);
+                        uint64_t* request_generation = nullptr, bool under_selection = false,
+                        bool as_correction = true);
     bool select_candidate_from_ui(UINT index, uint64_t candidate_revision);
     bool navigate_candidate_page_from_ui(bool previous);
     // The server's candidates changed without a key (UiCommandType::kRefreshCandidates).
