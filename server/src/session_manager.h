@@ -177,6 +177,10 @@ public:
     void cancel_prepared_config();
     bool apply_config(const std::shared_ptr<const cxxime::Config>& config);
     void set_config_patch_handler(ConfigPatchHandler handler);
+    // The \fy command (docs/ai.md): how to ask the client showing session `session_id` for the
+    // translation language menu.
+    using AiLanguageMenuHandler = std::function<void(uint32_t session_id)>;
+    void set_ai_language_menu_handler(AiLanguageMenuHandler handler);
     cxxime::IPCStatus reload_dictionaries();
     bool reload_punctuation(const std::string& path);
 
@@ -324,6 +328,7 @@ private:
     std::mutex state_mutex_;
     std::mutex reload_mutex_;
     ConfigPatchHandler config_patch_handler_;
+    AiLanguageMenuHandler ai_language_menu_handler_;
     std::mutex continuation_mutex_;
     std::unique_ptr<ContinuationWorker> continuation_worker_;
     RefreshNotifier refresh_notifier_;

@@ -143,6 +143,9 @@ enum class UiCommandType : std::uint32_t {
     // in): the client fetches them (IPCCommand::REFRESH_CANDIDATES). Clients from before
     // ignore it.
     kRefreshCandidates = 16,
+    // \fy (docs/ai.md): show the menu of languages the translate action offers. The client picks
+    // one and sends it back (IPCCommand::SET_AI_LANGUAGE). Clients from before ignore it.
+    kAiLanguageMenu = 17,
 };
 
 struct UiCommand {

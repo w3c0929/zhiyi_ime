@@ -96,6 +96,8 @@ public:
         translation_request_.reset();
         return index;
     }
+    // The \fy command (docs/ai.md): the client is to show the translation language menu, once.
+    bool take_ai_language_menu_request() { return context_.take_ai_language_menu_request(); }
     // Voice input (docs/voice-input.md): the voice key asks the server to start or stop
     // recording (kToggle; a composition is committed as typed first), Esc while recording to
     // drop it (kCancel). The server reads the request after each key, once.

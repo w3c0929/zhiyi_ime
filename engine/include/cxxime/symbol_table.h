@@ -13,6 +13,9 @@
 namespace cxxime {
 
 inline constexpr char kSymbolPrefix = '\\';
+// A command typed under the symbol prefix, instead of a symbol name (docs/ai.md): \fy asks for the
+// translation language menu. The prefix is the same; the command is looked for first.
+inline constexpr char kAiLanguageCommand[] = "fy";
 
 class SymbolTable {
 public:

@@ -1379,6 +1379,10 @@ void SessionManager::set_config_patch_handler(ConfigPatchHandler handler) {
     config_patch_handler_ = std::move(handler);
 }
 
+void SessionManager::set_ai_language_menu_handler(AiLanguageMenuHandler handler) {
+    ai_language_menu_handler_ = std::move(handler);
+}
+
 cxxime::IPCStatus SessionManager::reload_dictionaries() {
     std::lock_guard<std::mutex> reload_lock(reload_mutex_);
 
@@ -1781,6 +1785,10 @@ ProcessKeyResult SessionManager::process_key(uint32_t id, const cxxime::KeyEvent
     const bool was_composing = engine.context().is_composing();
     const auto key_start = std::chrono::steady_clock::now();
     auto result = engine.process_key(event, opts, static_cast<int>(visible_candidate_count));
+    // \fy (docs/ai.md): the translation language menu goes to the client showing this session.
+    if (engine.take_ai_language_menu_request() && ai_language_menu_handler_) {
+        ai_language_menu_handler_(id);
+    }
     if (result == cxxime::ProcessResult::COMMIT_TRANSLATION) {
         // Ctrl+1..9 in learning mode: the first sense of the translation the window shows.
         std::string translation;

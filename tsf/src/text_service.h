@@ -456,6 +456,10 @@ private:
     // A key while the menu is open: true when the menu took it (pfEaten is set then).
     bool _handle_ai_menu_key(WPARAM key, BOOL* pfEaten);
     void _open_ai_menu(const std::wstring& source, bool shortened);
+    // \fy: the menu of languages the translate action offers, and the pick.
+    void _open_ai_language_menu();
+    void _choose_ai_language(std::size_t row);
+    bool _show_menu_window();
     void _close_ai_menu();
     void _render_ai_menu();  // redraw the rows (the highlight moved)
     void _run_ai_action(std::size_t row);  // a menu row
@@ -573,6 +577,9 @@ private:
     std::wstring _aiMenuSource;               // the selection the menu was opened for
     bool _aiMenuShortened = false;            // only its beginning was read
     std::vector<std::size_t> _aiMenuRows;
+    // The \fy menu (docs/ai.md): the same window, listing languages instead of actions.
+    bool _menuIsLanguage = false;
+    std::vector<std::string> _menuLanguages;
     std::string _pendingAiActionId;  // an action's own key was pressed: run it, no menu
     std::unique_ptr<cxxime::CandidateWindow> _aiMenuWindow;
     // Long text over IPC (TEXT_UPLOAD_*): what the request in flight is for, whether it went

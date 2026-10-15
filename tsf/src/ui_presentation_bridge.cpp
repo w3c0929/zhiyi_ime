@@ -434,6 +434,10 @@ void TextService::_handle_ui_command(const cxxime::UiCommand& command) {
     case cxxime::UiCommandType::kRefreshCandidates:
         refresh_candidates_from_server();
         break;
+    case cxxime::UiCommandType::kAiLanguageMenu:
+        // \fy (docs/ai.md): the translation language menu, in the window the actions use.
+        _open_ai_language_menu();
+        break;
     case cxxime::UiCommandType::kNone:
         break;
     }

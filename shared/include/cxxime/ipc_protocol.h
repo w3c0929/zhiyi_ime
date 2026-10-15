@@ -234,6 +234,9 @@ enum class IPCCommand : uint32_t {
     TEXT_UPLOAD_CHUNK = 38,
     TEXT_RESULT_POLL = 39,
     TEXT_RESULT_READ = 40,
+    // The AI translation language was chosen in the \fy menu (docs/ai.md): search_query holds the
+    // language code. The server keeps it (ai.translate_language) with a merge patch.
+    SET_AI_LANGUAGE = 41,
 };
 
 // IPCRequest::key_code with the TEXT_UPLOAD_* commands: what the uploaded text is for, and which

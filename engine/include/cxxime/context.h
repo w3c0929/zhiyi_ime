@@ -82,6 +82,14 @@ public:
     bool finalize_raw(CommitSource source);
     bool request_candidate_selection(int index);
     std::optional<int> take_requested_candidate_selection();
+    // The \fy command (docs/ai.md): the translation language menu was asked for. The client shows
+    // it and sends the chosen language back (IPCCommand::SET_AI_LANGUAGE).
+    void request_ai_language_menu() { ai_language_menu_requested_ = true; }
+    bool take_ai_language_menu_request() {
+        const bool requested = ai_language_menu_requested_;
+        ai_language_menu_requested_ = false;
+        return requested;
+    }
     CommitLearningPlan take_commit_learning_plan();
     std::string commit();
     void update_candidates(CandidatePage&& page);
@@ -136,6 +144,8 @@ private:
     CommitLearningPlan commit_learning_plan_;
     std::optional<int> requested_candidate_index_;
     std::optional<CandidateNavigationRequest> requested_navigation_;
+    // The \fy command: the client is to show the AI translation language menu.
+    bool ai_language_menu_requested_ = false;
     uint32_t continuation_effort_ = 0;
     std::optional<CompositionOrigin> composition_origin_;
 };

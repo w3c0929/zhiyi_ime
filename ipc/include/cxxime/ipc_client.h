@@ -62,6 +62,8 @@ public:
     bool text_result_poll(uint32_t session_id, uint32_t purpose, IPCResponse& response);
     bool text_result_read(uint32_t session_id, uint32_t purpose, uint64_t offset,
                           IPCResponse& response);
+    // SET_AI_LANGUAGE: the language chosen in the \fy menu (ai.translate_language).
+    bool set_ai_language(uint32_t session_id, const std::string& code, IPCResponse& response);
     bool focus_in(uint32_t session_id);
     bool set_input_target(uint32_t session_id, const std::string& app,
                           const std::string& window_title);
