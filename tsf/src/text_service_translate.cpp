@@ -44,6 +44,11 @@ std::wstring shortened_note(std::size_t chars) {
     return L"（只处理了前 " + std::to_wstring(chars) + L" 字）";
 }
 
+// Why a key could not do anything (the window says 无法完成：…, docs/ai.md). Nothing to work on is
+// the one a user meets most: no selection, and nothing on the clipboard either.
+constexpr const wchar_t kNothingToWorkOn[] = L"没有选中内容，剪贴板里也没有文本";
+constexpr const wchar_t kNoServerConnection[] = L"与后台服务的连接断开";
+
 // A bare modifier press is not "another key": it must not close the menu (the user is still
 // holding the chord the menu was opened with).
 bool is_bare_modifier(WPARAM key) {
@@ -198,16 +203,30 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened) 
 void TextService::_process_selection_translate() {
     std::wstring selection;
     bool shortened = false;
-    if (!_read_selected_text(&selection, &shortened)) return;
+    if (!_read_selected_text(&selection, &shortened)) {
+        _present_failure(kNothingToWorkOn, std::wstring());
+        return;
+    }
     const std::string text = selection_to_utf8(selection);
-    if (text.empty()) return;
+    if (text.empty()) {
+        _present_failure(kNothingToWorkOn, std::wstring());
+        return;
+    }
     // Only part of a shortened selection was worked on: typing the answer back would throw the
     // rest of the selection away, so it is shown instead.
     const cxxime::AiActionInsert insert =
         _config.translate_direct_insert && !shortened ? cxxime::AiActionInsert::kReplace
                                                      : cxxime::AiActionInsert::kPreview;
-    _send_selected_text(cxxime::kTextUploadTranslate, std::string(), text, selection, insert,
-                        shortened ? shortened_note(selection.size()) : std::wstring());
+    if (!_send_selected_text(cxxime::kTextUploadTranslate, std::string(), text, selection, insert,
+                             shortened ? shortened_note(selection.size()) : std::wstring())) {
+        _present_failure(kNoServerConnection, selection);
+    }
+}
+
+// The window a key that could not do anything shows (docs/ai.md): the reason, and — when there is
+// one — the text it was about. Doing nothing in silence is what makes a key look broken.
+void TextService::_present_failure(const std::wstring& reason, const std::wstring& source) {
+    _present_translate_window(L"无法完成：" + reason, source, std::wstring(), _query_caret_rect());
 }
 
 // Sends the selected text for `purpose`: the short command when it fits the IPC field (the path
@@ -289,12 +308,17 @@ void TextService::_poll_translation() {
 
     _stop_translation_poll();
     const bool failed = response.translate_state == cxxime::kTranslateFailed;
-    if (response.translate_state != cxxime::kTranslateDone && !failed) return;
+    // kTranslateIdle: the service has nothing for us at all — it never got the request, or gave it
+    // up without an answer (translate_service.cc). That is as much a dead end as a failure, and it
+    // must not leave the window saying 正在… for ever.
+    const bool idle = response.translate_state == cxxime::kTranslateIdle;
+    if (response.translate_state != cxxime::kTranslateDone && !failed && !idle) return;
+    const bool answered = !failed && !idle;
 
     // The answer: one field (the translate command), or as many pieces as the server says are
     // ready.
     std::string answer;
-    if (_textPieces) {
+    if (answered && _textPieces) {
         const std::size_t total = response.text_result_bytes;
         for (std::size_t offset = 0; offset < total;) {
             cxxime::IPCResponse piece = {};
@@ -305,24 +329,26 @@ void TextService::_poll_translation() {
             answer.append(piece.translate_text, length);
             offset += length;
         }
-    } else if (!failed) {
+    } else if (answered) {
         const std::size_t length =
             strnlen_s(response.translate_text, sizeof(response.translate_text));
         answer.assign(response.translate_text, length);
     }
-    if (answer.empty()) return;
     std::wstring translation = selection_from_utf8(answer);
-    if (translation.empty()) return;
     std::wstring note = _textNote;
-    if (failed) {
-        // The text is the reason, not an answer: say so, and never type it over the selection.
-        translation = L"无法完成：" + translation;
+    // No answer at all, or a reason in its place: the text is not an answer, so it is shown and
+    // never typed over the selection.
+    const bool no_answer = translation.empty();
+    if (!answered || no_answer) {
+        translation = no_answer ? std::wstring(L"无法完成：服务没有返回结果")
+                                : L"无法完成：" + translation;
         note.clear();
     }
+    const bool deliver = answered && !no_answer;
 
-    if (!failed && _textInsert == cxxime::AiActionInsert::kReplace) {
+    if (deliver && _textInsert == cxxime::AiActionInsert::kReplace) {
         insert_text(translation, true);  // replaces the selection
-    } else if (!failed && _textInsert == cxxime::AiActionInsert::kBelow) {
+    } else if (deliver && _textInsert == cxxime::AiActionInsert::kBelow) {
         // Under the selection, on a line of its own (a summary is read under the text it
         // summarizes). The note — only the beginning of a long selection was worked on — rides
         // along as the last line: there is no window here to say it in.
@@ -490,7 +516,10 @@ void TextService::_process_ai_action_selection() {
     if (actions.empty()) return;  // no data file, or nothing usable in it
     std::wstring selection;
     bool shortened = false;
-    if (!_read_selected_text(&selection, &shortened)) return;
+    if (!_read_selected_text(&selection, &shortened)) {
+        _present_failure(kNothingToWorkOn, std::wstring());
+        return;
+    }
     if (action_id.empty()) {
         _open_ai_menu(selection, shortened);
         return;
@@ -652,6 +681,6 @@ void TextService::_start_ai_action(std::size_t index, const std::wstring& source
     const std::uint32_t purpose =
         translates ? cxxime::kTextUploadAiTranslate : cxxime::kTextUploadAiAction;
     if (!_send_selected_text(purpose, tag, selection_to_utf8(text), text, insert, note)) {
-        _present_translate_window(L"无法完成：与后台服务的连接断开", text, std::wstring(), caret);
+        _present_failure(kNoServerConnection, text);
     }
 }

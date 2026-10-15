@@ -480,6 +480,8 @@ private:
     void _poll_translation();
     void _present_translate_window(const std::wstring& translation, const std::wstring& source,
                                    const std::wstring& note, const RECT& caret);
+    // A key that could not do anything says why (docs/ai.md, 无法完成：…).
+    void _present_failure(const std::wstring& reason, const std::wstring& source);
     void _hide_translate_window();
     // The caret of the focused input box, asked for now: the cached one may be stale with nothing
     // typed. The candidate window does the same before it opens.

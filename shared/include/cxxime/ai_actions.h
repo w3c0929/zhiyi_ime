@@ -8,6 +8,7 @@
 #ifndef CXXIME_AI_ACTIONS_H_
 #define CXXIME_AI_ACTIONS_H_
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -24,6 +25,18 @@ enum class AiActionInsert { kReplace, kBelow, kPreview };
 // The action that translates (docs/ai.md): the one with a language list. It is the action the
 // \fy command and the settings page's language row belong to.
 inline constexpr char kAiLanguageActionId[] = "translate";
+
+// How many characters (UTF-8 code points) `text` holds — the unit of max_input_chars below.
+// Every side that checks that limit counts the same way: a selection the client cut to 8000
+// characters is up to 24000 bytes of Chinese, and the server refusing it for the byte count is
+// what the two of them used to disagree about.
+inline std::size_t ai_text_length(const std::string& text) {
+    std::size_t characters = 0;
+    for (const char byte : text) {
+        if ((static_cast<unsigned char>(byte) & 0xC0) != 0x80) ++characters;
+    }
+    return characters;
+}
 
 struct AiAction {
     std::string id;      // "proofread": the key of the action

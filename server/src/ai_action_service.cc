@@ -129,8 +129,9 @@ void AiActionService::do_action(uint32_t id, uint64_t generation, std::string ac
         reason = action_unavailable_reason(*config);
         if (reason.empty() &&
             action->max_input_chars > 0 &&
-            static_cast<int>(text.size()) > action->max_input_chars) {
-            // The client is meant to cut the selection and say so; reaching this means it did not.
+            cxxime::ai_text_length(text) > static_cast<std::size_t>(action->max_input_chars)) {
+            // The client cuts the selection to the limit and says so; counting the same way here
+            // (characters, not bytes) means reaching this is a client that did not cut.
             reason = "选中的文字超过这个动作的上限";
         }
         if (reason.empty()) {

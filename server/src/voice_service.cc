@@ -437,7 +437,7 @@ std::string VoiceService::post_process(std::string text) {
         return text;  // an id this data file does not have (ai_actions.json): as recognized
     }
     if (action->max_input_chars > 0 &&
-        static_cast<int>(text.size()) > action->max_input_chars) {
+        cxxime::ai_text_length(text) > static_cast<std::size_t>(action->max_input_chars)) {
         return text;  // longer than the action takes (the selection path refuses these too)
     }
     const auto start = std::chrono::steady_clock::now();
