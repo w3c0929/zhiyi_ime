@@ -24,9 +24,6 @@ enum class AiActionInsert { kReplace, kBelow, kPreview };
 // The action that translates (docs/ai.md): the one with a language list. It is the action the
 // \fy command and the settings page's language row belong to.
 inline constexpr char kAiLanguageActionId[] = "translate";
-// The action the voice input's post-processing runs (docs/ai.md, ai.use_for.voice): what the
-// recognizer heard is proofread before it is typed.
-inline constexpr char kAiProofreadActionId[] = "proofread";
 
 struct AiAction {
     std::string id;      // "proofread": the key of the action

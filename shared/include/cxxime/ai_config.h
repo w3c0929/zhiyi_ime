@@ -56,6 +56,10 @@ struct AiConfig {
     // What the "translate" action translates into: a language code from that action's own list
     // (ai_actions.json). Changed on the AI page, or from the input box with \fy.
     std::string translate_language = "en";
+    // ai.use_for.voice: which action the recognized text goes through before it is typed — an id
+    // of data/ai_actions.json, "proofread" (纠错) by default, whose prompt is then the one used.
+    // A name of your own, or empty for no post-processing at all (the text is typed as heard).
+    std::string voice_polish_action = "proofread";
 
     bool uses(bool AiUseFor::*use) const { return enabled && use_for.*use; }
     bool remote_only() const { return mode == "remote_only"; }

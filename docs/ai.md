@@ -24,6 +24,7 @@
 | `ai.action_keys` | `{}` | 某个动作自己的键：`{"proofread": "F7"}`，按它直跑该动作、不弹菜单（写法同上） |
 | `ai.translate_language` | `en` | 「翻译」动作译成哪种语言（12 种代码；默认与 `translate` 动作的 `languages` 首项一致）。设置页有下拉可选 |
 | `ai.action_disabled` | `{}` | 不在菜单里列出的动作：`{"summarize": true}`。没写的都列出 |
+| `ai.voice_polish_action` | `proofread` | 语音识别后处理用哪个动作（`data/ai_actions.json` 的 id）；**空 = 不做这一层** |
 
 密钥不写明文：设置页会把输入的密钥用 `CryptProtectData` 加密后存进 `ai.keys`，只有同一台机器的
 同一个用户能解回来（`shared/src/ai_client.cc` 的 `protect_secret` / `unprotect_secret`）。
@@ -51,18 +52,21 @@
 
 ## 语音识别后处理（`ai.use_for.voice`）
 
-勾上「AI」页的「语音识别后处理」后，语音识别出的文字**先交给 `data/ai_actions.json` 里 `proofread`
-（纠错）那个动作过一遍，拿回来的文字才是上屏的内容**。触发方式、录音、悬浮窗、按键流程**一个字没动**：
-语音键照旧开始/结束录音，客户端照旧每 100 ms 问一次状态——只是「识别中」会多停一会儿（就是这次请求的
-时间，受 `ai.timeout_ms` 限制），然后上屏的是纠错后的文字。
+勾上「AI」页的「语音识别后处理」后，语音识别出的文字**先交给 `ai.voice_polish_action` 指定的那个动作
+过一遍**（默认 `proofread`，也就是「纠错」），拿回来的文字才是上屏的内容。触发方式、录音、悬浮窗、按键
+流程**一个字没动**：语音键照旧开始/结束录音，客户端照旧每 100 ms 问一次状态——只是「识别中」会多停一会儿
+（就是这次请求的时间，受 `ai.timeout_ms` 限制），然后上屏的是处理后的文字。
 
+- **哪个动作**：`ai.voice_polish_action`（`%USERPROFILE%\zhiyu\default.json` 的 `ai` 段），值是
+  `data/ai_actions.json` 里某个动作的 id，**默认 `proofread`**；**留空 = 这一层不做**（识别文字原样上屏，
+  用途开关留着）。想让语音过去「润色」就把这一项改成 `polish`。设置页没有这个下拉，改配置文件即可。
 - **插在哪儿**：`server/src/voice_service.cc` 的 `finish_recording()` 里，`tidy()` 之后、把文字存进
   `text_` 之前（那是语音自己的工作线程，占线也不影响录音与按键）。
-- **任何一步不顺都退回识别原文**：总开关没开 / 没勾这个用途 / 没有密钥 / 请求失败或超时 / 识别文字超过该
-  动作的 `max_input_chars`（8000）—— 宁可原样上屏，也不会把用户口述的内容弄丢。
-- **用的是同一个动作定义**：提示词来自 `data/ai_actions.json` 的 `proofread`（改提示词、改上限都生效），
-  所以纠错的规矩与「选中文字 → 纠错」完全一致。动作 id 记在 `shared/include/cxxime/ai_actions.h` 的
-  `kAiProofreadActionId`。
+- **任何一步不顺都退回识别原文**：总开关没开 / 没勾这个用途 / `ai.voice_polish_action` 空着或写了不存在的
+  id / 没有密钥 / 请求失败或超时 / 识别文字超过该动作的 `max_input_chars`（8000）—— 宁可原样上屏，也不会把
+  用户口述的内容弄丢。
+- **用的是同一个动作定义**：提示词与上限都来自 `data/ai_actions.json` 那一项（改文件即生效），所以这一层的
+  规矩与「选中文字 → 同一动作」完全一致。
 
 ## 选中文字的 AI 动作
 

@@ -428,10 +428,13 @@ std::string VoiceService::post_process(std::string text) {
         std::lock_guard<std::mutex> lock(mutex_);
         config = config_;
     }
-    const cxxime::AiAction* action = cxxime::find_ai_action(cxxime::kAiProofreadActionId);
-    if (!config || !action || action->prompt.empty() ||
+    if (!config || config->ai.voice_polish_action.empty() ||
         !cxxime::ai::usable_for(config->ai, &cxxime::AiUseFor::voice)) {
-        return text;  // the switch is off, or the API is not configured: as recognized
+        return text;  // the switch is off, or no action is set for it: as recognized
+    }
+    const cxxime::AiAction* action = cxxime::find_ai_action(config->ai.voice_polish_action);
+    if (!action || action->prompt.empty()) {
+        return text;  // an id this data file does not have (ai_actions.json): as recognized
     }
     if (action->max_input_chars > 0 &&
         static_cast<int>(text.size()) > action->max_input_chars) {
