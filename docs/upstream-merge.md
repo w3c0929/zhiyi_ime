@@ -69,6 +69,8 @@
   失败给可读原因 `kTranslateFailed`）；TSF 侧在 `tsf/src/text_service_translate.cpp`（菜单、写回、长选区提示）。
   结果的去向由动作自己的 `insert` 决定：`replace` 替换选区、`below` 写在选区**下方**
   （`EditSession::Action::INSERT_TEXT_UNDER_SELECTION`，`tsf/src/edit_session.cpp`）、`preview` 只显示。
+  **`replace` 是粘贴送回的**（剪贴板 + `Ctrl+V`，`paste_text()`），不是 TSF 写入：TSF 写入在有些程序里
+  根本不进撤销栈（Win11 Notepad 的 `Ctrl+Z` 会把整个文档清空，1.7.56 实测），粘贴才是各处都能一步撤销的写法。
   开关是 `ai.use_for.selection`，键是 `ai.action_key` + `ai.action_keys`（都是「第二个键」，第一个键是划词翻译键）。
 - **`\fy` 换翻译语言**：**没有自己的窗口/按键/IPC 命令**——`\fy` 是一次普通符号组字，候选换成 12 种语言
   （`Engine::ai_language_result`，`engine/src/engine.cc`；候选带 `AiLanguageAction`，`candidate_selection.h`），

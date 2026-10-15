@@ -558,10 +558,9 @@ void TextService::_poll_translation() {
     const bool deliver = answered && !no_answer;
 
     // A program that keeps its text to itself (a classic edit box, Sublime Text and the like) has
-    // no selection TSF can see, let alone replace: the answer goes in the way the user would put it
-    // there — pasted — and the program replaces whatever it has selected. Writing *under* a
-    // selection cannot be done that way (a paste would throw the selection away), so an action
-    // that wants that is only shown there.
+    // no selection TSF can see, let alone replace: its own copy is the only way to the text, and the
+    // answer goes back the same way. Writing *under* a selection cannot be done that way (a paste
+    // would throw the selection away), so an action that wants that is only shown there.
     ITfContext* write_context = _current_edit_context_for_composition();
     // Either the read showed the document could not be read at all (the strongest signal: the text
     // came from the program's own copy), or it looks like one of the programs that keeps its text
@@ -578,16 +577,16 @@ void TextService::_poll_translation() {
         _enqueue_event_trace("ai_ui", detail);
     }
 
-    // An answer is an ordinary edit, not a "correction": that way the program's own undo (Ctrl+Z)
-    // takes it back exactly as it takes back typing (docs/ai.md). The input method has no undo of
-    // its own, and wants none.
+    // The answer goes in the way the user would put it there — pasted — and the program replaces
+    // whatever it has selected: the selection the read left behind, which is the one that was there
+    // or the caret's line (docs/ai.md). That is the delivery a program's own undo (Ctrl+Z) takes
+    // back like any other edit. A write through TSF is *not* in every program's undo: Win11 Notepad
+    // empties the whole document on the Ctrl+Z after one (measured), and undoes a replacement the
+    // input method composed over a selection the same way — the input method cannot ask for better,
+    // and has no undo of its own.
     if (deliver && _textInsert == cxxime::AiActionInsert::kReplace) {
-        if (program_owns_its_text) {
-            if (_textProgramCopiedLine) select_line_in_program();  // so the paste replaces the line
-            paste_text(translation);
-        } else {
-            insert_text(translation, true, nullptr, false, false);  // replaces the selection
-        }
+        if (_textProgramCopiedLine) select_line_in_program();  // so the paste replaces the line
+        paste_text(translation);
         _hide_translate_window();  // the answer is in: the window has done its job (OnEndEdit
                                    // cannot be relied on for it — see the grace window)
     } else if (deliver && _textInsert == cxxime::AiActionInsert::kBelow && !program_owns_its_text) {
