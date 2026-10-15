@@ -154,6 +154,11 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
         _fTestKeyDownPending = true;
         return S_OK;
     }
+    if (_handle_ai_action_key(wParam)) {
+        *pfEaten = TRUE;
+        _fTestKeyDownPending = true;
+        return S_OK;
+    }
     const int switch_slot = _held_switch_key();
     if (switch_slot >= 0 && wParam == _switch_key(switch_slot).virtual_key &&
         !_claim_switch_key_press(switch_slot)) {
@@ -213,6 +218,10 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lPara
         return S_OK;
     }
     if (_handle_translate_key(wParam)) {
+        *pfEaten = TRUE;
+        return S_OK;
+    }
+    if (_handle_ai_action_key(wParam)) {
         *pfEaten = TRUE;
         return S_OK;
     }

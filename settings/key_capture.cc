@@ -265,6 +265,13 @@ void reject(HWND window, State* state, const wchar_t* message) {
 void on_key_down(HWND window, State* state, UINT vk, LPARAM lparam,
                  std::optional<uint32_t> modifiers = std::nullopt) {
     if ((lparam & (1 << 30)) != 0) return;  // auto-repeat
+    // Delete / Backspace clears the box, also while it is already taking a key: the way back to
+    // "no key" without reaching for the mouse.
+    if ((vk == VK_BACK || vk == VK_DELETE) &&
+        (modifiers ? *modifiers : modifiers_down()) == 0) {
+        accept(window, state, KeyChoice::none());
+        return;
+    }
     if (const uint32_t bit = modifier_bit(vk)) {
         state->modifiers_seen |= bit;
         return;

@@ -225,8 +225,20 @@ void EditorApp::create_ai_panel(HWND panel) {
     y = card_begin(panel, y, tr("ai.card_actions"));
     const int action_x = make_aligned_label(tr("ai.action_key"), x0, labels, y, panel);
     hAiActionKey_ = create_key_capture(kAiActionKeyId, action_x, y, S(160), kCtrlH, panel, false);
+    // The box keeps capturing after the first press (the translate key's combination, Ctrl+C, is
+    // part of the gesture and is not what gets stored) and settles on the second one; the stored
+    // value is kept as a single combination (read_ai).
     key_capture_set_allow_double(hAiActionKey_, true);
     key_capture_set_allow_common(hAiActionKey_, true);
+    key_capture_set_check(hAiActionKey_, [this](const KeyChoice& choice) -> std::wstring {
+        // The pair starts with the translate key: the same combination twice would never reach
+        // the AI actions.
+        if (choice.kind == KeyChoice::Kind::kCombo && hTranslateKey_ &&
+            same_key_choice(choice, key_capture_get(hTranslateKey_))) {
+            return tr("ai.action_key_same");
+        }
+        return std::wstring();
+    });
     y += kRowH;
     make_hint(tr("ai.action_key_hint"), action_x, y - S(6), hint_w, panel, 2);
     y += S(44);
@@ -322,9 +334,12 @@ void EditorApp::read_ai(cxxime::Config& config) {
     config.ai.use_for.voice = get_check(hAiUseVoice_);
     config.ai.use_for.glossary = get_check(hAiUseGlossary_);
     const KeyChoice action_key = key_capture_get(hAiActionKey_);
-    config.ai_action_shortcut = action_key.kind == KeyChoice::Kind::kCombo
-                                    ? action_key.combo
-                                    : cxxime::KeyboardShortcut{};
+    cxxime::KeyboardShortcut action_shortcut =
+        action_key.kind == KeyChoice::Kind::kCombo ? action_key.combo : cxxime::KeyboardShortcut{};
+    // One press of this key, after the translate key: the box may have stored it as a double press
+    // (its two presses are the pair, not a repetition).
+    action_shortcut.repeat = 1;
+    config.ai_action_shortcut = action_shortcut;
 
     // Row two is the key in use and is editable: a value that is not among the stored ones is a
     // new key and is added (SuMail's box adds one the same way); an unchanged one is left alone,

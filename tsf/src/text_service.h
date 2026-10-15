@@ -580,10 +580,9 @@ private:
     // application's (copy).
     ULONGLONG _lastTranslateCopyTick = 0;
     UINT _translateKeyDown = 0;  // the taken press, until its key-up
-    // The AI action menu key (shortcuts.ai_action): the same double-tap reading as the translate
-    // key, with its own state.
+    // The AI action menu key (shortcuts.ai_action): the second key of the pair whose first key is
+    // the translate key's, so only the repeated-press guard is its own.
     ULONGLONG _lastAiActionSeen = 0;
-    ULONGLONG _lastAiActionTick = 0;
     UINT _aiActionKeyDown = 0;
     ULONGLONG _lastTranslateKeySeen = 0;  // the last press seen (Test and Down are one press)
     UINT _translationKeyDown = 0;  // a Ctrl+0..9 taken, until its key-up

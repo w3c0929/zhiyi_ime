@@ -352,19 +352,19 @@ bool TextService::_handle_ai_action_key(WPARAM key) {
     if (!sc.enabled() || key != sc.virtual_key) return false;
     if ((_get_modifiers() & cxxime::kShortcutModifierMask) != sc.modifiers) return false;
 
-    // What the translate key does, one key over: the first press is the application's (it keeps
-    // whatever it does with the combination), a second one within the same window opens the menu.
+    // The gesture is the translate key's, one key further: the translate key first (Ctrl+C by
+    // default — the application copies the selection, and the translate handler has recorded that
+    // press), then this key within the same window. So the first press of the pair is one
+    // programs already know, and this key only has to be a combination they do not use.
     constexpr ULONGLONG kDoubleTapMs = 350;
     constexpr ULONGLONG kPairMs = 50;  // OnTestKeyDown and OnKeyDown report one press
     const ULONGLONG now = GetTickCount64();
     if (now - _lastAiActionSeen < kPairMs) return false;
     _lastAiActionSeen = now;
-    const bool second = _lastAiActionTick != 0 && now - _lastAiActionTick <= kDoubleTapMs;
-    if (!second) {
-        _lastAiActionTick = now;
-        return false;
-    }
-    _lastAiActionTick = 0;
+    const bool after_translate_key =
+        _lastTranslateCopyTick != 0 && now - _lastTranslateCopyTick <= kDoubleTapMs;
+    if (!after_translate_key) return false;
+    _lastTranslateCopyTick = 0;  // the pair is used up
     _aiActionKeyDown = static_cast<UINT>(key);
     // Reading the selection and placing the menu need an edit session and the caret, which cannot
     // be done inside a key callback: the message goes to the config window, as the translation's
