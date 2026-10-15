@@ -469,11 +469,13 @@ private:
     void _render_ai_menu();  // redraw the rows (the highlight moved)
     void _run_ai_action(std::size_t row);  // a menu row
     void _start_ai_action(std::size_t index, const std::wstring& source, bool shortened);
-    // The text to work on: what is selected — or, when nothing is selected, what is on the
-    // clipboard (docs/ai.md: a copied passage can be polished without selecting it). The clipboard
-    // is also the fallback for a selection the program will not let us read. Truncated at
-    // translate.max_selection_chars; false when there is nothing to work on.
-    bool _read_selected_text(std::wstring* selection, bool* shortened);
+    // The text to work on (docs/ai.md): the selection, or with nothing selected what is written on
+    // the caret's line so far — which is selected for the user, and put on the clipboard. A program
+    // the input method cannot read is asked to copy instead. Truncated at
+    // translate.max_selection_chars; false when there is nothing to work on, with `reason` (when
+    // given) set to what the window should say.
+    bool _read_selected_text(std::wstring* selection, bool* shortened,
+                             const wchar_t** reason = nullptr);
     // Sends the selected text for `purpose` (kTextUpload*): the short command when it fits the IPC
     // field, the chunked one otherwise. `insert` is what the answer does (ai_actions.h: over the
     // selection, under it, or only shown); `note` is what the window shows beside it (a shortened

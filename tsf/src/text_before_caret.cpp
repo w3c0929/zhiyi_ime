@@ -151,78 +151,56 @@ public:
     bool more = false;  // the selection went past max_chars
 
 private:
-    // From the start of the caret's line to the caret itself (docs/ai.md), bounded by _max: the
-    // window before the caret is scanned in one read for the newline that starts the line, the
-    // range is brought in to it, and the part that is left becomes the selection — the answer
-    // replaces it or lands under it like any other selection's. `more` when the line began before
-    // the window, or when what is left of it still does not fit.
+    // From the start of the caret's line to the caret itself (docs/ai.md): the window before the
+    // caret is read the way the context read has always read it — collapse to the start and
+    // ShiftStart (the idiom that works; moving the *end* backwards does not), one character more
+    // than _max so a full window says the line began further back — the line's start is the last
+    // newline in it, and that part becomes the selection. The answer replaces it or lands under it
+    // like any other selection's.
     HRESULT read_line(TfEditCookie ec, ITfRange* caret) {
-        LONG back = 0;
-        std::wstring before;
-        bool cut_back = false;
-        if (!scan_back(ec, caret, &back, &before, &cut_back)) return E_FAIL;
+        const LONG width = static_cast<LONG>(_max + 1);
+        com_ptr<ITfRange> window;
+        if (FAILED(caret->Clone(&window))) return E_FAIL;
+        window->Collapse(ec, TF_ANCHOR_START);
+        LONG moved = 0;
+        if (FAILED(window->ShiftStart(ec, -width, &moved, nullptr))) return E_FAIL;
+        const std::size_t back = static_cast<std::size_t>(moved < 0 ? -moved : 0);
+        std::wstring buffer(back, L'\0');
+        ULONG length = 0;
+        if (back > 0 &&
+            FAILED(window->GetText(ec, 0, buffer.data(), static_cast<ULONG>(buffer.size()),
+                                   &length))) {
+            return E_FAIL;
+        }
+        buffer.resize((std::min)(static_cast<std::size_t>(length), buffer.size()));
 
-        // The line starts after the last newline before the caret; with none in the window, either
-        // the line starts further back (the window was full) or the caret's line is the first.
-        const std::size_t last_break = before.find_last_of(L"\r\n");
-        const LONG line_back =
-            last_break == std::wstring::npos
-                ? static_cast<LONG>(before.size())
-                : static_cast<LONG>(before.size() - last_break - 1);
-        more = last_break == std::wstring::npos && cut_back;
+        // Everything after the last newline is the caret's line; with none, the line reaches back
+        // past the window (the window being full is what says so).
+        const std::size_t last_break = buffer.find_last_of(L"\r\n");
+        const std::size_t line_from = last_break == std::wstring::npos ? 0 : last_break + 1;
+        const LONG line_back = static_cast<LONG>(buffer.size() - line_from);
+        more = last_break == std::wstring::npos && back == static_cast<std::size_t>(width);
 
         com_ptr<ITfRange> line;
         if (FAILED(caret->Clone(&line))) return E_FAIL;
         line->Collapse(ec, TF_ANCHOR_START);
         LONG shifted = 0;
-        if (FAILED(line->ShiftStart(ec, -line_back, &shifted, nullptr)) || shifted != -line_back) {
-            return E_FAIL;
-        }
+        if (FAILED(line->ShiftStart(ec, -line_back, &shifted, nullptr))) return E_FAIL;
         TF_SELECTION selection = {};
         selection.range = line.Get();
         selection.style.ase = TF_AE_NONE;
         selection.style.fInterimChar = FALSE;
         if (FAILED(_context->SetSelection(ec, 1, &selection))) return E_FAIL;
 
-        std::wstring buffer(_max + 1, L'\0');
-        ULONG length = 0;
-        if (FAILED(line->GetText(ec, 0, buffer.data(), static_cast<ULONG>(buffer.size()), &length))) {
-            return E_FAIL;
-        }
-        buffer.resize((std::min)(static_cast<size_t>(length), buffer.size()));
-        buffer.erase(std::remove_if(buffer.begin(), buffer.end(),
-                                    [](wchar_t c) {
-                                        return c == TS_CHAR_EMBEDDED || c == TS_CHAR_REGION;
-                                    }),
-                     buffer.end());
-        more = more || buffer.size() > _max;
-        if (buffer.size() > _max) buffer.resize(_max);
-        text = std::move(buffer);
+        std::wstring out = buffer.substr(line_from);
+        out.erase(std::remove_if(out.begin(), out.end(),
+                                 [](wchar_t c) { return c == TS_CHAR_EMBEDDED || c == TS_CHAR_REGION; }),
+                  out.end());
+        more = more || out.size() > _max;
+        if (out.size() > _max) out.resize(_max);
+        text = std::move(out);
         result = TextBeforeCaret::kRead;
         return S_OK;
-    }
-
-    // The window of up to _max+1 characters before the caret (one more than the bound, so filling
-    // it says the text goes on beyond). `moved` is how far the range could go.
-    bool scan_back(TfEditCookie ec, ITfRange* caret, LONG* moved, std::wstring* out, bool* cut) {
-        com_ptr<ITfRange> probe;
-        if (FAILED(caret->Clone(&probe))) return false;
-        probe->Collapse(ec, TF_ANCHOR_START);
-        const LONG width = static_cast<LONG>(_max + 1);
-        LONG shifted = 0;
-        if (FAILED(probe->ShiftEnd(ec, -width, &shifted, nullptr))) return false;
-        *moved = -shifted;
-        *cut = shifted == -width;
-        std::wstring buffer(static_cast<size_t>(*moved), L'\0');
-        ULONG length = 0;
-        if (!buffer.empty() &&
-            FAILED(probe->GetText(ec, 0, buffer.data(), static_cast<ULONG>(buffer.size()),
-                                  &length))) {
-            return false;
-        }
-        buffer.resize((std::min)(static_cast<size_t>(length), buffer.size()));
-        *out = std::move(buffer);
-        return true;
     }
     LONG _ref = 1;
     ITfContext* _context;

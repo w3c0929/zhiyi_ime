@@ -47,6 +47,8 @@ std::wstring shortened_note(std::size_t chars) {
 // Why a key could not do anything (the window says 无法完成：…, docs/ai.md). Nothing to work on is
 // the one a user meets most: nothing selected, and the line the caret is on has no text.
 constexpr const wchar_t kNothingToWorkOn[] = L"没有选中内容，光标这一行也没有文字";
+// The other failure: the program would not let the input method read (or copy) its text at all.
+constexpr const wchar_t kCannotReadText[] = L"这个程序不让输入法取文字，请先手动选中要处理的内容";
 constexpr const wchar_t kNoServerConnection[] = L"与后台服务的连接断开";
 
 // A bare modifier press is not "another key": it must not close the menu (the user is still
@@ -188,8 +190,10 @@ bool TextService::_handle_translate_key(WPARAM key) {
 // is selected for the user). It is put on the clipboard as it is taken — the key copies for the
 // user — and what the clipboard happened to hold *before* is never used: that is what made the
 // same key work on text the user could not see.
-bool TextService::_read_selected_text(std::wstring* selection, bool* shortened) {
+bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
+                                      const wchar_t** reason) {
     if (shortened) *shortened = false;
+    if (reason) *reason = kNothingToWorkOn;
     ITfContext* context = _current_edit_context_for_composition();
     if (!context) return false;
     const std::size_t limit =
@@ -212,7 +216,10 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened) 
         make_the_program_copy = true;
     }
     context->Release();
-    if (read != TextBeforeCaret::kRead) return false;
+    if (read != TextBeforeCaret::kRead) {
+        if (reason) *reason = kCannotReadText;
+        return false;
+    }
 
     if (make_the_program_copy) {
         const DWORD sequence = GetClipboardSequenceNumber();
@@ -220,7 +227,9 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened) 
         Sleep(kClipboardWaitMs);
         if (GetClipboardSequenceNumber() == sequence || !read_clipboard_text(selection) ||
             selection->empty()) {
-            return false;  // it copied nothing: there was no selection to copy
+            // It copied nothing: either there was no selection, or it will not give its text away.
+            if (reason) *reason = wanted.empty() ? kCannotReadText : kNothingToWorkOn;
+            return false;
         }
     } else {
         // What was read is what gets handled, and it goes on the clipboard as well — the copy is
@@ -241,8 +250,9 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened) 
 void TextService::_process_selection_translate() {
     std::wstring selection;
     bool shortened = false;
-    if (!_read_selected_text(&selection, &shortened)) {
-        _present_failure(kNothingToWorkOn, std::wstring());
+    const wchar_t* reason = nullptr;
+    if (!_read_selected_text(&selection, &shortened, &reason)) {
+        _present_failure(reason, std::wstring());
         return;
     }
     const std::string text = selection_to_utf8(selection);
@@ -554,8 +564,9 @@ void TextService::_process_ai_action_selection() {
     if (actions.empty()) return;  // no data file, or nothing usable in it
     std::wstring selection;
     bool shortened = false;
-    if (!_read_selected_text(&selection, &shortened)) {
-        _present_failure(kNothingToWorkOn, std::wstring());
+    const wchar_t* reason = nullptr;
+    if (!_read_selected_text(&selection, &shortened, &reason)) {
+        _present_failure(reason, std::wstring());
         return;
     }
     if (action_id.empty()) {
@@ -598,6 +609,11 @@ bool TextService::_show_menu_window() {
     } else if (!_aiMenuWindow->ensure_created(owner)) {
         return false;
     }
+    // A row can be clicked, like a candidate (the window is MA_NOACTIVATE, so the click does not
+    // take the focus away from the input box the menu belongs to).
+    _aiMenuWindow->set_candidate_selection_callback([this](std::size_t row) {
+        if (_aiMenuOpen) _run_ai_action(row);
+    });
     _aiMenuWindow->set_layout(_config.layout);
     _aiMenuWindow->set_page_info(1, 1);  // one page: no turning arrows
     _aiMenuWindow->set_preedit(std::string(), size_t{0}, size_t{0}, size_t{0}, size_t{0}, false);
