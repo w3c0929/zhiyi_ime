@@ -217,7 +217,29 @@ enum class IPCCommand : uint32_t {
     // offline model; TRANSLATE_STATUS polls for the result (response translate_state/translate_text).
     TRANSLATE_SELECTION = 35,
     TRANSLATE_STATUS = 36,
+    // Text that does not fit translate_text, and its result (docs/ai.md): a selection longer than
+    // the field, or the answer of an AI action. The short path above is unchanged; the client
+    // uses these commands only when the text is longer than translate_text.
+    //   TEXT_UPLOAD_BEGIN   key_code: kTextUpload* (what the text is for); search_query: the
+    //                       action id (AI actions, UTF-8); modifiers: the total byte count. The
+    //                       upload is complete once that many bytes arrived.
+    //   TEXT_UPLOAD_CHUNK   key_code: kTextUpload*; candidate_index: the byte offset;
+    //                       translate_text: up to kTranslateTextCapacity-1 bytes of the text.
+    //   TEXT_RESULT_POLL    like TRANSLATE_STATUS: translate_state (kTranslate*) and, in
+    //                       text_result_bytes, how much of the result is ready.
+    //   TEXT_RESULT_READ    key_code: kTextUpload*; candidate_index: the byte offset;
+    //                       translate_text: up to kTranslateTextCapacity-1 bytes of the result,
+    //                       text_result_bytes: how much of it is ready in all.
+    TEXT_UPLOAD_BEGIN = 37,
+    TEXT_UPLOAD_CHUNK = 38,
+    TEXT_RESULT_POLL = 39,
+    TEXT_RESULT_READ = 40,
 };
+
+// IPCRequest::key_code with the TEXT_UPLOAD_* commands: what the uploaded text is for, and which
+// service answers TEXT_RESULT_POLL / TEXT_RESULT_READ.
+constexpr uint32_t kTextUploadTranslate = 1;  // the selection translation (TranslateService)
+constexpr uint32_t kTextUploadAiAction = 2;   // an AI action (AiActionService)
 
 // IPCResponse::voice_state.
 constexpr uint32_t kVoiceIdle = 0;        // nothing (never started, dropped, or nothing heard)
@@ -226,10 +248,14 @@ constexpr uint32_t kVoiceRecognizing = 2; // turning the recording into text
 constexpr uint32_t kVoiceDone = 3;        // voice_text holds the text
 constexpr std::size_t kVoiceTextCapacity = 2048;
 
-// IPCResponse::translate_state (TRANSLATE_SELECTION / TRANSLATE_STATUS).
+// IPCResponse::translate_state (TRANSLATE_SELECTION / TRANSLATE_STATUS, and the TEXT_RESULT_*
+// commands of an AI action).
 constexpr uint32_t kTranslateIdle = 0;        // nothing, or the text could not be translated
 constexpr uint32_t kTranslateTranslating = 1; // the model is working
 constexpr uint32_t kTranslateDone = 2;        // translate_text holds the translation
+// The AI action could not run (no key, the AI is off, the service refused): the result text is the
+// reason to show, not an answer, so the input box shows it rather than replacing the selection.
+constexpr uint32_t kTranslateFailed = 3;
 constexpr std::size_t kTranslateTextCapacity = 4096;
 
 constexpr uint32_t kContextTextRead = 1u << 0;
@@ -242,6 +268,9 @@ enum class IPCStatus : uint32_t {
     ERR_ENGINE_NOT_INITIALIZED = 100,
     ERR_ENGINE_PROCESS_FAILED = 101,
     ERR_STALE_CANDIDATE = 102,
+    // A request that does not make sense as it stands: a TEXT_UPLOAD_CHUNK with no
+    // TEXT_UPLOAD_BEGIN, a piece out of order, or more text than the server keeps.
+    ERR_INVALID_REQUEST = 103,
 };
 
 constexpr uint64_t kClientCapabilitySegmentedSelection = 1ULL << 0;
@@ -379,9 +408,15 @@ struct IPCResponse {
     // text (UTF-8) when kVoiceDone.
     uint32_t voice_state = kVoiceIdle;
     char voice_text[kVoiceTextCapacity] = {};
-    // Selection translation: kTranslate* and the translated text (UTF-8) when done.
+    // Selection translation: kTranslate* and the translated text (UTF-8) when done. The long-text
+    // commands (TEXT_RESULT_*, TEXT_UPLOAD_BEGIN) use translate_state the same way; the result is
+    // read in pieces, so translate_text holds one piece at a time and the state turns kTranslateDone
+    // once the whole result is ready.
     uint32_t translate_state = kTranslateIdle;
     char translate_text[kTranslateTextCapacity] = {};
+    // TEXT_RESULT_POLL / TEXT_RESULT_READ: how many bytes of the result are ready in all (the
+    // client reads pieces from offset 0 up to this). Appended after the fields above.
+    uint32_t text_result_bytes = 0;
 };
 
 static_assert(std::is_standard_layout<IPCResponse>::value,

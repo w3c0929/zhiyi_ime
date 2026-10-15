@@ -1,6 +1,7 @@
 project(cxxime-server CXX)
 
 add_executable(cxxime-server WIN32
+    src/ai_action_service.cc
     src/config_store.cc
     src/config_write_coordinator.cc
     src/continuation_worker.cc

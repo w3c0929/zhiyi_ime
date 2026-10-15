@@ -2,12 +2,14 @@
 
 #include "server_app.h"
 
+#include <chrono>
 #include <cstdio>
 #include <string>
 
 #include <objbase.h>
 #include <shellapi.h>
 
+#include <cxxime/ai_actions.h>
 #include <cxxime/ai_client.h>
 #include <cxxime/config.h>
 #include <cxxime/data_path.h>
@@ -39,13 +41,20 @@ static bool has_flag(int argc, LPWSTR* argv, const std::wstring& flag) {
     return false;
 }
 
-// A diagnostic: exercise the online AI path (ai_client.h) from the command line, the same code
-// the selection translation uses. The key is DPAPI-protected and unprotected again on the way,
-// so this checks the stored-key path too.
+// The command-line diagnostics for the online AI (ai_client.h): the same code the selection
+// translation and the AI actions use. The key is DPAPI-protected and unprotected again on the way,
+// so these check the stored-key path too.
 //
 //   zhiyu-server.exe --ai-test --key <api key> [--provider id] [--base-url url]
 //                    [--model name] [--text "text to translate"]
-static int run_ai_test(int argc, LPWSTR* argv) {
+//   zhiyu-server.exe --ai-action [--action id] --key <api key> [--provider id] [--base-url url]
+//                    [--model name] [--text "text to act on"]
+//
+// Both take --data <dir> to read a data/ folder that holds ai_actions.json (and the rest).
+
+// The console and the service the two share; false with the usage line printed.
+static bool ai_diagnostic_setup(int argc, LPWSTR* argv, const wchar_t* usage,
+                                cxxime::AiConfig* config) {
     // The server is a windowed program: borrow the console that started it, or the report is lost.
     if (AttachConsole(ATTACH_PARENT_PROCESS)) {
         FILE* console = nullptr;
@@ -53,24 +62,44 @@ static int run_ai_test(int argc, LPWSTR* argv) {
         freopen_s(&console, "CONOUT$", "w", stderr);
     }
     SetConsoleOutputCP(CP_UTF8);
-    cxxime::AiConfig config;
-    config.enabled = true;
+    config->enabled = true;
     const std::string provider = get_arg(argc, argv, L"--provider");
-    config.provider = provider.empty() ? "deepseek" : provider;
-    config.base_url = get_arg(argc, argv, L"--base-url");
-    config.model = get_arg(argc, argv, L"--model");
+    config->provider = provider.empty() ? "deepseek" : provider;
+    config->base_url = get_arg(argc, argv, L"--base-url");
+    config->model = get_arg(argc, argv, L"--model");
     const std::string key = get_arg(argc, argv, L"--key");
     if (key.empty()) {
-        printf("usage: zhiyu-server.exe --ai-test --key <api key> [--provider id] [--base-url "
-               "url] [--model name] [--text \"text\"]\n");
-        return 2;
+        printf("usage: zhiyu-server.exe %s\n", wide_to_utf8(usage).c_str());
+        return false;
     }
     const std::string stored = cxxime::ai::protect_secret(key);
     if (stored.empty()) {
         printf("the key could not be protected (DPAPI)\n");
+        return false;
+    }
+    config->keys.push_back(stored);
+    return true;
+}
+
+// A windowed program's stdout is easy to lose; --out keeps the report for reading.
+static void write_ai_report(int argc, LPWSTR* argv, const std::string& report) {
+    const std::string out_path = get_arg(argc, argv, L"--out");
+    if (out_path.empty()) return;
+    const std::wstring wide_path(out_path.begin(), out_path.end());
+    if (FILE* file = _wfopen(wide_path.c_str(), L"wb")) {
+        fwrite(report.data(), 1, report.size(), file);
+        fclose(file);
+    }
+}
+
+static int run_ai_test(int argc, LPWSTR* argv) {
+    cxxime::AiConfig config;
+    if (!ai_diagnostic_setup(argc, argv,
+                             L"--ai-test --key <api key> [--provider id] [--base-url url] "
+                             L"[--model name] [--text \"text\"]",
+                             &config)) {
         return 2;
     }
-    config.keys.push_back(stored);
     std::string text = get_arg(argc, argv, L"--text");
     if (text.empty()) text = "今天天气很好，我们去公园散步吧。";
     std::string out;
@@ -80,18 +109,48 @@ static int run_ai_test(int argc, LPWSTR* argv) {
                error.empty() ? cxxime::ai::last_error().c_str() : error.c_str());
         return 1;
     }
-    printf("provider=%s model=%s\n%s\n", config.provider.c_str(),
-           cxxime::ai::effective_model(config).c_str(), out.c_str());
-    // A windowed program's stdout is easy to lose; --out keeps the report for reading.
-    const std::string out_path = get_arg(argc, argv, L"--out");
-    if (!out_path.empty()) {
-        const std::wstring wide_path(out_path.begin(), out_path.end());
-        if (FILE* file = _wfopen(wide_path.c_str(), L"wb")) {
-            fprintf(file, "provider=%s model=%s\n%s\n", config.provider.c_str(),
-                    cxxime::ai::effective_model(config).c_str(), out.c_str());
-            fclose(file);
-        }
+    const std::string report = "provider=" + config.provider + " model=" +
+                               cxxime::ai::effective_model(config) + "\n" + out + "\n";
+    printf("%s", report.c_str());
+    write_ai_report(argc, argv, report);
+    return 0;
+}
+
+static int run_ai_action(int argc, LPWSTR* argv) {
+    cxxime::AiConfig config;
+    if (!ai_diagnostic_setup(argc, argv,
+                             L"--ai-action [--action id] --key <api key> [--provider id] "
+                             L"[--base-url url] [--model name] [--text \"text\"]",
+                             &config)) {
+        return 2;
     }
+    std::string action_id = get_arg(argc, argv, L"--action");
+    if (action_id.empty()) action_id = "proofread";
+    const cxxime::AiAction* action = cxxime::find_ai_action(action_id);
+    if (!action) {
+        printf("no such action: %s (data/ai_actions.json)\n", action_id.c_str());
+        return 2;
+    }
+    std::string text = get_arg(argc, argv, L"--text");
+    if (text.empty()) {
+        text = "我觉得这个方按可以，但是还须要再看看细节，谢谢大家。";  // 方按/须要: on purpose
+    }
+    const auto started = std::chrono::steady_clock::now();
+    std::string out;
+    std::string error;
+    if (!cxxime::ai::run_action(config, action->prompt, text, &out, &error, nullptr)) {
+        printf("failed: %s\n",
+               error.empty() ? cxxime::ai::last_error().c_str() : error.c_str());
+        return 1;
+    }
+    const long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::steady_clock::now() - started)
+                             .count();
+    const std::string report = "action=" + action->id + " provider=" + config.provider +
+                               " model=" + cxxime::ai::effective_model(config) + " " +
+                               std::to_string(ms) + " ms\n" + out + "\n";
+    printf("%s", report.c_str());
+    write_ai_report(argc, argv, report);
     return 0;
 }
 
@@ -131,6 +190,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             LocalFree(argv);
             CoUninitialize();
             return test;
+        }
+        if (has_flag(argc, argv, L"--ai-action")) {
+            const int action = run_ai_action(argc, argv);
+            LocalFree(argv);
+            CoUninitialize();
+            return action;
         }
         LocalFree(argv);
     }

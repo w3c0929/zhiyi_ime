@@ -63,7 +63,7 @@ def overlay_builds(reference, out_dir, build_x64, build_x86):
 # not go into the installer (they are already-compressed build inputs and just bloat it); the
 # built .bin/.idx and the model folders stay from the reference.
 DATA_OVERLAY = ("default.json", "ui.zh-CN.json", "ui.en-US.json", "themes.json",
-                "ai_thinking_levels.json",
+                "ai_thinking_levels.json", "ai_actions.json",
                 "punctuation.json", "symbols.json", "settings_presets.json",
                 "english.words.tsv")
 

@@ -50,6 +50,18 @@ public:
     // then poll translate_status for the result (response.translate_state / translate_text).
     bool translate_selection(uint32_t session_id, const std::string& text, IPCResponse& response);
     bool translate_status(uint32_t session_id, IPCResponse& response);
+    // Text longer than translate_text, in pieces (ipc_protocol.h, TEXT_UPLOAD_*). `purpose` is
+    // kTextUpload*; `action_id` the AI action (empty for the selection translation). Pieces are at most
+    // kTranslateTextCapacity-1 bytes and must be split at UTF-8 boundaries; a piece that does not
+    // fit is refused (false) rather than cut. The result comes back in pieces too: poll until the
+    // state is kTranslateDone, then read from offset 0 up to response.text_result_bytes.
+    bool text_upload_begin(uint32_t session_id, uint32_t purpose, const std::string& action_id,
+                           uint64_t total_bytes, IPCResponse& response);
+    bool text_upload_chunk(uint32_t session_id, uint32_t purpose, uint64_t offset,
+                           const std::string& chunk, IPCResponse& response);
+    bool text_result_poll(uint32_t session_id, uint32_t purpose, IPCResponse& response);
+    bool text_result_read(uint32_t session_id, uint32_t purpose, uint64_t offset,
+                          IPCResponse& response);
     bool focus_in(uint32_t session_id);
     bool set_input_target(uint32_t session_id, const std::string& app,
                           const std::string& window_title);

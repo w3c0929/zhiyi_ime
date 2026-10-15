@@ -76,6 +76,10 @@ bool response_copy_field(char* dst, size_t dst_size, const std::string& src) {
     return true;
 }
 
+// The most text one TEXT_UPLOAD_* upload may carry. A selection is far below this; the cap keeps
+// a client that never stops sending from growing the server.
+constexpr std::size_t kMaxTextUploadBytes = 2u << 20;
+
 } // namespace
 
 bool ServerApp::initialize(const std::string& dict_path, const std::string& config_path) {
@@ -156,6 +160,7 @@ bool ServerApp::initialize(const std::string& dict_path, const std::string& conf
                 ui_presentation_controller_.update_config(config);
                 voice_.update_config(config);
                 translate_.update_config(config);
+                ai_action_.update_config(config);
                 control_server_.publish_snapshot(config->to_runtime_json());
             },
             [this, config_window](const std::shared_ptr<const cxxime::Config>& config,
@@ -238,11 +243,16 @@ bool ServerApp::initialize(const std::string& dict_path, const std::string& conf
     }
     // Selection translation (translate_service.h): the model runs on a thread of its own.
     translate_.start(initial_config);
+    // AI actions (ai_action_service.h): the provider call blocks for seconds, so it too has a
+    // thread of its own.
+    ai_action_.start(initial_config);
 
     ipc_server_.set_handler([this](const cxxime::IPCRequest& req) { return handle_request(req); });
     ipc_server_.set_disconnect_handler([this](uint32_t session_id) {
         voice_.session_ended(session_id);
         translate_.session_ended(session_id);
+        ai_action_.session_ended(session_id);
+        text_uploads_.erase(session_id);
         session_mgr_.destroy_session(session_id);
     });
     if (!ipc_server_.start(cxxime::IPC_PIPE_BASE_NAME)) {
@@ -347,6 +357,7 @@ void ServerApp::finalize() {
     // The microphone and the voice model.
     voice_.stop();
     translate_.stop();
+    ai_action_.stop();
     // The model server first: it holds the graphics card and the model file.
     MachineTranslator::instance().set_callback({});
     MachineTranslator::instance().stop();
@@ -462,6 +473,8 @@ cxxime::IPCResponse ServerApp::handle_request(const cxxime::IPCRequest& request)
     case cxxime::IPCCommand::END_SESSION:
         voice_.session_ended(request.session_id);
         translate_.session_ended(request.session_id);
+        ai_action_.session_ended(request.session_id);
+        text_uploads_.erase(request.session_id);
         session_mgr_.destroy_session(request.session_id);
         CXXIME_LOG(L"END_SESSION: session=%u", request.session_id);
         break;
@@ -558,6 +571,8 @@ cxxime::IPCResponse ServerApp::handle_request(const cxxime::IPCRequest& request)
     case cxxime::IPCCommand::FOCUS_OUT: {
         voice_.focus_out(request.session_id);
         translate_.session_ended(request.session_id);
+        ai_action_.session_ended(request.session_id);
+        text_uploads_.erase(request.session_id);
         const auto r = session_mgr_.focus_out(request.session_id);
         fill_process_response(r, &response);
         break;
@@ -704,6 +719,13 @@ cxxime::IPCResponse ServerApp::handle_request(const cxxime::IPCRequest& request)
         break;
     }
 
+    case cxxime::IPCCommand::TEXT_UPLOAD_BEGIN:
+    case cxxime::IPCCommand::TEXT_UPLOAD_CHUNK:
+    case cxxime::IPCCommand::TEXT_RESULT_POLL:
+    case cxxime::IPCCommand::TEXT_RESULT_READ:
+        handle_text_command(request, response);
+        break;
+
     case cxxime::IPCCommand::EXIT_SERVER:
         // Closed by the window thread after this answer, saving user data as at sign-out.
         CXXIME_LOG(L"%s", L"ServerApp: exit requested from the taskbar menu");
@@ -718,6 +740,93 @@ cxxime::IPCResponse ServerApp::handle_request(const cxxime::IPCRequest& request)
     }
 
     return response;
+}
+
+bool ServerApp::handle_text_command(const cxxime::IPCRequest& request,
+                                    cxxime::IPCResponse& response) {
+    switch (request.command) {
+    case cxxime::IPCCommand::TEXT_UPLOAD_BEGIN: {
+        TextUpload& upload = text_uploads_[request.session_id];
+        upload.purpose = request.key_code;
+        upload.action_id = request.search_query;
+        upload.expected_bytes = request.modifiers;
+        upload.text.clear();
+        if ((upload.purpose != cxxime::kTextUploadTranslate &&
+             upload.purpose != cxxime::kTextUploadAiAction) ||
+            upload.expected_bytes > kMaxTextUploadBytes) {
+            text_uploads_.erase(request.session_id);
+            response.status = cxxime::IPCStatus::ERR_INVALID_REQUEST;
+        }
+        break;
+    }
+    case cxxime::IPCCommand::TEXT_UPLOAD_CHUNK: {
+        const auto found = text_uploads_.find(request.session_id);
+        if (found == text_uploads_.end() || found->second.purpose != request.key_code) {
+            response.status = cxxime::IPCStatus::ERR_INVALID_REQUEST;
+            break;
+        }
+        TextUpload& upload = found->second;
+        const std::size_t offset = request.candidate_index;
+        const std::size_t length =
+            strnlen_s(request.translate_text, sizeof(request.translate_text));
+        // Pieces must arrive in order and without gaps: anything else is dropped rather than put
+        // together into a text nobody asked for.
+        if (offset != upload.text.size() || upload.text.size() + length > kMaxTextUploadBytes) {
+            text_uploads_.erase(found);
+            response.status = cxxime::IPCStatus::ERR_INVALID_REQUEST;
+            break;
+        }
+        upload.text.append(request.translate_text, length);
+        if (upload.text.size() >= upload.expected_bytes) finish_text_upload(request.session_id);
+        break;
+    }
+    case cxxime::IPCCommand::TEXT_RESULT_POLL:
+    case cxxime::IPCCommand::TEXT_RESULT_READ: {
+        std::string result;
+        uint32_t state = cxxime::kTranslateIdle;
+        if (request.key_code == cxxime::kTextUploadTranslate) {
+            state = translate_.peek_status(request.session_id, &result);
+        } else if (request.key_code == cxxime::kTextUploadAiAction) {
+            state = ai_action_.peek_status(request.session_id, &result);
+        } else {
+            response.status = cxxime::IPCStatus::ERR_INVALID_REQUEST;
+            break;
+        }
+        response.translate_state = state;
+        response.text_result_bytes = static_cast<uint32_t>(result.size());
+        // A failure's text is the reason to show, so it is read the same way an answer is.
+        if (request.command == cxxime::IPCCommand::TEXT_RESULT_READ &&
+            (state == cxxime::kTranslateDone || state == cxxime::kTranslateFailed)) {
+            const std::size_t offset = request.candidate_index;
+            if (offset < result.size()) {
+                std::size_t length =
+                    (std::min)(result.size() - offset, cxxime::kTranslateTextCapacity - 1);
+                while (length > 0 && offset + length < result.size() &&
+                       (static_cast<unsigned char>(result[offset + length]) & 0xC0) == 0x80) {
+                    --length;  // never end a piece inside a character
+                }
+                std::memcpy(response.translate_text, result.data() + offset, length);
+                response.translate_text[length] = '\0';
+            }
+        }
+        break;
+    }
+    default:
+        return false;
+    }
+    return true;
+}
+
+void ServerApp::finish_text_upload(uint32_t session_id) {
+    const auto found = text_uploads_.find(session_id);
+    if (found == text_uploads_.end()) return;
+    TextUpload upload = std::move(found->second);
+    text_uploads_.erase(found);
+    if (upload.purpose == cxxime::kTextUploadTranslate) {
+        translate_.request(session_id, std::move(upload.text));
+    } else if (upload.purpose == cxxime::kTextUploadAiAction) {
+        ai_action_.request(session_id, upload.action_id, std::move(upload.text));
+    }
 }
 
 LRESULT CALLBACK ServerApp::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {

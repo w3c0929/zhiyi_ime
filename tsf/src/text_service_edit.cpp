@@ -35,8 +35,10 @@ STDMETHODIMP TextService::OnEndEdit(ITfContext* context, TfEditCookie edit_cooki
         return E_INVALIDARG;
     }
     // The translation window is transient, like the candidate window: an edit (a click that moves
-    // the caret) dismisses it.
+    // the caret) dismisses it. The AI action menu belongs to the selection that was there, so it
+    // goes with it.
     _hide_translate_window();
+    _close_ai_menu();
     if (!_composing || !_composition || context != _textEditSinkContext) {
         return S_OK;
     }

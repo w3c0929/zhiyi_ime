@@ -12,6 +12,7 @@ endif()
 
 add_library(cxxime-shared STATIC
     src/ai_client.cc
+    src/ai_actions.cc
     src/key_event.cc
     src/keyboard_shortcut.cc
     src/data_path.cc

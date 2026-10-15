@@ -118,6 +118,12 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
         *pfEaten = TRUE;
         return S_OK;
     }
+    // The AI action menu is its own window and takes its own keys (numbers, arrows, Enter, Esc).
+    // Its window is not the one dismissed above, so it has to be asked before anything else.
+    if (_aiMenuOpen && _handle_ai_menu_key(wParam, pfEaten)) {
+        _fTestKeyDownPending = true;
+        return S_OK;
+    }
 
     bool status_key = is_status_key(wParam);
     const char* test_block_reason = _input_context_block_reason(pic);
@@ -200,6 +206,7 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lPara
         *pfEaten = TRUE;
         return S_OK;
     }
+    if (_aiMenuOpen && _handle_ai_menu_key(wParam, pfEaten)) return S_OK;
     // Some apps call OnKeyDown without OnTestKeyDown (e.g. QQ2012)
     if (_handle_voice_text_key(pic, wParam)) {
         *pfEaten = TRUE;
@@ -226,6 +233,11 @@ STDMETHODIMP TextService::OnKeyUp(ITfContext* pic, WPARAM wParam, LPARAM lParam,
     wParam = static_cast<WPARAM>(modifier_vk_with_side(wParam, lParam));
     if (_translateKeyDown != 0 && wParam == _translateKeyDown) {
         _translateKeyDown = 0;
+        *pfEaten = TRUE;
+        return S_OK;
+    }
+    if (_aiActionKeyDown != 0 && wParam == _aiActionKeyDown) {
+        _aiActionKeyDown = 0;
         *pfEaten = TRUE;
         return S_OK;
     }

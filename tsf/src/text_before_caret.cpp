@@ -100,8 +100,10 @@ public:
         com_ptr<ITfRange> range;
         if (FAILED(caret->Clone(&range))) return E_FAIL;
         if (_selection) {
-            // The selection itself: what the selection translation reads (empty when collapsed).
-            std::wstring buffer(_max, L'\0');
+            // The selection itself: what the selection translation and the AI actions read (empty
+            // when collapsed). One character more than asked for, so that filling the buffer
+            // completely says the selection is longer rather than guessing.
+            std::wstring buffer(_max + 1, L'\0');
             ULONG length = 0;
             if (FAILED(range->GetText(ec, 0, buffer.data(), static_cast<ULONG>(buffer.size()),
                                       &length))) {
@@ -113,6 +115,8 @@ public:
                                             return c == TS_CHAR_EMBEDDED || c == TS_CHAR_REGION;
                                         }),
                          buffer.end());
+            more = buffer.size() > _max;
+            if (more) buffer.resize(_max);
             text = std::move(buffer);
             result = TextBeforeCaret::kRead;
             return S_OK;
@@ -137,6 +141,7 @@ public:
 
     TextBeforeCaret result = TextBeforeCaret::kUnavailable;
     std::wstring text;
+    bool more = false;  // the selection went past max_chars
 
 private:
     LONG _ref = 1;
@@ -154,7 +159,8 @@ bool context_is_imm_document(ITfContext* context) {
 }
 
 static TextBeforeCaret read_impl(ITfContext* context, TfClientId client_id, size_t max_chars,
-                                 std::wstring* text, bool selection) {
+                                 std::wstring* text, bool selection, bool* truncated = nullptr) {
+    if (truncated) *truncated = false;
     if (!context || client_id == TF_CLIENTID_NULL || max_chars == 0) return TextBeforeCaret::kUnavailable;
     // Classic Win32 edit boxes: a read "succeeds" with no text.
     if (context_is_imm_document(context)) return TextBeforeCaret::kUnavailable;
@@ -166,6 +172,7 @@ static TextBeforeCaret read_impl(ITfContext* context, TfClientId client_id, size
     if (SUCCEEDED(hr) && SUCCEEDED(session_hr)) {
         result = session->result;
         if (text) *text = std::move(session->text);
+        if (truncated) *truncated = session->more;
     }
     session->Release();
     return result;
@@ -177,6 +184,6 @@ TextBeforeCaret read_text_before_caret(ITfContext* context, TfClientId client_id
 }
 
 TextBeforeCaret read_selection_text(ITfContext* context, TfClientId client_id, size_t max_chars,
-                                    std::wstring* text) {
-    return read_impl(context, client_id, max_chars, text, true);
+                                    std::wstring* text, bool* truncated) {
+    return read_impl(context, client_id, max_chars, text, true, truncated);
 }

@@ -1,0 +1,36 @@
+{
+    "schema": {
+        "name": "Zhiyu IME AI actions",
+        "version": "1.0",
+        "description": "The AI actions on selected text (docs/ai.md): the menu order is this order, and 'id' is what travels over IPC. 'insert' is replace (the answer replaces the selection, Ctrl+Z undoes it) or preview (the answer is only shown). 'max_input_chars' is the longest selection the action accepts; a longer one is reported, never cut."
+    },
+    "actions": [
+        {
+            "id": "polish",
+            "label": "润色",
+            "label_en": "Polish",
+            "prompt": "You polish Chinese (or Chinese and English mixed) text the user selected, making it read like written rather than spoken: drop filler words, fix awkward word order and repetition, keep the meaning, the tone, the language and the formatting (line breaks, Markdown). Output only the polished text, with no quotes, notes or preamble.",
+            "insert": "replace",
+            "max_input_chars": 8000,
+            "timeout_ms": 20000
+        },
+        {
+            "id": "proofread",
+            "label": "纠错",
+            "label_en": "Proofread",
+            "prompt": "You proofread Chinese text the user selected. Fix only typos, wrong characters, punctuation and missing spaces between Chinese and Latin letters or digits. Do not reword, shorten or restyle. Keep every line break. Output only the corrected text, with no quotes, notes or preamble.",
+            "insert": "replace",
+            "max_input_chars": 8000,
+            "timeout_ms": 20000
+        },
+        {
+            "id": "rewrite",
+            "label": "改写",
+            "label_en": "Rewrite",
+            "prompt": "You rewrite Chinese text the user selected in a different way, keeping the length, the tone, the meaning and the formatting. Output only the rewritten text, with no quotes, notes or preamble.",
+            "insert": "replace",
+            "max_input_chars": 8000,
+            "timeout_ms": 20000
+        }
+    ]
+}

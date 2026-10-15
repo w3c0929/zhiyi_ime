@@ -73,6 +73,13 @@ bool list_models(const AiConfig& config, std::vector<std::string>* models, std::
 bool translate(const AiConfig& config, const std::string& text, const std::string& target,
                std::string* translation, std::string* error, const std::atomic<bool>* cancel);
 
+// An AI action on selected text (ai_actions.h): the action's prompt as the system message and the
+// text as the user message, through complete(). The answer is trimmed and stripped of the
+// wrapping quotes, the code fences and the "以下是...：" line models like to add; an answer that
+// holds nothing else comes back empty.
+bool run_action(const AiConfig& config, const std::string& system_prompt, const std::string& text,
+                std::string* answer, std::string* error, const std::atomic<bool>* cancel);
+
 // The last error of the most recent call on this thread (for the settings page's test button).
 std::string last_error();
 

@@ -16,6 +16,8 @@
 
 #include "editor_app.h"
 
+#include "key_capture.h"
+
 #include <algorithm>
 #include <chrono>
 #include <string>
@@ -40,6 +42,7 @@ constexpr int kAiKeyRemoveId = 6017;
 constexpr int kAiDetectId = 6018;
 constexpr int kAiEffortId = 6019;
 constexpr int kAiThinkingId = 6020;
+constexpr int kAiActionKeyId = 6021;  // AI actions on the selection: the menu key
 
 // The two modes, in the order of the combo (AiConfig::mode).
 const char* const kAiModeKeys[] = {"ai.mode_prefer_remote", "ai.mode_remote_only"};
@@ -215,6 +218,18 @@ void EditorApp::create_ai_panel(HWND panel) {
     y += kRowH;
     make_hint(tr("ai.use_for_hint"), use_x, y - S(8), hint_w, panel, 1);
     y += S(24);
+    y = card_end(panel, y);
+
+    // AI actions on the selection (docs/ai.md): the key that opens the menu of actions beside the
+    // selected text, like the translate key (press it twice; the first press is the program's).
+    y = card_begin(panel, y, tr("ai.card_actions"));
+    const int action_x = make_aligned_label(tr("ai.action_key"), x0, labels, y, panel);
+    hAiActionKey_ = create_key_capture(kAiActionKeyId, action_x, y, S(160), kCtrlH, panel, false);
+    key_capture_set_allow_double(hAiActionKey_, true);
+    key_capture_set_allow_common(hAiActionKey_, true);
+    y += kRowH;
+    make_hint(tr("ai.action_key_hint"), action_x, y - S(6), hint_w, panel, 2);
+    y += S(44);
     card_end(panel, y);
 }
 
@@ -276,6 +291,8 @@ void EditorApp::populate_ai() {
     set_check(hAiUseVoice_, config_.ai.use_for.voice);
     set_check(hAiUseGlossary_, config_.ai.use_for.glossary);
 
+    key_capture_set(hAiActionKey_, KeyChoice::of(config_.ai_action_shortcut));
+
     refresh_ai_key_list();
 }
 
@@ -304,6 +321,10 @@ void EditorApp::read_ai(cxxime::Config& config) {
     config.ai.use_for.english = get_check(hAiUseEnglish_);
     config.ai.use_for.voice = get_check(hAiUseVoice_);
     config.ai.use_for.glossary = get_check(hAiUseGlossary_);
+    const KeyChoice action_key = key_capture_get(hAiActionKey_);
+    config.ai_action_shortcut = action_key.kind == KeyChoice::Kind::kCombo
+                                    ? action_key.combo
+                                    : cxxime::KeyboardShortcut{};
 
     // Row two is the key in use and is editable: a value that is not among the stored ones is a
     // new key and is added (SuMail's box adds one the same way); an unchanged one is left alone,

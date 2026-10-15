@@ -481,6 +481,9 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         load_string(translate, "device", config.translate_device);
         load_int(translate, "idle_seconds", config.translate_idle_seconds);
         config.translate_idle_seconds = std::clamp(config.translate_idle_seconds, 0, 3600);
+        load_int(translate, "max_selection_chars", config.translate_max_selection_chars);
+        config.translate_max_selection_chars =
+            std::clamp(config.translate_max_selection_chars, 100, 1000000);
     }
 
     // Online AI (ai_config.h). Absent (and off) unless the user turned it on.
@@ -535,6 +538,8 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         // Not a switch key: read on its own, it is neither deduplicated nor reset with them.
         load_keyboard_shortcut(shortcuts, "translate_selection",
                                config.translate_selection_shortcut, is_valid_translate_shortcut);
+        load_keyboard_shortcut(shortcuts, "ai_action", config.ai_action_shortcut,
+                               is_valid_translate_shortcut);
         load_page_key(shortcuts, "page_up", "-,[", config.page_up_key);
         load_page_key(shortcuts, "page_down", "=.]", config.page_down_key);
         for (const auto& [key, value] :
@@ -850,6 +855,7 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["shortcuts"]["voice_input"] = keyboard_shortcut_string(config.voice_input_shortcut);
     j["shortcuts"]["translate_selection"] =
         keyboard_shortcut_string(config.translate_selection_shortcut);
+    j["shortcuts"]["ai_action"] = keyboard_shortcut_string(config.ai_action_shortcut);
     j["shortcuts"]["page_up"] = std::string(config.page_up_key ? 1 : 0, config.page_up_key);
     j["shortcuts"]["page_down"] = std::string(config.page_down_key ? 1 : 0, config.page_down_key);
     j["privacy"]["experience_program"] = config.experience_program;
@@ -879,6 +885,7 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["translate"]["direct_insert"] = config.translate_direct_insert;
     j["translate"]["device"] = config.translate_device;
     j["translate"]["idle_seconds"] = config.translate_idle_seconds;
+    j["translate"]["max_selection_chars"] = config.translate_max_selection_chars;
     j["ai"]["enabled"] = config.ai.enabled;
     j["ai"]["mode"] = config.ai.mode;
     j["ai"]["provider"] = config.ai.provider;

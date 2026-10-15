@@ -185,7 +185,16 @@ struct Config {
     // selected in the input box with the offline model. It is not a switch key: the first press
     // goes to the application (Ctrl+C copies), only the second one is ours.
     KeyboardShortcut translate_selection_shortcut = {kKeyModifierControl, 'C' /* VK_C */, 2};
+    // AI actions on the selected text (docs/ai.md): this key (pressed twice, as the translate key
+    // is) opens the menu of actions beside the selection. None by default: the first press goes to
+    // the application, so the key is a combination the program in front should not miss.
+    KeyboardShortcut ai_action_shortcut;
     bool translate_direct_insert = false;  // true: replace the selection, no candidate window
+    // translate.max_selection_chars: the longest selection read out of the input box (characters)
+    // for the selection translation and the AI actions. Longer selections are cut to this with a
+    // note, never silently; a selection that was cut is shown rather than typed back over the
+    // text, so nothing is lost.
+    int translate_max_selection_chars = 32000;
     std::string translate_device;        // "" the CPU, else a card key (gpu_adapters.h)
     int translate_idle_seconds = 60;     // the model is unloaded after this long without a request
 

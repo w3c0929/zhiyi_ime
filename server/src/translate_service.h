@@ -43,6 +43,9 @@ public:
 
     // kTranslate* (ipc_protocol.h) for session `id`; when done the text, once.
     uint32_t take_status(uint32_t id, std::string* text);
+    // As take_status, but a finished result stays for the next call: the long-text path
+    // (TEXT_RESULT_POLL / TEXT_RESULT_READ) reads the result in pieces.
+    uint32_t peek_status(uint32_t id, std::string* text);
 
 private:
     enum class Phase { kIdle, kTranslating, kDone };

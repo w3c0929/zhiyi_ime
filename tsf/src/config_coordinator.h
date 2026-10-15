@@ -28,6 +28,8 @@ constexpr UINT_PTR TIMER_CXXIME_VOICE_POLL = 0xC319;
 constexpr UINT WM_CXXIME_TRANSLATE_SELECTION = WM_APP + 0x31A;
 // Selection translation: where the server's translation is (TextService::_poll_translation).
 constexpr UINT_PTR TIMER_CXXIME_TRANSLATE_POLL = 0xC31A;
+// AI actions: the menu key was taken (TextService::_process_ai_action_selection).
+constexpr UINT WM_CXXIME_AI_ACTION_SELECTION = WM_APP + 0x31B;
 
 struct ConfigSnapshot {
     cxxime::ConfigGeneration generation;

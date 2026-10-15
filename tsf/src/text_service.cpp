@@ -328,6 +328,7 @@ STDMETHODIMP TextService::Deactivate() {
     _remove_translation_key_hook();
     _stop_translation_poll();
     _hide_translate_window();
+    _close_ai_menu();
 
     if (_sessionId && _composing) {
         cxxime::IPCResponse response = {};

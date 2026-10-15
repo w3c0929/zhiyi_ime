@@ -23,6 +23,11 @@ namespace cxxime {
 namespace ai {
 namespace {
 
+// The longest answer taken from a service. A translation or an AI action lands back in an input
+// box, and the whole answer travels through the IPC fields in pieces; a service that runs away
+// is refused rather than carried further.
+constexpr std::size_t kMaxAnswerBytes = 200u << 10;
+
 // The provider table: the address, the default model and the API shape of each service. Kept
 // here rather than in a data file so an installation cannot be left without it.
 const std::vector<Provider>& table() {
@@ -668,6 +673,13 @@ bool complete(const AiConfig& config, const std::string& system_prompt,
             continue;  // the next key may still work
         }
         if (parse_response(provider.protocol, body, text)) {
+            if (text->size() > kMaxAnswerBytes) {
+                // The answer takes long text back to an input box: refuse a runaway one rather
+                // than hand the rest of the program something it cannot show.
+                g_last_error = "the answer is too long";
+                if (error) *error = g_last_error;
+                return false;
+            }
             if (error) error->clear();
             return true;
         }
@@ -678,6 +690,11 @@ bool complete(const AiConfig& config, const std::string& system_prompt,
             http_request(L"POST", request.url, request.headers, &request.body,
                          (std::max)(1000, config.timeout_ms), &body, &failure) &&
             parse_response(provider.protocol, body, text)) {
+            if (text->size() > kMaxAnswerBytes) {
+                g_last_error = "the answer is too long";
+                if (error) *error = g_last_error;
+                return false;
+            }
             if (error) error->clear();
             return true;
         }
@@ -708,6 +725,80 @@ bool translate(const AiConfig& config, const std::string& text, const std::strin
                                ". Output only the translation, without quotes, notes or the "
                                "original text.";
     return complete(config, system, text, translation, error, cancel);
+}
+
+namespace {
+
+bool starts_with(const std::string& text, const char* prefix) {
+    return text.compare(0, std::strlen(prefix), prefix) == 0;
+}
+
+bool ends_with(const std::string& text, const char* suffix) {
+    const size_t length = std::strlen(suffix);
+    return text.size() >= length && text.compare(text.size() - length, length, suffix) == 0;
+}
+
+std::string trimmed(const std::string& value) {
+    const char* spaces = " \t\r\n";
+    const size_t first = value.find_first_not_of(spaces);
+    if (first == std::string::npos) return {};
+    return value.substr(first, value.find_last_not_of(spaces) - first + 1);
+}
+
+// Models like to wrap an answer: a "以下是润色后的文本：" line, a pair of quotes or of ``` fences.
+// The prompts ask for the text alone, so strip those rather than let them reach the input box.
+std::string clean_action_answer(const std::string& answer) {
+    std::string text = trimmed(answer);
+    // ```...``` around the whole answer (what a model does with text that looks like code). The
+    // opening fence may carry a language ("```text").
+    if (starts_with(text, "```")) {
+        const size_t end = text.rfind("```");
+        if (end > 3) {
+            std::string inner = text.substr(3, end - 3);
+            const size_t newline = inner.find('\n');
+            if (newline != std::string::npos && newline < 16) inner.erase(0, newline + 1);
+            text = trimmed(inner);
+        }
+    }
+    // A short first line that only announces the answer.
+    const size_t newline = text.find('\n');
+    if (newline != std::string::npos && newline < 40) {
+        const std::string first = text.substr(0, newline);
+        const bool announces = first.find("以下") != std::string::npos ||
+                               first.find("下面是") != std::string::npos ||
+                               first.find("Here is") != std::string::npos ||
+                               first.find("Here's") != std::string::npos;
+        const bool colon = !first.empty() && (first.back() == ':' || ends_with(first, "\xEF\xBC\x9A"));
+        if (announces && colon) text = trimmed(text.substr(newline + 1));
+    }
+    // One pair of quotes around the whole answer (not a quoted word inside it).
+    size_t quote = 0;  // the opening quote's bytes
+    if (text.size() >= 2 && text.front() == '"' && text.back() == '"') {
+        quote = 1;
+    } else if (text.size() >= 6 && starts_with(text, "\xE2\x80\x9C") &&  // “
+               ends_with(text, "\xE2\x80\x9D")) {                       // ”
+        quote = 3;
+    } else if (text.size() >= 6 && starts_with(text, "\xE3\x80\x8C") &&  // 「
+               ends_with(text, "\xE3\x80\x8D")) {                       // 」
+        quote = 3;
+    }
+    if (quote > 0) {
+        const std::string inner = trimmed(text.substr(quote, text.size() - quote * 2));
+        if (!inner.empty()) text = inner;
+    }
+    return text;
+}
+
+}  // namespace
+
+bool run_action(const AiConfig& config, const std::string& system_prompt, const std::string& text,
+                std::string* answer, std::string* error, const std::atomic<bool>* cancel) {
+    std::string raw;
+    if (!complete(config, system_prompt, text, &raw, error, cancel)) return false;
+    const std::string cleaned = clean_action_answer(raw);
+    if (answer) *answer = cleaned;
+    // Nothing but the announcement: the model had no change to make. Not an error, an empty answer.
+    return true;
 }
 
 bool list_models(const AiConfig& config, std::vector<std::string>* models, std::string* error,

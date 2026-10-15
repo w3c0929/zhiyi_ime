@@ -327,6 +327,56 @@ bool IpcClient::translate_status(uint32_t session_id, IPCResponse& response) {
     return send_request(req, response) && response.status == IPCStatus::OK;
 }
 
+// Text longer than translate_text, in pieces (ipc_protocol.h, TEXT_UPLOAD_*): the caller splits
+// and joins at UTF-8 boundaries, and a piece that does not fit is refused rather than cut (a cut
+// piece would leave a gap once the pieces are put back together).
+bool IpcClient::text_upload_begin(uint32_t session_id, uint32_t purpose,
+                                  const std::string& action_id, uint64_t total_bytes,
+                                  IPCResponse& response) {
+    if (action_id.size() >= sizeof(IPCRequest::search_query)) return false;
+    IPCRequest req = {};
+    req.command = IPCCommand::TEXT_UPLOAD_BEGIN;
+    req.session_id = session_id;
+    req.key_code = purpose;
+    std::memcpy(req.search_query, action_id.data(), action_id.size());
+    req.search_query[action_id.size()] = '\0';
+    const uint64_t most = 0xFFFFFFFFull;
+    req.modifiers = static_cast<uint32_t>(total_bytes < most ? total_bytes : most);
+    return send_request(req, response) && response.status == IPCStatus::OK;
+}
+
+bool IpcClient::text_upload_chunk(uint32_t session_id, uint32_t purpose, uint64_t offset,
+                                  const std::string& chunk, IPCResponse& response) {
+    const std::size_t capacity = kTranslateTextCapacity;
+    if (chunk.size() >= capacity) return false;
+    IPCRequest req = {};
+    req.command = IPCCommand::TEXT_UPLOAD_CHUNK;
+    req.session_id = session_id;
+    req.key_code = purpose;
+    req.candidate_index = static_cast<uint32_t>(offset);
+    std::memcpy(req.translate_text, chunk.data(), chunk.size());
+    req.translate_text[chunk.size()] = '\0';
+    return send_request(req, response) && response.status == IPCStatus::OK;
+}
+
+bool IpcClient::text_result_poll(uint32_t session_id, uint32_t purpose, IPCResponse& response) {
+    IPCRequest req = {};
+    req.command = IPCCommand::TEXT_RESULT_POLL;
+    req.session_id = session_id;
+    req.key_code = purpose;
+    return send_request(req, response) && response.status == IPCStatus::OK;
+}
+
+bool IpcClient::text_result_read(uint32_t session_id, uint32_t purpose, uint64_t offset,
+                                 IPCResponse& response) {
+    IPCRequest req = {};
+    req.command = IPCCommand::TEXT_RESULT_READ;
+    req.session_id = session_id;
+    req.key_code = purpose;
+    req.candidate_index = static_cast<uint32_t>(offset);
+    return send_request(req, response) && response.status == IPCStatus::OK;
+}
+
 bool IpcClient::clear_composition(uint32_t session_id) {
     IPCRequest req = {};
     req.command = IPCCommand::CLEAR_COMPOSITION;

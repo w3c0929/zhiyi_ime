@@ -381,6 +381,7 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(ai.use_for.english);
     KEEP_PAGE_EDIT(ai.use_for.voice);
     KEEP_PAGE_EDIT(ai.use_for.glossary);
+    KEEP_PAGE_EDIT(ai_action_shortcut);
 #undef KEEP_PAGE_EDIT
     // The switch keys move together, so a merge never repeats a key.
     if (!(ui.ascii_switch_key == before.ascii_switch_key) ||

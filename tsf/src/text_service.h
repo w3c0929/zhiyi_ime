@@ -441,12 +441,38 @@ private:
     // key-up is swallowed too). Called from OnTestKeyDown and OnKeyDown.
     bool _handle_translate_key(WPARAM key);
     void _process_selection_translate();
+    // AI actions on the selection (docs/ai.md): the second press of shortcuts.ai_action opens a
+    // menu of the actions beside the selection; the chosen one runs through the same channel
+    // (_send_selected_text) the translation uses, so the poll and the result window are shared.
+    // Called from OnTestKeyDown / OnKeyDown, from where _handle_translate_key is called.
+    bool _handle_ai_action_key(WPARAM key);
+    // The menu key was taken: read the selection and open the menu (on the config window's thread,
+    // like _process_selection_translate).
+    void _process_ai_action_selection();
+    // A key while the menu is open: true when the menu took it (pfEaten is set then).
+    bool _handle_ai_menu_key(WPARAM key, BOOL* pfEaten);
+    void _open_ai_menu(const std::wstring& source, bool shortened);
+    void _close_ai_menu();
+    void _render_ai_menu();  // redraw the rows (the highlight moved)
+    void _run_ai_action(std::size_t row);
+    // The selected text, with the clipboard as the fallback and translate.max_selection_chars as
+    // the limit; false when there is nothing to work on.
+    bool _read_selected_text(std::wstring* selection, bool* shortened);
+    // Sends the selected text for `purpose` (kTextUpload*): the short command when it fits the IPC
+    // field, the chunked one otherwise. `replace` is whether the answer may be typed over the
+    // selection; `note` is what the window shows beside it (a shortened selection, for instance).
+    bool _send_selected_text(std::uint32_t purpose, const std::string& action_id,
+                             const std::string& text, const std::wstring& source, bool replace,
+                             const std::wstring& note);
     void _start_translation_poll();
     void _stop_translation_poll();
     void _poll_translation();
     void _present_translate_window(const std::wstring& translation, const std::wstring& source,
-                                   const RECT& caret);
+                                   const std::wstring& note, const RECT& caret);
     void _hide_translate_window();
+    // The caret of the focused input box, asked for now: the cached one may be stale with nothing
+    // typed. The candidate window does the same before it opens.
+    RECT _query_caret_rect();
     void _publish_ui_session_ended();
     void _queue_ui_command(const cxxime::UiCommand& command);
     void _drain_ui_commands();
@@ -533,12 +559,32 @@ private:
     // Selection translation (text_service_translate.cpp).
     bool _translationPolling = false;         // the server translates for us
     std::uint64_t _translationTargetGeneration = 0;
-    std::unique_ptr<cxxime::CandidateWindow> _translateWindow;  // shows the translation
+    std::unique_ptr<cxxime::CandidateWindow> _translateWindow;  // shows the translation or answer
     std::wstring _translateSource;            // the selected text (shown after the translation)
+    // The AI action menu: its own window (the translation window is dismissed by any key, the menu
+    // has to take keys), the rows it shows (indices into cxxime::ai_actions()) and what it is for.
+    bool _aiMenuOpen = false;
+    std::size_t _aiMenuHighlight = 0;
+    std::wstring _aiMenuSource;               // the selection the menu was opened for
+    bool _aiMenuShortened = false;            // only its beginning was read
+    std::vector<std::size_t> _aiMenuRows;
+    std::unique_ptr<cxxime::CandidateWindow> _aiMenuWindow;
+    // Long text over IPC (TEXT_UPLOAD_*): what the request in flight is for, whether it went
+    // through the chunked channel, whether it may be typed back, and what to note beside it.
+    std::uint32_t _textPurpose = 0;           // kTextUploadTranslate / kTextUploadAiAction
+    std::string _textActionId;                // the AI action, when that is what it is
+    bool _textLong = false;                   // the chunked channel is in use
+    bool _textReplace = false;                // the answer may replace the selection
+    std::wstring _textNote;                   // shown beside the answer (a shortened selection…)
     // The translate key (Ctrl+C by default): the second press is taken, the first stays the
     // application's (copy).
     ULONGLONG _lastTranslateCopyTick = 0;
     UINT _translateKeyDown = 0;  // the taken press, until its key-up
+    // The AI action menu key (shortcuts.ai_action): the same double-tap reading as the translate
+    // key, with its own state.
+    ULONGLONG _lastAiActionSeen = 0;
+    ULONGLONG _lastAiActionTick = 0;
+    UINT _aiActionKeyDown = 0;
     ULONGLONG _lastTranslateKeySeen = 0;  // the last press seen (Test and Down are one press)
     UINT _translationKeyDown = 0;  // a Ctrl+0..9 taken, until its key-up
     std::optional<uint32_t> _modifierOverride;  // modifiers of a key taken by the hook

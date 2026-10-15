@@ -157,6 +157,7 @@ void TextService::_clear_effective_edit_target(const char* source, bool target_u
         _client.focus_out(_sessionId);
     }
     _hide_translate_window();
+    _close_ai_menu();
     _AbortComposition();
     _unadvise_text_edit_sink();
     _unadvise_text_layout_sink();
@@ -248,6 +249,7 @@ bool TextService::_synchronize_effective_edit_target(ITfContext* event_context,
             _client.focus_out(_sessionId);
         }
         _hide_translate_window();
+        _close_ai_menu();
         _AbortComposition();
         _unadvise_text_edit_sink();
         _unadvise_text_layout_sink();

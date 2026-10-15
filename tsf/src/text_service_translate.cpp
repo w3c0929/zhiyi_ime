@@ -7,12 +7,15 @@
 // typed over the selection.
 #include "text_service.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
 
+#include <cxxime/ai_actions.h>
 #include <cxxime/candidate_presentation.h>
 #include <cxxime/candidate_window.h>
+#include <cxxime/ipc_protocol.h>
 
 #include "config_coordinator.h"
 #include "edit_session.h"
@@ -21,7 +24,33 @@
 namespace {
 
 constexpr UINT kTranslatePollMs = 100;
-constexpr size_t kMaxSelectionChars = 1000;
+// One piece of a long text: what fits in the IPC field it travels in (ipc_protocol.h).
+constexpr std::size_t kTextChunkBytes = cxxime::kTranslateTextCapacity - 1;
+
+// How many bytes of `text` from `offset` fit in `limit` without ending inside a character. Zero
+// only when there is nothing left to send.
+std::size_t utf8_piece(const std::string& text, std::size_t offset, std::size_t limit) {
+    std::size_t length = (std::min)(text.size() - offset, limit);
+    while (length > 0 && offset + length < text.size() &&
+           (static_cast<unsigned char>(text[offset + length]) & 0xC0) == 0x80) {
+        --length;
+    }
+    return length;
+}
+
+// The note beside the answer when the selection was longer than translate.max_selection_chars and
+// only its beginning was worked on. It lands in the window's note line (128 bytes), hence short.
+std::wstring shortened_note(std::size_t chars) {
+    return L"（只处理了前 " + std::to_wstring(chars) + L" 字）";
+}
+
+// A bare modifier press is not "another key": it must not close the menu (the user is still
+// holding the chord the menu was opened with).
+bool is_bare_modifier(WPARAM key) {
+    return key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT || key == VK_CONTROL ||
+           key == VK_LCONTROL || key == VK_RCONTROL || key == VK_MENU || key == VK_LMENU ||
+           key == VK_RMENU || key == VK_LWIN || key == VK_RWIN;
+}
 
 std::string selection_to_utf8(const std::wstring& text) {
     if (text.empty()) return {};
@@ -87,25 +116,84 @@ bool TextService::_handle_translate_key(WPARAM key) {
     return true;
 }
 
-void TextService::_process_selection_translate() {
+// The text the user selected, up to translate.max_selection_chars: from TSF, or from the
+// clipboard when the input box cannot be read (the first press of the key copied it).
+bool TextService::_read_selected_text(std::wstring* selection, bool* shortened) {
+    if (shortened) *shortened = false;
     ITfContext* context = _current_edit_context_for_composition();
-    if (!context) return;
-    std::wstring selection;
-    TextBeforeCaret read =
-        read_selection_text(context, _clientId, kMaxSelectionChars, &selection);
-    if (read != TextBeforeCaret::kRead || selection.empty()) {
-        // Fall back to the clipboard (the first Ctrl+C copied the selection): an input box TSF
-        // cannot read still translates.
-        if (read_clipboard_text(&selection)) read = TextBeforeCaret::kRead;
+    if (!context) return false;
+    const std::size_t limit =
+        static_cast<std::size_t>((std::max)(100, _config.translate_max_selection_chars));
+    bool cut = false;
+    TextBeforeCaret read = read_selection_text(context, _clientId, limit, selection, &cut);
+    if (read != TextBeforeCaret::kRead || selection->empty()) {
+        if (read_clipboard_text(selection)) {
+            read = TextBeforeCaret::kRead;
+            if (selection->size() > limit) {
+                selection->resize(limit);
+                cut = true;
+            }
+        }
     }
     context->Release();
-    if (read != TextBeforeCaret::kRead || selection.empty()) return;
+    if (read != TextBeforeCaret::kRead || selection->empty()) return false;
+    if (shortened) *shortened = cut;
+    return true;
+}
 
-    if (!_ensure_ipc_session()) return;
+void TextService::_process_selection_translate() {
+    std::wstring selection;
+    bool shortened = false;
+    if (!_read_selected_text(&selection, &shortened)) return;
+    const std::string text = selection_to_utf8(selection);
+    if (text.empty()) return;
+    // Only part of a shortened selection was worked on: typing the answer back would throw the
+    // rest of the selection away, so it is shown instead.
+    const bool replace = _config.translate_direct_insert && !shortened;
+    _send_selected_text(cxxime::kTextUploadTranslate, std::string(), text, selection, replace,
+                        shortened ? shortened_note(selection.size()) : std::wstring());
+}
+
+// Sends the selected text for `purpose`: the short command when it fits the IPC field (the path
+// the selection translation has always used), the chunked one otherwise. The result is polled the
+// same way either way (see _poll_translation).
+bool TextService::_send_selected_text(std::uint32_t purpose, const std::string& action_id,
+                                      const std::string& text, const std::wstring& source,
+                                      bool replace, const std::wstring& note) {
+    if (!_ensure_ipc_session()) return false;
+    _textPurpose = purpose;
+    _textActionId = action_id;
+    _textLong = text.size() > kTextChunkBytes;
+    _textReplace = replace;
+    _textNote = note;
+    _translateSource = source;
+
     cxxime::IPCResponse response = {};
-    if (!_client.translate_selection(_sessionId, selection_to_utf8(selection), response)) return;
-    _translateSource = selection;
+    if (_textLong) {
+        if (!_client.text_upload_begin(_sessionId, purpose, action_id, text.size(), response)) {
+            return false;
+        }
+        for (std::size_t offset = 0; offset < text.size();) {
+            const std::size_t length = utf8_piece(text, offset, kTextChunkBytes);
+            if (length == 0) return false;
+            if (!_client.text_upload_chunk(_sessionId, purpose, offset, text.substr(offset, length),
+                                           response)) {
+                return false;
+            }
+            offset += length;
+        }
+    } else if (purpose == cxxime::kTextUploadTranslate) {
+        if (!_client.translate_selection(_sessionId, text, response)) return false;
+    } else {
+        // An AI action always goes through the chunked channel: one piece, and the server starts
+        // as soon as it has arrived.
+        if (!_client.text_upload_begin(_sessionId, purpose, action_id, text.size(), response) ||
+            !_client.text_upload_chunk(_sessionId, purpose, 0, text, response)) {
+            return false;
+        }
+    }
     _start_translation_poll();
+    return true;
 }
 
 void TextService::_start_translation_poll() {
@@ -132,21 +220,47 @@ void TextService::_poll_translation() {
         return;
     }
     cxxime::IPCResponse response = {};
-    if (!_client.translate_status(_sessionId, response)) {
+    const bool polled = _textLong ? _client.text_result_poll(_sessionId, _textPurpose, response)
+                                  : _client.translate_status(_sessionId, response);
+    if (!polled) {
         _stop_translation_poll();
         return;
     }
     if (response.translate_state == cxxime::kTranslateTranslating) return;
 
     _stop_translation_poll();
-    if (response.translate_state != cxxime::kTranslateDone) return;
-    const std::size_t length =
-        strnlen_s(response.translate_text, sizeof(response.translate_text));
-    const std::wstring translation =
-        selection_from_utf8(std::string(response.translate_text, length));
-    if (translation.empty()) return;
+    const bool failed = response.translate_state == cxxime::kTranslateFailed;
+    if (response.translate_state != cxxime::kTranslateDone && !failed) return;
 
-    if (_config.translate_direct_insert) {
+    // The answer: one field, or as many pieces as the server says are ready.
+    std::string answer;
+    if (_textLong) {
+        const std::size_t total = response.text_result_bytes;
+        for (std::size_t offset = 0; offset < total;) {
+            cxxime::IPCResponse piece = {};
+            if (!_client.text_result_read(_sessionId, _textPurpose, offset, piece)) break;
+            const std::size_t length =
+                strnlen_s(piece.translate_text, sizeof(piece.translate_text));
+            if (length == 0) break;
+            answer.append(piece.translate_text, length);
+            offset += length;
+        }
+    } else if (!failed) {
+        const std::size_t length =
+            strnlen_s(response.translate_text, sizeof(response.translate_text));
+        answer.assign(response.translate_text, length);
+    }
+    if (answer.empty()) return;
+    std::wstring translation = selection_from_utf8(answer);
+    if (translation.empty()) return;
+    std::wstring note = _textNote;
+    if (failed) {
+        // The text is the reason, not an answer: say so, and never type it over the selection.
+        translation = L"无法完成：" + translation;
+        note.clear();
+    }
+
+    if (_textReplace && !failed) {
         insert_text(translation, true);  // replaces the selection
     } else {
         // The cached caret may be stale (nothing typed): ask for it now, like the candidate
@@ -167,12 +281,13 @@ void TextService::_poll_translation() {
             }
             context->Release();
         }
-        _present_translate_window(translation, _translateSource, caret);
+        _present_translate_window(translation, _translateSource, note, caret);
     }
 }
 
 void TextService::_present_translate_window(const std::wstring& translation,
-                                            const std::wstring& source, const RECT& caret) {
+                                            const std::wstring& source, const std::wstring& note,
+                                            const RECT& caret) {
     HWND owner = reinterpret_cast<HWND>(_effectiveEditTarget.view_window);
     if (!owner || !IsWindow(owner)) owner = GetFocus();
     if (!owner || !IsWindow(owner)) return;
@@ -196,7 +311,9 @@ void TextService::_present_translate_window(const std::wstring& translation,
     page.highlighted = 0;
     cxxime::CandidatePresentationItem item;
     item.text = selection_to_utf8(translation);
-    item.gloss = selection_to_utf8(source);
+    // The note (a shortened selection…) matters more than the source, which is still in front of
+    // the user; the note line is a candidate gloss, so it is only one of the two.
+    item.gloss = selection_to_utf8(note.empty() ? source : note);
     page.items.push_back(std::move(item));
 
     _translateWindow->move_to_caret(caret);
@@ -206,4 +323,184 @@ void TextService::_present_translate_window(const std::wstring& translation,
 
 void TextService::_hide_translate_window() {
     if (_translateWindow) _translateWindow->hide();
+}
+
+// ---- AI actions (docs/ai.md, ai_actions.h) ------------------------------------------------------
+
+RECT TextService::_query_caret_rect() {
+    RECT caret = _caretRect;
+    if (ITfContext* context = _current_edit_context_for_composition()) {
+        EditSession* session = new (std::nothrow) EditSession(this, context);
+        if (session) {
+            session->set_action(EditSession::Action::QUERY_CARET);
+            HRESULT edit_result = E_FAIL;
+            if (SUCCEEDED(context->RequestEditSession(_clientId, session,
+                                                      TF_ES_READ | TF_ES_SYNC, &edit_result)) &&
+                SUCCEEDED(edit_result)) {
+                RECT queried = {};
+                if (session->get_caret_rect(queried)) caret = queried;
+            }
+            session->Release();
+        }
+        context->Release();
+    }
+    return caret;
+}
+
+bool TextService::_handle_ai_action_key(WPARAM key) {
+    const cxxime::KeyboardShortcut& sc = _config.ai_action_shortcut;
+    if (!sc.enabled() || key != sc.virtual_key) return false;
+    if ((_get_modifiers() & cxxime::kShortcutModifierMask) != sc.modifiers) return false;
+
+    // What the translate key does, one key over: the first press is the application's (it keeps
+    // whatever it does with the combination), a second one within the same window opens the menu.
+    constexpr ULONGLONG kDoubleTapMs = 350;
+    constexpr ULONGLONG kPairMs = 50;  // OnTestKeyDown and OnKeyDown report one press
+    const ULONGLONG now = GetTickCount64();
+    if (now - _lastAiActionSeen < kPairMs) return false;
+    _lastAiActionSeen = now;
+    const bool second = _lastAiActionTick != 0 && now - _lastAiActionTick <= kDoubleTapMs;
+    if (!second) {
+        _lastAiActionTick = now;
+        return false;
+    }
+    _lastAiActionTick = 0;
+    _aiActionKeyDown = static_cast<UINT>(key);
+    // Reading the selection and placing the menu need an edit session and the caret, which cannot
+    // be done inside a key callback: the message goes to the config window, as the translation's
+    // does.
+    PostMessageW(_configWindow, cxxime_tsf::WM_CXXIME_AI_ACTION_SELECTION, 0, 0);
+    return true;
+}
+
+void TextService::_process_ai_action_selection() {
+    if (cxxime::ai_actions().empty()) return;  // no data file, or nothing usable in it
+    std::wstring selection;
+    bool shortened = false;
+    if (!_read_selected_text(&selection, &shortened)) return;
+    _open_ai_menu(selection, shortened);
+}
+
+void TextService::_open_ai_menu(const std::wstring& source, bool shortened) {
+    _close_ai_menu();
+    const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
+    for (std::size_t i = 0; i < actions.size(); ++i) _aiMenuRows.push_back(i);
+    if (_aiMenuRows.empty()) return;
+
+    HWND owner = reinterpret_cast<HWND>(_effectiveEditTarget.view_window);
+    if (!owner || !IsWindow(owner)) owner = GetFocus();
+    if (!owner || !IsWindow(owner)) return;
+    if (!_aiMenuWindow) {
+        _aiMenuWindow = std::make_unique<cxxime::CandidateWindow>();
+        if (!_aiMenuWindow->create(owner, _config) || !_aiMenuWindow->owner_matches(owner)) {
+            _aiMenuWindow.reset();
+            _aiMenuRows.clear();
+            return;
+        }
+    } else if (!_aiMenuWindow->ensure_created(owner)) {
+        _aiMenuRows.clear();
+        return;
+    }
+    _aiMenuWindow->set_layout(_config.layout);
+    _aiMenuWindow->set_page_info(1, 1);  // one page: no turning arrows
+    _aiMenuWindow->set_preedit(std::string(), size_t{0}, size_t{0}, size_t{0}, size_t{0}, false);
+    _aiMenuSource = source;
+    _aiMenuShortened = shortened;
+    _aiMenuHighlight = 0;
+    _aiMenuOpen = true;
+    // The order the translation window uses: place it, fill it, show it.
+    _aiMenuWindow->move_to_caret(_query_caret_rect());
+    _render_ai_menu();
+    _aiMenuWindow->show();
+}
+
+void TextService::_render_ai_menu() {
+    if (!_aiMenuOpen || !_aiMenuWindow) return;
+    const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
+    cxxime::CandidatePresentationPage page;
+    page.page_size = static_cast<uint32_t>(_aiMenuRows.size());
+    page.highlighted = static_cast<int>(_aiMenuHighlight);
+    for (std::size_t row : _aiMenuRows) {
+        cxxime::CandidatePresentationItem item;
+        if (row < actions.size()) {
+            item.text = cxxime::ai_action_label(actions[row], _config.ui_language);
+        }
+        page.items.push_back(std::move(item));
+    }
+    _aiMenuWindow->update(page);
+}
+
+void TextService::_close_ai_menu() {
+    _aiMenuOpen = false;
+    _aiMenuRows.clear();
+    _aiMenuHighlight = 0;
+    _aiMenuSource.clear();
+    _aiMenuShortened = false;
+    if (_aiMenuWindow) _aiMenuWindow->hide();
+}
+
+// A key while the menu is open: the menu's own keys are taken, anything else closes it and stays
+// the application's.
+bool TextService::_handle_ai_menu_key(WPARAM key, BOOL* pfEaten) {
+    if (!_aiMenuOpen) return false;
+    const std::size_t rows = _aiMenuRows.size();
+    const auto taken = [&] {
+        if (pfEaten) *pfEaten = TRUE;
+        return true;
+    };
+    if (key >= '1' && key <= '9') {
+        const std::size_t row = key - '1';
+        if (row < rows) _run_ai_action(row);
+        return taken();
+    }
+    if (key == VK_DOWN || key == VK_TAB) {
+        if (rows > 0) _aiMenuHighlight = (_aiMenuHighlight + 1) % rows;
+        _render_ai_menu();
+        return taken();
+    }
+    if (key == VK_UP) {
+        if (rows > 0) _aiMenuHighlight = (_aiMenuHighlight + rows - 1) % rows;
+        _render_ai_menu();
+        return taken();
+    }
+    if (key == VK_RETURN) {
+        _run_ai_action(_aiMenuHighlight);
+        return taken();
+    }
+    if (key == VK_ESCAPE) {
+        _close_ai_menu();
+        return taken();
+    }
+    if (is_bare_modifier(key)) return false;  // the chord being held: the menu stays
+    _close_ai_menu();
+    return false;
+}
+
+void TextService::_run_ai_action(std::size_t row) {
+    if (row >= _aiMenuRows.size()) return;
+    const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
+    const std::size_t index = _aiMenuRows[row];
+    if (index >= actions.size()) return;
+    const cxxime::AiAction action = actions[index];  // a copy: the menu goes below
+    std::wstring text = _aiMenuSource;
+    bool shortened = _aiMenuShortened;
+    _close_ai_menu();
+
+    // Cut to what this action accepts and say so. A cut selection is never typed back: the answer
+    // only covers what was sent, and replacing the whole selection would lose the rest.
+    if (action.max_input_chars > 0 &&
+        text.size() > static_cast<std::size_t>(action.max_input_chars)) {
+        text.resize(static_cast<std::size_t>(action.max_input_chars));
+        shortened = true;
+    }
+    const std::wstring note = shortened ? shortened_note(text.size()) : std::wstring();
+    const RECT caret = _query_caret_rect();
+
+    // Working: the window says so until the poll brings the answer (or the reason it failed).
+    const std::wstring label = selection_from_utf8(cxxime::ai_action_label(action, _config.ui_language));
+    _present_translate_window(L"正在" + label + L"…", text, note, caret);
+    if (!_send_selected_text(cxxime::kTextUploadAiAction, action.id, selection_to_utf8(text), text,
+                             action.replace && !shortened, note)) {
+        _present_translate_window(L"无法完成：与后台服务的连接断开", text, std::wstring(), caret);
+    }
 }

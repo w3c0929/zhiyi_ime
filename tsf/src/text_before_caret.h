@@ -27,8 +27,10 @@ TextBeforeCaret read_text_before_caret(ITfContext* context, TfClientId client_id
                                        std::wstring* text);
 
 // As read_text_before_caret, but reads the selected text itself (empty when nothing is selected):
-// what the selection translation translates.
+// what the selection translation translates and the AI actions work on. `truncated` (optional)
+// tells whether the selection was longer than max_chars: it holds the first max_chars characters
+// then, and the caller is expected to say so rather than pass it off as the whole selection.
 TextBeforeCaret read_selection_text(ITfContext* context, TfClientId client_id, size_t max_chars,
-                                    std::wstring* text);
+                                    std::wstring* text, bool* truncated = nullptr);
 
 #endif  // ZHIYU_TSF_TEXT_BEFORE_CARET_H_

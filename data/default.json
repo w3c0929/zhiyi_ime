@@ -95,7 +95,8 @@
     "translate": {
         "direct_insert": false,
         "device": "",
-        "idle_seconds": 60
+        "idle_seconds": 60,
+        "max_selection_chars": 32000
     },
     "ai": {
         "enabled": false,

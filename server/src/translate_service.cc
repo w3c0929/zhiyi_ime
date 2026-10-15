@@ -215,6 +215,19 @@ uint32_t TranslateService::take_status(uint32_t id, std::string* text) {
     return phase_ == Phase::kTranslating ? cxxime::kTranslateTranslating : cxxime::kTranslateIdle;
 }
 
+// The long-text path (TEXT_RESULT_POLL / TEXT_RESULT_READ): like take_status, but the text stays
+// where it is, so the client can read it in pieces. It is dropped when the session ends or the
+// next request comes in, which is what request() and session_ended() already do.
+uint32_t TranslateService::peek_status(uint32_t id, std::string* text) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (owner_ != id) return cxxime::kTranslateIdle;
+    if (phase_ == Phase::kDone) {
+        if (text) *text = text_;
+        return cxxime::kTranslateDone;
+    }
+    return phase_ == Phase::kTranslating ? cxxime::kTranslateTranslating : cxxime::kTranslateIdle;
+}
+
 void TranslateService::post(std::function<void()> task) {
     {
         std::lock_guard<std::mutex> lock(mutex_);

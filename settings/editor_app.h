@@ -282,6 +282,7 @@ private:
     HWND hAiUseTranslate_ = nullptr, hAiUseSelection_ = nullptr, hAiUseEnglish_ = nullptr;
     HWND hAiUseVoice_ = nullptr, hAiUseGlossary_ = nullptr;
     HWND hAiTest_ = nullptr, hAiTestResult_ = nullptr, hAiKeyHint_ = nullptr;
+    HWND hAiActionKey_ = nullptr;  // AI actions on the selection: the menu key
     HWND hAiModels_ = nullptr, hAiModelsHint_ = nullptr;
     HWND hAiDetect_ = nullptr, hAiEffort_ = nullptr, hAiThinking_ = nullptr;
     // The stored (DPAPI-protected) keys: kept here so a page rebuild does not lose them.

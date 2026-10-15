@@ -3,6 +3,8 @@
 #ifndef CXXIME_SERVER_APP_H_
 #define CXXIME_SERVER_APP_H_
 
+#include <cstdint>
+#include <map>
 #include <string>
 
 #include <windows.h>
@@ -12,6 +14,7 @@
 #include <cxxime/ipc_protocol.h>
 #include <cxxime/ipc_server.h>
 
+#include "ai_action_service.h"
 #include "config_store.h"
 #include "config_write_coordinator.h"
 #include "candidate_preference_save_worker.h"
@@ -35,6 +38,11 @@ private:
     void prepare_user_data_shutdown();
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
+    // Long text over IPC (ipc_protocol.h, TEXT_UPLOAD_*): the pieces of a text that did not fit
+    // translate_text, per session, and what it is for. False when `request` is not one of them.
+    bool handle_text_command(const cxxime::IPCRequest& request, cxxime::IPCResponse& response);
+    void finish_text_upload(uint32_t session_id);
+
     SessionManager session_mgr_;
     ConfigStore config_store_;
     ConfigWriteCoordinator config_writer_;
@@ -49,6 +57,14 @@ private:
     UiPresentationRouter ui_presentation_router_;
     VoiceService voice_;
     TranslateService translate_;
+    AiActionService ai_action_;
+    struct TextUpload {
+        uint32_t purpose = 0;
+        std::string action_id;  // AI actions: what to run once the text arrived
+        uint64_t expected_bytes = 0;
+        std::string text;
+    };
+    std::map<uint32_t, TextUpload> text_uploads_;
     HWND hwnd_ = nullptr;
     bool user_data_shutdown_prepared_ = false;
     std::string config_path_;
