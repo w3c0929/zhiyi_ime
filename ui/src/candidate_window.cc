@@ -649,6 +649,14 @@ bool CandidateWindow::calculate_target_position(const RECT& caret_rect, int widt
         caret_rect, width, height, kCandidateCaretGapPx, mi.rcMonitor, placement_side_);
     placement_side_ = placement.side;
     target = placement.position;
+    // Clamped into the monitor's work area: a program whose caret comes back in another DPI space
+    // than this window's (VS Code hands over physical pixels on a scaled display, the window works
+    // in its own) puts the position off the screen, and a window nobody can see is worth nothing.
+    // The taskbar's area is left out too — a window under it cannot be read (docs/ai.md).
+    const LONG rightmost = (std::max)(mi.rcWork.left, mi.rcWork.right - static_cast<LONG>(width));
+    const LONG bottommost = (std::max)(mi.rcWork.top, mi.rcWork.bottom - static_cast<LONG>(height));
+    target.x = (std::min)((std::max)(target.x, mi.rcWork.left), rightmost);
+    target.y = (std::min)((std::max)(target.y, mi.rcWork.top), bottommost);
     return true;
 }
 
