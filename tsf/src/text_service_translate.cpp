@@ -507,10 +507,11 @@ void TextService::_poll_translation() {
     if (response.translate_state == cxxime::kTranslateTranslating) {
         // Still working. The window that says so is put back if it was taken down behind our back:
         // some editors do that when their input context moves over the copy that read the text
-        // (docs/ai.md), and a window nobody can see is no better than no window at all.
+        // (docs/ai.md), and a window nobody can see is no better than no window at all. Put back
+        // *where it is* — nothing of ours moves while the user waits, which reads as a window that
+        // cannot sit still.
         if (_textProgressShown && _translateWindow && !_translateWindow->is_visible()) {
-            _present_translate_window(_textProgressText, _translateSource, _textNote,
-                                      _query_caret_rect());
+            _translateWindow->show();
         }
         return;
     }
@@ -651,7 +652,10 @@ void TextService::_present_translate_window(const std::wstring& translation,
     item.gloss = selection_to_utf8(note.empty() ? source : note);
     page.items.push_back(std::move(item));
 
-    _translateWindow->move_to_caret(caret);
+    // Placed once, where it first appears: a window that moves while the answer is being fetched —
+    // or when the answer replaces what it was saying — reads as one that cannot sit still
+    // (docs/ai.md).
+    if (!_translateWindow->is_visible()) _translateWindow->move_to_caret(caret);
     _translateWindow->update(page);
     _translateWindow->show();
     _arm_ai_ui_grace();  // the copy that got the text may bounce the edit target just now
