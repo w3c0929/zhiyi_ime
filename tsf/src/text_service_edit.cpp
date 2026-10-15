@@ -36,13 +36,15 @@ STDMETHODIMP TextService::OnEndEdit(ITfContext* context, TfEditCookie edit_cooki
     }
     // The translation window is transient, like the candidate window: an edit (a click that moves
     // the caret) dismisses it. The AI action menu belongs to the selection that was there, so it
-    // goes with it. (During the grace window an edit is normally our own answer going in, which is
-    // meant to dismiss the window: the trace says so if an editor ever edits here on its own.)
+    // goes with it. The answer's own delivery hides its window explicitly (docs/ai.md), so during
+    // the grace window an edit is *not* ours — some editors (Sublime Text) edit on their own while
+    // the text is being read, which used to take the window away before it could be seen.
     if (_ai_ui_grace_active()) {
-        _enqueue_event_trace("ai_ui", "hide:edit_in_grace");
+        _enqueue_event_trace("ai_ui", "keep:edit_in_grace");
+    } else {
+        _hide_translate_window();
+        _close_ai_menu();
     }
-    _hide_translate_window();
-    _close_ai_menu();
     if (!_composing || !_composition || context != _textEditSinkContext) {
         return S_OK;
     }

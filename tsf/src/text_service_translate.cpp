@@ -297,7 +297,9 @@ void TextService::_present_failure(const std::wstring& reason, const std::wstrin
 }
 
 void TextService::_arm_ai_ui_grace() {
-    _aiUiGraceUntil = GetTickCount64() + 900;
+    // Long enough to cover the read (a copy, and an editor reacting to it) and short enough that a
+    // window never outlives its business by much: the answer's own delivery closes it explicitly.
+    _aiUiGraceUntil = GetTickCount64() + 1200;
 }
 
 bool TextService::_ai_ui_grace_active() const {
@@ -440,6 +442,8 @@ void TextService::_poll_translation() {
         } else {
             insert_text(translation, true, nullptr, false, false);  // replaces the selection
         }
+        _hide_translate_window();  // the answer is in: the window has done its job (OnEndEdit
+                                   // cannot be relied on for it — see the grace window)
     } else if (deliver && _textInsert == cxxime::AiActionInsert::kBelow && !program_owns_its_text) {
         // Under the selection, on a line of its own (a summary is read under the text it
         // summarizes). The note — only the beginning of a long selection was worked on — rides
@@ -447,6 +451,7 @@ void TextService::_poll_translation() {
         std::wstring inserted = L"\r\n" + translation;
         if (!note.empty()) inserted += L"\r\n" + note;
         insert_text(inserted, true, nullptr, true, false);
+        _hide_translate_window();
     } else {
         // The cached caret may be stale (nothing typed): ask for it now, like the candidate
         // window does, so the window opens at the selection.
