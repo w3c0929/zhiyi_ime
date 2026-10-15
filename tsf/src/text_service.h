@@ -462,6 +462,9 @@ private:
     // modifier.
     bool _ai_action_key_for(WPARAM key, std::string* action_id) const;
     bool _finish_ai_action_key(WPARAM key, BOOL* pfEaten);
+    // A tapped modifier's own key state, watched on a timer: some programs never hand the text
+    // service the modifier's key-up, so waiting for that event would never fire (docs/ai.md).
+    void _watch_ai_action_tap();
     // The menu key was taken: read the selection and open the menu (on the config window's thread,
     // like _process_selection_translate).
     void _process_ai_action_selection();
@@ -622,6 +625,7 @@ private:
     // An AI action key (ai.action_key / ai.action_keys): one press, so a tapped modifier waits for
     // its key-up (a Shift that begins a chord is not a tap).
     UINT _aiActionKeyDown = 0;
+    ULONGLONG _aiActionKeyDownTick = 0;  // when it went down, for the tap watch
     std::string _aiActionKeyId;  // the action it belongs to (empty: the menu)
     bool _aiActionKeyMoved = false;  // another key came while it was held
     ULONGLONG _lastTranslateKeySeen = 0;  // the last press seen (Test and Down are one press)

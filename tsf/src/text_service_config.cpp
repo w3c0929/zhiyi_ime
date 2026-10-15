@@ -147,6 +147,10 @@ LRESULT CALLBACK TextService::_config_window_proc(HWND hwnd, UINT msg, WPARAM wp
         service->_poll_translation();
         return 0;
     }
+    if (msg == WM_TIMER && wp == cxxime_tsf::TIMER_CXXIME_AI_TAP_WATCH && service) {
+        service->_watch_ai_action_tap();
+        return 0;
+    }
     if (msg == WM_TIMER && wp == cxxime_tsf::TIMER_CXXIME_INPUT_INDICATOR_REFRESH && service) {
         KillTimer(hwnd, cxxime_tsf::TIMER_CXXIME_INPUT_INDICATOR_REFRESH);
         service->_inputIndicatorRefreshRetryActive = false;

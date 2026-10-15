@@ -115,6 +115,27 @@ void put_clipboard_text(const std::wstring& text) {
     CloseClipboard();
 }
 
+// An answer delivered the way the user would put it there: on the clipboard, then Ctrl+V, which
+// the program applies to its own selection. Only a program whose text the input method cannot read
+// needs this — TSF sees no selection in a transitory document, so an ordinary insert would land at
+// the caret instead of over what is selected. The keys carry the mark ours do, so the input
+// method's own key handling skips them.
+void paste_text(const std::wstring& text) {
+    put_clipboard_text(text);
+    INPUT inputs[4] = {};
+    const auto key = [](INPUT* input, WORD virtual_key, DWORD flags) {
+        input->type = INPUT_KEYBOARD;
+        input->ki.wVk = virtual_key;
+        input->ki.dwFlags = flags;
+        input->ki.dwExtraInfo = TextService::kInjectedCopyMark;
+    };
+    key(&inputs[0], VK_CONTROL, 0);
+    key(&inputs[1], 'V', 0);
+    key(&inputs[2], 'V', KEYEVENTF_KEYUP);
+    key(&inputs[3], VK_CONTROL, KEYEVENTF_KEYUP);
+    SendInput(4, inputs, sizeof(INPUT));
+}
+
 // How long the application is given to put the copied selection on the clipboard.
 constexpr DWORD kClipboardWaitMs = 80;
 
@@ -400,12 +421,26 @@ void TextService::_poll_translation() {
     }
     const bool deliver = answered && !no_answer;
 
+    // A program that keeps its text to itself (a classic edit box, Sublime Text and the like) has
+    // no selection TSF can see, let alone replace: the answer goes in the way the user would put it
+    // there — pasted — and the program replaces whatever it has selected. Writing *under* a
+    // selection cannot be done that way (a paste would throw the selection away), so an action
+    // that wants that is only shown there.
+    ITfContext* write_context = _current_edit_context_for_composition();
+    const bool program_owns_its_text =
+        write_context && context_is_imm_document(write_context);
+    if (write_context) write_context->Release();
+
     // An answer is an ordinary edit, not a "correction": that way the program's own undo (Ctrl+Z)
     // takes it back exactly as it takes back typing (docs/ai.md). The input method has no undo of
     // its own, and wants none.
     if (deliver && _textInsert == cxxime::AiActionInsert::kReplace) {
-        insert_text(translation, true, nullptr, false, false);  // replaces the selection
-    } else if (deliver && _textInsert == cxxime::AiActionInsert::kBelow) {
+        if (program_owns_its_text) {
+            paste_text(translation);
+        } else {
+            insert_text(translation, true, nullptr, false, false);  // replaces the selection
+        }
+    } else if (deliver && _textInsert == cxxime::AiActionInsert::kBelow && !program_owns_its_text) {
         // Under the selection, on a line of its own (a summary is read under the text it
         // summarizes). The note — only the beginning of a long selection was worked on — rides
         // along as the last line: there is no window here to say it in.
@@ -498,6 +533,32 @@ RECT TextService::_query_caret_rect() {
     return caret;
 }
 
+// How often a held tapped modifier's state is looked at, and how long it may be held and still
+// count as a tap (docs/ai.md).
+constexpr UINT kAiTapWatchMs = 60;
+constexpr ULONGLONG kAiTapMaxHoldMs = 700;
+
+void TextService::_watch_ai_action_tap() {
+    const UINT pressed = _aiActionKeyDown;
+    if (pressed == 0 || _aiActionKeyId.empty()) {
+        if (_configWindow) KillTimer(_configWindow, cxxime_tsf::TIMER_CXXIME_AI_TAP_WATCH);
+        return;
+    }
+    const bool still_held = (GetAsyncKeyState(static_cast<int>(pressed)) & 0x8000) != 0;
+    // Held: either a chord is coming (another key cancels it) or it is being held down, which is
+    // not a tap. Released: it was one — unless another key came first, which the key callbacks say.
+    if (still_held && GetTickCount64() - _aiActionKeyDownTick < kAiTapMaxHoldMs) return;
+    const std::string action_id = _aiActionKeyId;
+    const bool moved = _aiActionKeyMoved;
+    _aiActionKeyDown = 0;
+    _aiActionKeyId.clear();
+    _aiActionKeyMoved = false;
+    if (_configWindow) KillTimer(_configWindow, cxxime_tsf::TIMER_CXXIME_AI_TAP_WATCH);
+    if (moved || still_held) return;
+    _pendingAiActionId = action_id;
+    PostMessageW(_configWindow, cxxime_tsf::WM_CXXIME_AI_ACTION_SELECTION, 0, 0);
+}
+
 bool TextService::_handle_ai_action_key(WPARAM key) {
     // One press on its own: the text the user selected is read (copied) for them, so there is no
     // pair and no Ctrl+C of their own to press. The key is the menu key, or one action's own key,
@@ -506,10 +567,15 @@ bool TextService::_handle_ai_action_key(WPARAM key) {
     if (!_ai_action_key_for(key, &action_id)) return false;
     if (is_tap_key(key)) {
         // A tapped modifier: a Shift that begins a chord (Shift+A) is not a tap, so the decision
-        // waits for the key-up, and the application keeps the key meanwhile.
+        // waits for the key-up, and the application keeps the key meanwhile. Not every program
+        // hands the key-up over, so the key's own state is watched as well.
         _aiActionKeyDown = static_cast<UINT>(key);
         _aiActionKeyId = action_id;
         _aiActionKeyMoved = false;
+        _aiActionKeyDownTick = GetTickCount64();
+        if (_configWindow) {
+            SetTimer(_configWindow, cxxime_tsf::TIMER_CXXIME_AI_TAP_WATCH, kAiTapWatchMs, nullptr);
+        }
         return false;
     }
     _aiActionKeyDown = static_cast<UINT>(key);

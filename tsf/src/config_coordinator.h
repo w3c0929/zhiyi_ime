@@ -30,6 +30,9 @@ constexpr UINT WM_CXXIME_TRANSLATE_SELECTION = WM_APP + 0x31A;
 constexpr UINT_PTR TIMER_CXXIME_TRANSLATE_POLL = 0xC31A;
 // AI actions: the menu key was taken (TextService::_process_ai_action_selection).
 constexpr UINT WM_CXXIME_AI_ACTION_SELECTION = WM_APP + 0x31B;
+// AI actions: a tapped modifier key is watched while it is held (TextService::_watch_ai_action_tap):
+// some programs never hand a text service the modifier's key-up, and the tap would go unnoticed.
+constexpr UINT_PTR TIMER_CXXIME_AI_TAP_WATCH = 0xC31B;
 
 struct ConfigSnapshot {
     cxxime::ConfigGeneration generation;
