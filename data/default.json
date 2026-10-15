@@ -111,13 +111,14 @@
         "use_for": {
             "translate": false,
             "selection": false,
-            "english": false,
             "voice": false,
             "glossary": false
         },
         "action_key": "",
         "action_keys": {},
-        "action_disabled": {}
+        "action_disabled": {},
+        "translate_language": "en",
+        "voice_polish_action": "proofread"
     },
     "theme": "moon_light",
     "ui": {
