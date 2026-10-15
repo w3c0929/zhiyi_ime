@@ -485,11 +485,13 @@ private:
     // The text to work on (docs/ai.md), in that order: the selection; with nothing selected the
     // part of the caret's line written so far — which is selected for the user and put on the
     // clipboard; and, only when neither has anything, the clipboard itself (what the user copied).
-    // A program the input method cannot read is asked to copy its selection. Truncated at
-    // translate.max_selection_chars; false when there is nothing to work on, with `reason` (when
-    // given) set to what the window should say.
+    // A program the input method cannot read is asked to copy its selection; when even that fails
+    // the clipboard is refused, unless `the_user_copied` says the key's own first press was the
+    // user's copy (the translate key's Ctrl+C), which is what makes that clipboard theirs.
+    // Truncated at translate.max_selection_chars; false when there is nothing to work on, with
+    // `reason` (when given) set to what the window should say.
     bool _read_selected_text(std::wstring* selection, bool* shortened,
-                             const wchar_t** reason = nullptr);
+                             const wchar_t** reason = nullptr, bool the_user_copied = false);
     // Sends the selected text for `purpose` (kTextUpload*): the short command when it fits the IPC
     // field, the chunked one otherwise. `insert` is what the answer does (ai_actions.h: over the
     // selection, under it, or only shown); `note` is what the window shows beside it (a shortened
@@ -513,6 +515,9 @@ private:
     // which is why this shows up there and not in a browser).
     void _arm_ai_ui_grace();
     bool _ai_ui_grace_active() const;
+    // The trace of where the text came from (docs/ai.md): selection, the caret's line, the
+    // program's own copy, or the clipboard — with its length, and never the text itself.
+    void _trace_ai_source(const char* tier, const std::wstring& text);
 
     void _hide_translate_window();
     // The caret of the focused input box, asked for now: the cached one may be stale with nothing
@@ -628,6 +633,11 @@ private:
     // The text had to come from the program's own copy (its document could not be read): the answer
     // goes back the same way — pasted — so the program replaces what it has selected (docs/ai.md).
     bool _textProgramOwnsItsText = false;
+    // The "正在润色…" window: what it says, and that it is the one on screen. Some editors take it
+    // down behind our back while the answer is being fetched (their input context moves over the
+    // copy that read the text), so it is put back on every poll (docs/ai.md).
+    std::wstring _textProgressText;
+    bool _textProgressShown = false;
     // What the last _read_selected_text found: the document could not be read at all, so the text
     // came from the program's own Ctrl+C (or not at all).
     bool _readNeededProgramCopy = false;

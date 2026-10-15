@@ -48,6 +48,9 @@ std::wstring shortened_note(std::size_t chars) {
 // the one a user meets most: nothing selected, and the line the caret is on has no text.
 constexpr const wchar_t kNothingToWorkOn[] =
     L"没有可处理的内容（没选中、光标这一行没字、剪贴板里也没有文本）";
+// A program whose text cannot be read, and whose own copy did not come: rather than quietly
+// working on whatever the clipboard happens to hold (docs/ai.md), say so and say what to do.
+constexpr const wchar_t kNoSelectionRead[] = L"没取到选中的内容：请先自己按一次 Ctrl+C 再按这个键";
 constexpr const wchar_t kNoServerConnection[] = L"与后台服务的连接断开";
 
 // A bare modifier press is not "another key": it must not close the menu (the user is still
@@ -136,8 +139,11 @@ void paste_text(const std::wstring& text) {
     SendInput(4, inputs, sizeof(INPUT));
 }
 
-// How long the application is given to put the copied selection on the clipboard.
-constexpr DWORD kClipboardWaitMs = 80;
+// How long a program's own copy is waited for, in steps: an editor busy re-activating its input
+// context over the copy takes a moment, and reading too early is how the clipboard's old content
+// ended up being worked on instead of the selection (docs/ai.md).
+constexpr DWORD kProgramCopyWaitMs = 300;
+constexpr DWORD kProgramCopyStepMs = 30;
 
 std::string selection_to_utf8(const std::wstring& text) {
     if (text.empty()) return {};
@@ -215,7 +221,7 @@ bool TextService::_handle_translate_key(WPARAM key) {
 //      same key from handling text the user cannot see — a selection, or the caret's own line,
 //      always wins over whatever the clipboard happens to hold.
 bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
-                                      const wchar_t** reason) {
+                                      const wchar_t** reason, bool the_user_copied) {
     if (shortened) *shortened = false;
     if (reason) *reason = kNothingToWorkOn;
     ITfContext* context = _current_edit_context_for_composition();
@@ -224,9 +230,11 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
         static_cast<std::size_t>((std::max)(100, _config.translate_max_selection_chars));
     std::wstring wanted;
     bool cut = false;
+    const char* tier = "selection";
     TextBeforeCaret read = read_selection_text(context, _clientId, limit, &wanted, &cut);
     if (read == TextBeforeCaret::kRead && wanted.empty()) {
         // Tier 2: the caret's line, from its start to the caret.
+        tier = "line";
         read = select_line_at_caret(context, _clientId, limit, &wanted, &cut);
     }
     if (read == TextBeforeCaret::kPrivate) {
@@ -247,30 +255,55 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
         // ours would otherwise reach the input method's own handlers and close the menu this opens.
         *selection = wanted;
         put_clipboard_text(*selection);
-    } else {
-        if (program_copy_first) {
-            const DWORD sequence = GetClipboardSequenceNumber();
-            // Ask the program to copy first, by message rather than by keys: a classic edit box
-            // handles WM_COPY (and keeps the selection it has), while injected keys of ours go
-            // through the program's input context — which some editors answer by re-activating it
-            // and losing the selection before the copy lands. Only when the message changed
-            // nothing are the keys sent.
-            HWND target = reinterpret_cast<HWND>(_effectiveEditTarget.view_window);
-            if (!target || !IsWindow(target)) target = GetFocus();
-            if (target && IsWindow(target)) {
-                DWORD_PTR result = 0;
-                SendMessageTimeoutW(target, WM_COPY, 0, 0, SMTO_ABORTIFHUNG | SMTO_NORMAL, 200,
-                                    &result);
-            }
-            if (GetClipboardSequenceNumber() == sequence) {
-                press_copy();
-                Sleep(kClipboardWaitMs);
-            }
-            if (GetClipboardSequenceNumber() != sequence) read_clipboard_text(selection);
+        _trace_ai_source(tier, *selection);
+    } else if (program_copy_first) {
+        // The program has the text and its own copy is the only way to it: asked by message first (a
+        // classic edit box honours WM_COPY and keeps the selection it has), and by keys only when
+        // that changes nothing — keys of ours go through the program's input context, which some
+        // editors answer by re-activating it.
+        const DWORD sequence = GetClipboardSequenceNumber();
+        HWND target = reinterpret_cast<HWND>(_effectiveEditTarget.view_window);
+        if (!target || !IsWindow(target)) target = GetFocus();
+        if (target && IsWindow(target)) {
+            DWORD_PTR result = 0;
+            SendMessageTimeoutW(target, WM_COPY, 0, 0, SMTO_ABORTIFHUNG | SMTO_NORMAL, 200,
+                                &result);
         }
-        // Tier 3: nothing at the caret — the clipboard, which is what the user copied themselves.
-        // Being last is what keeps this key from handling text the user cannot see.
-        if (selection->empty()) read_clipboard_text(selection);
+        const DWORD after_message = GetClipboardSequenceNumber();
+        if (after_message == sequence) press_copy();
+        // Waited for rather than slept through: an editor busy re-activating its input context over
+        // the copy takes a moment to get to it, and reading too early is how this ended up working
+        // from the clipboard instead of the selection half the time.
+        for (DWORD waited = 0; waited < kProgramCopyWaitMs; waited += kProgramCopyStepMs) {
+            if (GetClipboardSequenceNumber() != sequence) break;
+            Sleep(kProgramCopyStepMs);
+        }
+        const DWORD after_keys = GetClipboardSequenceNumber();
+        if (after_keys != sequence) read_clipboard_text(selection);
+        char detail[160] = {};
+        snprintf(detail, sizeof(detail), "program_copy seq=%u message=%u keys=%u chars=%zu",
+                 static_cast<unsigned>(sequence), static_cast<unsigned>(after_message),
+                 static_cast<unsigned>(after_keys), selection->size());
+        _enqueue_event_trace("ai_source", detail);
+        if (selection->empty()) {
+            if (!the_user_copied) {
+                // Its copy did not come. What the clipboard holds is not necessarily what the user
+                // means to work on (it may be what they copied minutes ago), so it is refused and
+                // said so: quietly handling text the user cannot see is what made this feel chaotic
+                // (docs/ai.md).
+                if (reason) *reason = kNoSelectionRead;
+                return false;
+            }
+            // The translate key's own first press was the user's copy: that clipboard is theirs.
+            if (!read_clipboard_text(selection) || selection->empty()) return false;
+            _trace_ai_source("user_copy", *selection);
+        }
+    } else {
+        // Nothing at the caret, in a program whose text could be read: the clipboard, which is what
+        // the user copied themselves. Being last is what keeps this key from handling text the user
+        // cannot see.
+        if (!read_clipboard_text(selection) || selection->empty()) return false;
+        _trace_ai_source("clipboard", *selection);
     }
     if (selection->empty()) return false;
     if (selection->size() > limit) {
@@ -285,7 +318,9 @@ void TextService::_process_selection_translate() {
     std::wstring selection;
     bool shortened = false;
     const wchar_t* reason = nullptr;
-    if (!_read_selected_text(&selection, &shortened, &reason)) {
+    // The translate key's contract is two presses of Ctrl+C: the first is the user's own copy, so
+    // the clipboard is theirs to work from even in a program the input method cannot read.
+    if (!_read_selected_text(&selection, &shortened, &reason, /*the_user_copied=*/true)) {
         _present_failure(reason, std::wstring());
         return;
     }
@@ -308,7 +343,16 @@ void TextService::_process_selection_translate() {
 // The window a key that could not do anything shows (docs/ai.md): the reason, and — when there is
 // one — the text it was about. Doing nothing in silence is what makes a key look broken.
 void TextService::_present_failure(const std::wstring& reason, const std::wstring& source) {
+    _textProgressShown = false;  // this is the reason, not a job still running
     _present_translate_window(L"无法完成：" + reason, source, std::wstring(), _query_caret_rect());
+}
+
+// Which of the three places the text came from, and how much of it: the one thing the log needs to
+// tell "it worked on my selection" from "it worked on something I cannot see" (docs/ai.md).
+void TextService::_trace_ai_source(const char* tier, const std::wstring& text) {
+    char detail[96] = {};
+    snprintf(detail, sizeof(detail), "source=%s chars=%zu", tier, text.size());
+    _enqueue_event_trace("ai_source", detail);
 }
 
 void TextService::_arm_ai_ui_grace() {
@@ -397,7 +441,17 @@ void TextService::_poll_translation() {
         _stop_translation_poll();
         return;
     }
-    if (response.translate_state == cxxime::kTranslateTranslating) return;
+    if (response.translate_state == cxxime::kTranslateTranslating) {
+        // Still working. The window that says so is put back if it was taken down behind our back:
+        // some editors do that when their input context moves over the copy that read the text
+        // (docs/ai.md), and a window nobody can see is no better than no window at all.
+        if (_textProgressShown && _translateWindow && !_translateWindow->is_visible()) {
+            _present_translate_window(_textProgressText, _translateSource, _textNote,
+                                      _query_caret_rect());
+        }
+        return;
+    }
+    _textProgressShown = false;
 
     _stop_translation_poll();
     const bool failed = response.translate_state == cxxime::kTranslateFailed;
@@ -913,6 +967,8 @@ void TextService::_start_ai_action(std::size_t index, const std::wstring& source
     const std::wstring label =
         selection_from_utf8(cxxime::ai_action_label(action, _config.ui_language));
     _present_translate_window(L"正在" + label + L"…", text, note, caret);
+    _textProgressText = L"正在" + label + L"…";
+    _textProgressShown = true;
     // An action with a language list is a translation: it goes to the translation service (online
     // first, the offline model when that fails), and the tag is the language rather than the id.
     const bool translates = !action.languages.empty();
