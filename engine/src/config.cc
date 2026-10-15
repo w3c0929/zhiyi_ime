@@ -12,6 +12,7 @@
 
 #include <json.hpp>
 
+#include <cxxime/ai_actions.h>
 #include <cxxime/input_limits.h>
 #include <cxxime/logging.h>
 #include <cxxime/pinyin_scheme.h>
@@ -529,9 +530,14 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
             load_bool(use, "glossary", config.ai.use_for.glossary);
         }
         // AI actions on the selected text: the menu key, an action's own key, and the actions the
-        // menu leaves out.
-        load_keyboard_shortcut(ai, "action_key", config.ai.action_key,
-                               is_valid_translate_shortcut);
+        // menu leaves out. The menu key lived in shortcuts.ai_action for a while (1.7.28 only):
+        // read that too, so a key set then is not lost.
+        std::string action_key;
+        load_string(ai, "action_key", action_key);
+        if (action_key.empty() && j.contains("shortcuts") && j["shortcuts"].is_object()) {
+            load_string(j["shortcuts"], "ai_action", action_key);
+        }
+        if (!action_key.empty()) parse_ai_action_key(action_key, &config.ai.action_key);
         config.ai.action_keys.clear();
         if (ai.contains("action_keys") && ai["action_keys"].is_object()) {
             for (const auto& [id, value] : ai["action_keys"].items()) {
@@ -914,7 +920,7 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["ai"]["use_for"]["english"] = config.ai.use_for.english;
     j["ai"]["use_for"]["voice"] = config.ai.use_for.voice;
     j["ai"]["use_for"]["glossary"] = config.ai.use_for.glossary;
-    j["ai"]["action_key"] = keyboard_shortcut_string(config.ai.action_key);
+    j["ai"]["action_key"] = ai_action_key_string(config.ai.action_key);
     j["ai"]["action_keys"] = config.ai.action_keys;
     j["ai"]["action_disabled"] = config.ai.action_disabled;
 

@@ -446,6 +446,10 @@ private:
     // (_send_selected_text) the translation uses, so the poll and the result window are shared.
     // Called from OnTestKeyDown / OnKeyDown, from where _handle_translate_key is called.
     bool _handle_ai_action_key(WPARAM key);
+    // Which AI action `key` is (an empty id: the menu), and the key-up that fires a tapped
+    // modifier.
+    bool _ai_action_key_for(WPARAM key, std::string* action_id) const;
+    bool _finish_ai_action_key(WPARAM key, BOOL* pfEaten);
     // The menu key was taken: read the selection and open the menu (on the config window's thread,
     // like _process_selection_translate).
     void _process_ai_action_selection();
@@ -582,10 +586,11 @@ private:
     // application's (copy).
     ULONGLONG _lastTranslateCopyTick = 0;
     UINT _translateKeyDown = 0;  // the taken press, until its key-up
-    // The AI action menu key (shortcuts.ai_action): the second key of the pair whose first key is
-    // the translate key's, so only the repeated-press guard is its own.
-    ULONGLONG _lastAiActionSeen = 0;
+    // An AI action key (ai.action_key / ai.action_keys): one press, so a tapped modifier waits for
+    // its key-up (a Shift that begins a chord is not a tap).
     UINT _aiActionKeyDown = 0;
+    std::string _aiActionKeyId;  // the action it belongs to (empty: the menu)
+    bool _aiActionKeyMoved = false;  // another key came while it was held
     ULONGLONG _lastTranslateKeySeen = 0;  // the last press seen (Test and Down are one press)
     UINT _translationKeyDown = 0;  // a Ctrl+0..9 taken, until its key-up
     std::optional<uint32_t> _modifierOverride;  // modifiers of a key taken by the hook

@@ -48,14 +48,41 @@ constexpr int kAiActionListFirstId = 6022;  // .. 6029: one checkbox per action 
 constexpr int kAiActionKeyFirstId = 6040;   // .. 6047: one key box per action
 constexpr std::size_t kAiActionRowMax = 8;  // more actions than the page has room for
 
-// A key that cannot work for an AI action: the pair starts with the translate key, so that same
-// combination twice would never reach the actions (the translation takes both presses).
+// A key that cannot work for an AI action: it is one press on its own, so the translate key's own
+// combination would be taken by the translation first.
 std::wstring action_key_notice(const KeyChoice& choice, const KeyChoice& translate_choice) {
     if (choice.kind == KeyChoice::Kind::kCombo &&
         same_key_choice(choice, translate_choice)) {
         return tr("ai.action_key_same");
     }
     return std::wstring();
+}
+
+// A tapped modifier is a tap to the box and {key, no modifiers} to the config; everything else is
+// a combination. (KeyboardShortcut is what both the config and the input method pass around.)
+bool is_tap_key(uint32_t virtual_key) {
+    return virtual_key == VK_LSHIFT || virtual_key == VK_RSHIFT || virtual_key == VK_SHIFT ||
+           virtual_key == VK_LCONTROL || virtual_key == VK_RCONTROL || virtual_key == VK_CONTROL;
+}
+
+KeyChoice action_key_choice(const cxxime::KeyboardShortcut& shortcut) {
+    if (!shortcut.enabled()) return KeyChoice::none();
+    if (shortcut.modifiers == 0 && is_tap_key(shortcut.virtual_key)) {
+        return KeyChoice::tap(shortcut.virtual_key);
+    }
+    return KeyChoice::of(shortcut);
+}
+
+cxxime::KeyboardShortcut action_key_shortcut(const KeyChoice& choice) {
+    if (choice.kind == KeyChoice::Kind::kTap) {
+        return cxxime::KeyboardShortcut{0, choice.tap_key, 1};
+    }
+    if (choice.kind == KeyChoice::Kind::kCombo) {
+        cxxime::KeyboardShortcut shortcut = choice.combo;
+        shortcut.repeat = 1;  // one press: the box may have stored a double one
+        return shortcut;
+    }
+    return {};
 }
 
 // The two modes, in the order of the combo (AiConfig::mode).
@@ -238,12 +265,10 @@ void EditorApp::create_ai_panel(HWND panel) {
     // selected text, and a row per action — whether the menu lists it, and a key of its own.
     y = card_begin(panel, y, tr("ai.card_actions"));
     const int action_x = make_aligned_label(tr("ai.action_key"), x0, labels, y, panel);
-    hAiActionKey_ = create_key_capture(kAiActionKeyId, action_x, y, S(160), kCtrlH, panel, false);
-    // The box keeps capturing after the first press (the translate key's combination, Ctrl+C, is
-    // part of the gesture and is not what gets stored) and settles on the second one; the stored
-    // value is kept as a single combination (read_ai).
-    key_capture_set_allow_double(hAiActionKey_, true);
-    key_capture_set_allow_common(hAiActionKey_, true);
+    // One press on its own (the selection is read for the user), so a tapped modifier (right Shift
+    // and the like) is allowed and the box takes it as a tap; no doubling.
+    hAiActionKey_ = create_key_capture(kAiActionKeyId, action_x, y, S(160), kCtrlH, panel, true);
+    key_capture_set_allow_common(hAiActionKey_, false);
     key_capture_set_check(hAiActionKey_, [this](const KeyChoice& choice) -> std::wstring {
         return action_key_notice(choice, hTranslateKey_ ? key_capture_get(hTranslateKey_)
                                                         : KeyChoice::none());
@@ -262,9 +287,8 @@ void EditorApp::create_ai_panel(HWND panel) {
                 utf8_to_wstr(cxxime::ai_action_label(actions[i], ui_language_)).c_str(), row_x,
                 row_y, S(200), panel));
             HWND key = create_key_capture(kAiActionKeyFirstId + static_cast<int>(i),
-                                          row_x + S(210), row_y, S(150), kCtrlH, panel, false);
-            key_capture_set_allow_double(key, true);
-            key_capture_set_allow_common(key, true);
+                                          row_x + S(210), row_y, S(150), kCtrlH, panel, true);
+            key_capture_set_allow_common(key, false);
             key_capture_set_check(key, [this](const KeyChoice& choice) -> std::wstring {
                 return action_key_notice(choice, hTranslateKey_ ? key_capture_get(hTranslateKey_)
                                                                 : KeyChoice::none());
@@ -337,7 +361,7 @@ void EditorApp::populate_ai() {
     set_check(hAiUseVoice_, config_.ai.use_for.voice);
     set_check(hAiUseGlossary_, config_.ai.use_for.glossary);
 
-    key_capture_set(hAiActionKey_, KeyChoice::of(config_.ai.action_key));
+    key_capture_set(hAiActionKey_, action_key_choice(config_.ai.action_key));
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
     for (std::size_t i = 0; i < hAiActionRows_.size() && i < actions.size(); ++i) {
         const std::string& id = actions[i].id;
@@ -346,9 +370,9 @@ void EditorApp::populate_ai() {
         cxxime::KeyboardShortcut shortcut;
         const auto stored = config_.ai.action_keys.find(id);
         if (stored != config_.ai.action_keys.end()) {
-            cxxime::parse_keyboard_shortcut(stored->second, &shortcut);
+            cxxime::parse_ai_action_key(stored->second, &shortcut);
         }
-        key_capture_set(hAiActionKeys_[i], KeyChoice::of(shortcut));
+        key_capture_set(hAiActionKeys_[i], action_key_choice(shortcut));
     }
 
     refresh_ai_key_list();
@@ -379,13 +403,7 @@ void EditorApp::read_ai(cxxime::Config& config) {
     config.ai.use_for.english = get_check(hAiUseEnglish_);
     config.ai.use_for.voice = get_check(hAiUseVoice_);
     config.ai.use_for.glossary = get_check(hAiUseGlossary_);
-    const KeyChoice action_key = key_capture_get(hAiActionKey_);
-    cxxime::KeyboardShortcut menu_key =
-        action_key.kind == KeyChoice::Kind::kCombo ? action_key.combo : cxxime::KeyboardShortcut{};
-    // One press of this key, after the translate key: the box may have stored it as a double press
-    // (its two presses are the pair, not a repetition).
-    menu_key.repeat = 1;
-    config.ai.action_key = menu_key;
+    config.ai.action_key = action_key_shortcut(key_capture_get(hAiActionKey_));
 
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
     config.ai.action_keys.clear();
@@ -393,12 +411,9 @@ void EditorApp::read_ai(cxxime::Config& config) {
     for (std::size_t i = 0; i < hAiActionRows_.size() && i < actions.size(); ++i) {
         const std::string& id = actions[i].id;
         if (!get_check(hAiActionRows_[i])) config.ai.action_disabled[id] = true;
-        const KeyChoice choice = key_capture_get(hAiActionKeys_[i]);
-        if (choice.kind == KeyChoice::Kind::kCombo) {
-            cxxime::KeyboardShortcut shortcut = choice.combo;
-            shortcut.repeat = 1;
-            config.ai.action_keys[id] = cxxime::keyboard_shortcut_string(shortcut);
-        }
+        const cxxime::KeyboardShortcut shortcut =
+            action_key_shortcut(key_capture_get(hAiActionKeys_[i]));
+        if (shortcut.enabled()) config.ai.action_keys[id] = cxxime::ai_action_key_string(shortcut);
     }
 
     // Row two is the key in use and is editable: a value that is not among the stored ones is a

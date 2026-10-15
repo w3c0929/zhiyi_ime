@@ -52,6 +52,43 @@ bool is_bare_modifier(WPARAM key) {
            key == VK_RMENU || key == VK_LWIN || key == VK_RWIN;
 }
 
+// A tapped modifier, as an AI action key may be one (shortcuts.ai_action and the actions' own
+// keys): Windows hands these to input methods, Alt it does not.
+bool is_tap_key(uint32_t virtual_key) {
+    return virtual_key == VK_LSHIFT || virtual_key == VK_RSHIFT || virtual_key == VK_SHIFT ||
+           virtual_key == VK_LCONTROL || virtual_key == VK_RCONTROL || virtual_key == VK_CONTROL;
+}
+
+// The modifier bit a tap key stands for (0 for anything else).
+uint32_t modifier_family_bit(uint32_t virtual_key) {
+    if (virtual_key == VK_LSHIFT || virtual_key == VK_RSHIFT || virtual_key == VK_SHIFT) {
+        return cxxime::kKeyModifierShift;
+    }
+    if (virtual_key == VK_LCONTROL || virtual_key == VK_RCONTROL || virtual_key == VK_CONTROL) {
+        return cxxime::kKeyModifierControl;
+    }
+    return 0;
+}
+
+// Ctrl+C, pressed for the application (SendInput): what the selection translation leaves to the
+// user's own first press is done here, since an AI action key is a single press.
+void press_copy() {
+    INPUT inputs[4] = {};
+    const auto key = [](INPUT* input, WORD virtual_key, DWORD flags) {
+        input->type = INPUT_KEYBOARD;
+        input->ki.wVk = virtual_key;
+        input->ki.dwFlags = flags;
+    };
+    key(&inputs[0], VK_CONTROL, 0);
+    key(&inputs[1], 'C', 0);
+    key(&inputs[2], 'C', KEYEVENTF_KEYUP);
+    key(&inputs[3], VK_CONTROL, KEYEVENTF_KEYUP);
+    SendInput(4, inputs, sizeof(INPUT));
+}
+
+// How long the application is given to put the copied selection on the clipboard.
+constexpr DWORD kClipboardWaitMs = 80;
+
 std::string selection_to_utf8(const std::wstring& text) {
     if (text.empty()) return {};
     const int length = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
@@ -127,6 +164,11 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened) 
     bool cut = false;
     TextBeforeCaret read = read_selection_text(context, _clientId, limit, selection, &cut);
     if (read != TextBeforeCaret::kRead || selection->empty()) {
+        // A classic Win32 edit box, or a program that keeps its text to itself: copy it ourselves
+        // and take the clipboard. The translate key had the user's own first press for this; an AI
+        // action key is one press, so nothing has been copied yet.
+        press_copy();
+        Sleep(kClipboardWaitMs);
         if (read_clipboard_text(selection)) {
             read = TextBeforeCaret::kRead;
             if (selection->size() > limit) {
@@ -352,47 +394,71 @@ RECT TextService::_query_caret_rect() {
 }
 
 bool TextService::_handle_ai_action_key(WPARAM key) {
-    // The gesture is the translate key's, one key further: the translate key first (Ctrl+C by
-    // default — the application copies the selection, and the translate handler has recorded that
-    // press), then this key within the same window. That second key is the menu key, or one
-    // action's own key, which runs it without the menu. So the first press of the pair is one
-    // programs already know, and the second only has to be a combination they do not use.
-    constexpr ULONGLONG kDoubleTapMs = 350;
-    constexpr ULONGLONG kPairMs = 50;  // OnTestKeyDown and OnKeyDown report one press
-    const ULONGLONG now = GetTickCount64();
-    if (now - _lastAiActionSeen < kPairMs) return false;
-    _lastAiActionSeen = now;
-    const bool after_translate_key =
-        _lastTranslateCopyTick != 0 && now - _lastTranslateCopyTick <= kDoubleTapMs;
-    if (!after_translate_key) return false;
-
-    const std::uint32_t modifiers = _get_modifiers() & cxxime::kShortcutModifierMask;
-    const auto matches = [&](const cxxime::KeyboardShortcut& shortcut) {
-        return shortcut.enabled() && key == shortcut.virtual_key &&
-               modifiers == shortcut.modifiers;
-    };
-    std::string action_id;  // empty: the menu
-    bool taken = false;
-    if (matches(_config.ai.action_key)) {
-        taken = true;
-    } else {
-        for (const auto& entry : _config.ai.action_keys) {
-            cxxime::KeyboardShortcut shortcut;
-            if (!cxxime::parse_keyboard_shortcut(entry.second, &shortcut)) continue;
-            if (!matches(shortcut)) continue;
-            action_id = entry.first;
-            taken = true;
-            break;
-        }
+    // One press on its own: the text the user selected is read (copied) for them, so there is no
+    // pair and no Ctrl+C of their own to press. The key is the menu key, or one action's own key,
+    // which runs it without the menu.
+    std::string action_id;
+    if (!_ai_action_key_for(key, &action_id)) return false;
+    if (is_tap_key(key)) {
+        // A tapped modifier: a Shift that begins a chord (Shift+A) is not a tap, so the decision
+        // waits for the key-up, and the application keeps the key meanwhile.
+        _aiActionKeyDown = static_cast<UINT>(key);
+        _aiActionKeyId = action_id;
+        _aiActionKeyMoved = false;
+        return false;
     }
-    if (!taken) return false;
-    _lastTranslateCopyTick = 0;  // the pair is used up
     _aiActionKeyDown = static_cast<UINT>(key);
     _pendingAiActionId = action_id;
     // Reading the selection and placing the menu need an edit session and the caret, which cannot
     // be done inside a key callback: the message goes to the config window, as the translation's
     // does.
     PostMessageW(_configWindow, cxxime_tsf::WM_CXXIME_AI_ACTION_SELECTION, 0, 0);
+    return true;
+}
+
+// Which AI action `key` is, if it is one: the menu key (an empty id) or an action's own key.
+bool TextService::_ai_action_key_for(WPARAM key, std::string* action_id) const {
+    const std::uint32_t held = _get_modifiers() & cxxime::kShortcutModifierMask;
+    const auto matches = [&](const cxxime::KeyboardShortcut& shortcut) {
+        if (!shortcut.enabled() || key != shortcut.virtual_key) return false;
+        // A tapped modifier arrives with its own bit already set: that bit does not count.
+        std::uint32_t modifiers = held;
+        if (shortcut.modifiers == 0 && is_tap_key(shortcut.virtual_key)) {
+            modifiers &= ~modifier_family_bit(shortcut.virtual_key);
+        }
+        return modifiers == shortcut.modifiers;
+    };
+    if (matches(_config.ai.action_key)) {
+        action_id->clear();
+        return true;
+    }
+    for (const auto& entry : _config.ai.action_keys) {
+        cxxime::KeyboardShortcut shortcut;
+        if (!cxxime::parse_ai_action_key(entry.second, &shortcut)) continue;
+        if (!matches(shortcut)) continue;
+        *action_id = entry.first;
+        return true;
+    }
+    return false;
+}
+
+// The key-up of an AI action key: a tapped modifier fires here, when no other key came in between.
+bool TextService::_finish_ai_action_key(WPARAM key, BOOL* pfEaten) {
+    if (_aiActionKeyDown == 0 || key != _aiActionKeyDown) return false;
+    const UINT pressed = _aiActionKeyDown;
+    const std::string action_id = _aiActionKeyId;
+    const bool moved = _aiActionKeyMoved;
+    _aiActionKeyDown = 0;
+    _aiActionKeyId.clear();
+    _aiActionKeyMoved = false;
+    if (is_tap_key(pressed)) {
+        if (!moved) {
+            _pendingAiActionId = action_id;
+            PostMessageW(_configWindow, cxxime_tsf::WM_CXXIME_AI_ACTION_SELECTION, 0, 0);
+        }
+        return false;  // a modifier is the application's: eating its key-up would leave it stuck
+    }
+    if (pfEaten) *pfEaten = TRUE;  // a combination we took: its key-up goes with it
     return true;
 }
 

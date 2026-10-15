@@ -3,9 +3,12 @@
 #include <cxxime/ai_actions.h>
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+
+#include <windows.h>
 
 #include <json.hpp>
 
@@ -84,6 +87,64 @@ const std::string& ai_action_label(const AiAction& action, const std::string& ui
     const bool english = ui_language.compare(0, 2, "en") == 0;
     if (english && !action.label_en.empty()) return action.label_en;
     return action.label;
+}
+
+namespace {
+
+// A tapped modifier, as a KeyboardShortcut holds one: the key, no modifiers. Windows hands these
+// to input methods; Alt it does not, so an Alt tap would never arrive.
+struct TappedModifier {
+    const char* name;   // what the configuration string says
+    uint32_t virtual_key;
+};
+constexpr TappedModifier kTappedModifiers[] = {
+    {"LSHIFT", VK_LSHIFT}, {"RSHIFT", VK_RSHIFT},       {"SHIFT", VK_SHIFT},
+    {"LCTRL", VK_LCONTROL}, {"RCTRL", VK_RCONTROL},     {"CTRL", VK_CONTROL},
+};
+
+const TappedModifier* tapped_modifier(uint32_t virtual_key) {
+    for (const TappedModifier& modifier : kTappedModifiers) {
+        if (modifier.virtual_key == virtual_key) return &modifier;
+    }
+    return nullptr;
+}
+
+} // namespace
+
+bool is_valid_ai_action_key(const KeyboardShortcut& shortcut) {
+    if (!shortcut.enabled()) return true;  // off
+    if (shortcut.repeat != 1) return false;  // one press
+    if (shortcut.modifiers == 0 && tapped_modifier(shortcut.virtual_key)) return true;
+    return is_valid_input_mode_shortcut(shortcut);
+}
+
+std::string ai_action_key_string(const KeyboardShortcut& shortcut) {
+    if (!shortcut.enabled()) return "disabled";
+    if (shortcut.modifiers == 0) {
+        if (const TappedModifier* modifier = tapped_modifier(shortcut.virtual_key)) {
+            return modifier->name;
+        }
+    }
+    return keyboard_shortcut_string(shortcut);
+}
+
+bool parse_ai_action_key(const std::string& value, KeyboardShortcut* shortcut) {
+    if (!shortcut) return false;
+    // The tapped modifiers first: "SHIFT" is a tap here, while in a plain shortcut string it is the
+    // Shift modifier ("Shift+Space").
+    std::string upper;
+    upper.reserve(value.size());
+    for (const char ch : value) {
+        upper.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(ch))));
+    }
+    for (const TappedModifier& modifier : kTappedModifiers) {
+        if (upper == modifier.name) {
+            *shortcut = KeyboardShortcut{0, modifier.virtual_key, 1};
+            return true;
+        }
+    }
+    if (!parse_keyboard_shortcut(value, shortcut)) return false;
+    return shortcut->enabled() ? is_valid_ai_action_key(*shortcut) : true;
 }
 
 } // namespace cxxime

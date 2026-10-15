@@ -61,7 +61,7 @@
     "ai.card_actions": "AI 动作（选中文字）",
     "ai.action_key": "动作菜单键:",
     "ai.action_key_same": "与划词翻译键相同：两下都会被翻译用掉，换一个键",
-    "ai.action_key_hint": "用法：先按划词翻译键（默认 Ctrl+C，程序会先复制选中文字），紧接着按这个键，光标处弹出动作菜单。框里直接按这个组合即可记录（如 Ctrl+K，实际就是 Ctrl+C→Ctrl+K）；按 Backspace 或右键清空 = 关闭。建议挑程序不常用的组合。",
+    "ai.action_key_hint": "选中文字后**按一下这个键**就弹出动作菜单（选中的内容由输入法自己读取/复制，不必先按 Ctrl+C）。可以是 F6 这类单键、Ctrl+K 这类组合，或**轻按**右 Shift。留空 = 关闭；按 Backspace 或右键清空。",
     "ai.use_for_hint":"除“划词翻译”外，其余用途尚未实现，勾选暂不生效。",
     "ai.test": "测试",
     "ai.testing": "正在请求…",

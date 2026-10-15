@@ -61,7 +61,7 @@
     "ai.card_actions": "AI actions on the selection",
     "ai.action_key": "Action menu key:",
     "ai.action_key_same": "Same as the translate key: both presses would be taken by the translation. Pick another key.",
-    "ai.action_key_hint": "How it works: press the translate key first (Ctrl+C by default; the program copies the selection), then this key, and the menu of actions opens at the caret. Record it by pressing that combination here (Ctrl+K, say: the pair is Ctrl+C then Ctrl+K). Backspace or a right click clears the box (off). A combination the program in front does not use is best.",
+    "ai.action_key_hint": "With text selected, **one press of this key** opens the menu of actions (the selection is read for you, so there is no Ctrl+C to press first). It may be a key like F6, a combination like Ctrl+K, or a **tapped** right Shift. Empty: off. Backspace or a right click clears the box.",
     "ai.use_for_hint": "Apart from the selection translation and the AI actions these are not implemented yet, so ticking them does nothing today.",
     "ai.test": "Test",
     "ai.testing": "Asking…",

@@ -113,6 +113,9 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
     wParam = static_cast<WPARAM>(modifier_vk_with_side(wParam, lParam));
     // The translation window is transient, like the candidate window: any key dismisses it.
     _hide_translate_window();
+    // Another key while an AI action key is held: a tapped Shift that begins a chord (Shift+A) is
+    // not a tap, and must not open the menu.
+    if (_aiActionKeyDown != 0 && wParam != _aiActionKeyDown) _aiActionKeyMoved = true;
     _fTestKeyUpPending = false;
     if (_fTestKeyDownPending) {
         *pfEaten = TRUE;
@@ -205,6 +208,7 @@ STDMETHODIMP TextService::OnTestKeyUp(ITfContext* pic, WPARAM wParam, LPARAM lPa
 
 STDMETHODIMP TextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     wParam = static_cast<WPARAM>(modifier_vk_with_side(wParam, lParam));
+    if (_aiActionKeyDown != 0 && wParam != _aiActionKeyDown) _aiActionKeyMoved = true;
     _hide_translate_window();
     if (_fTestKeyDownPending) {
         _fTestKeyDownPending = false;
@@ -245,11 +249,7 @@ STDMETHODIMP TextService::OnKeyUp(ITfContext* pic, WPARAM wParam, LPARAM lParam,
         *pfEaten = TRUE;
         return S_OK;
     }
-    if (_aiActionKeyDown != 0 && wParam == _aiActionKeyDown) {
-        _aiActionKeyDown = 0;
-        *pfEaten = TRUE;
-        return S_OK;
-    }
+    if (_finish_ai_action_key(wParam, pfEaten)) return S_OK;
     if (_fTestKeyUpPending) {
         _fTestKeyUpPending = false;
         *pfEaten = TRUE;
