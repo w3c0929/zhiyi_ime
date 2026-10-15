@@ -139,11 +139,26 @@ void paste_text(const std::wstring& text) {
     SendInput(4, inputs, sizeof(INPUT));
 }
 
-// How long a program's own copy is waited for, in steps: an editor busy re-activating its input
-// context over the copy takes a moment, and reading too early is how the clipboard's old content
-// ended up being worked on instead of the selection (docs/ai.md).
+// How long a program's own copy is waited for, in steps, and the wait itself: it *dispatches the
+// program's messages* rather than sleeping through them. The keys that ask for the copy are sent
+// from this thread — the program's own — so they only sit in its queue until this handler returns:
+// without pumping, the program cannot act on them while we are looking, which is exactly how the
+// clipboard ended up one press behind (docs/ai.md).
 constexpr DWORD kProgramCopyWaitMs = 300;
-constexpr DWORD kProgramCopyStepMs = 30;
+constexpr DWORD kProgramCopyStepMs = 20;
+
+void wait_for_program_copy() {
+    const ULONGLONG deadline = GetTickCount64() + kProgramCopyWaitMs;
+    for (;;) {
+        MSG message;
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        if (GetTickCount64() >= deadline) return;
+        MsgWaitForMultipleObjectsEx(0, nullptr, kProgramCopyStepMs, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    }
+}
 
 std::string selection_to_utf8(const std::wstring& text) {
     if (text.empty()) return {};
@@ -270,13 +285,14 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
                                 &result);
         }
         const DWORD after_message = GetClipboardSequenceNumber();
-        if (after_message == sequence) press_copy();
-        // Waited for rather than slept through: an editor busy re-activating its input context over
-        // the copy takes a moment to get to it, and reading too early is how this ended up working
-        // from the clipboard instead of the selection half the time.
-        for (DWORD waited = 0; waited < kProgramCopyWaitMs; waited += kProgramCopyStepMs) {
-            if (GetClipboardSequenceNumber() != sequence) break;
-            Sleep(kProgramCopyStepMs);
+        if (after_message == sequence) {
+            _readingSource = true;  // keys arriving while we pump are the program's, not the key's
+            press_copy();
+            for (DWORD waited = 0; waited < kProgramCopyWaitMs; waited += kProgramCopyStepMs) {
+                if (GetClipboardSequenceNumber() != sequence) break;
+                wait_for_program_copy();
+            }
+            _readingSource = false;
         }
         const DWORD after_keys = GetClipboardSequenceNumber();
         if (after_keys != sequence) read_clipboard_text(selection);

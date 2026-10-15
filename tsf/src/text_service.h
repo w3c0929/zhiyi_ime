@@ -641,6 +641,9 @@ private:
     // What the last _read_selected_text found: the document could not be read at all, so the text
     // came from the program's own Ctrl+C (or not at all).
     bool _readNeededProgramCopy = false;
+    // While the text is being read from a program's own copy, the program's messages are pumped (so
+    // it can act on the keys that were just sent to it); keys that arrive meanwhile are its own.
+    bool _readingSource = false;
     std::wstring _textNote;                   // shown beside the answer (a shortened selection…)
     // The translate key (Ctrl+C by default): the second press is taken, the first stays the
     // application's (copy).
