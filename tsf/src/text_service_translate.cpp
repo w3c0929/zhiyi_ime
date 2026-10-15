@@ -45,8 +45,8 @@ std::wstring shortened_note(std::size_t chars) {
 }
 
 // Why a key could not do anything (the window says 无法完成：…, docs/ai.md). Nothing to work on is
-// the one a user meets most: no selection, and nothing on the clipboard either.
-constexpr const wchar_t kNothingToWorkOn[] = L"没有选中内容，剪贴板里也没有文本";
+// the one a user meets most: nothing selected, and the line the caret is on has no text.
+constexpr const wchar_t kNothingToWorkOn[] = L"没有选中内容，光标这一行也没有文字";
 constexpr const wchar_t kNoServerConnection[] = L"与后台服务的连接断开";
 
 // A bare modifier press is not "another key": it must not close the menu (the user is still
@@ -160,44 +160,51 @@ bool TextService::_handle_translate_key(WPARAM key) {
     return true;
 }
 
-// The text the user selected, up to translate.max_selection_chars: from TSF, or from the
-// clipboard when the input box cannot be read (the first press of the key copied it).
+// What the key works on (docs/ai.md), up to translate.max_selection_chars: the selection, or with
+// nothing selected the line the caret is on. Either way it is **copied first**, and what was copied
+// is what comes back — so what is handled is always what the user can see, and a program the input
+// method cannot read (a classic Win32 edit box) is reached the same way as everything else.
 bool TextService::_read_selected_text(std::wstring* selection, bool* shortened) {
     if (shortened) *shortened = false;
     ITfContext* context = _current_edit_context_for_composition();
     if (!context) return false;
     const std::size_t limit =
         static_cast<std::size_t>((std::max)(100, _config.translate_max_selection_chars));
+    // What the key is to work on, decided before anything is copied (docs/ai.md): the selection, or
+    // — with nothing selected — the line the caret is on, which select_line_at_caret() selects for
+    // the user so that what is about to be handled is on screen.
+    std::wstring wanted;
     bool cut = false;
-    TextBeforeCaret read = read_selection_text(context, _clientId, limit, selection, &cut);
-    if (read == TextBeforeCaret::kRead && selection->empty()) {
-        // Nothing selected (docs/ai.md): the text already on the clipboard is what the key works
-        // on, so an action can be run on what was copied a moment ago without selecting it first.
-        // The clipboard is read as it is — no Ctrl+C of our own, since copying an empty selection
-        // can wipe the very text we are after. An empty clipboard leaves nothing to work on, and
-        // then the key does nothing at all.
-        if (read_clipboard_text(selection) && selection->size() > limit) {
-            selection->resize(limit);
-            cut = true;
-        }
+    TextBeforeCaret read = read_selection_text(context, _clientId, limit, &wanted, &cut);
+    if (read == TextBeforeCaret::kRead && wanted.empty()) {
+        read = select_line_at_caret(context, _clientId, limit, &wanted, &cut);
     } else if (read != TextBeforeCaret::kRead) {
-        // A classic Win32 edit box, or a program that keeps its text to itself: copy the selection
-        // ourselves and take the clipboard. The translate key had the user's own first press for
-        // this; an AI action key is one press, so nothing has been copied yet.
-        press_copy();
-        Sleep(kClipboardWaitMs);
-        if (read_clipboard_text(selection)) {
-            read = TextBeforeCaret::kRead;
-            if (selection->size() > limit) {
-                selection->resize(limit);
-                cut = true;
-            }
-        }
+        // A classic Win32 edit box, or a program that keeps its text to itself: it may well have a
+        // selection we cannot see, and the copy below is the only way to learn what it holds.
+        read = TextBeforeCaret::kRead;
+        cut = false;
     }
     context->Release();
-    if (read != TextBeforeCaret::kRead || selection->empty()) return false;
+    if (read != TextBeforeCaret::kRead) return false;
+
+    // **Copy it, and work on what was copied** — never on whatever the clipboard happened to hold:
+    // that is what made the same key work on something the user could not see. The copy is also
+    // what reaches a program the input method cannot read.
+    const DWORD sequence = GetClipboardSequenceNumber();
+    press_copy();
+    Sleep(kClipboardWaitMs);
+    const bool copied = GetClipboardSequenceNumber() != sequence && read_clipboard_text(selection) &&
+                        !selection->empty();
+    if (!copied) {
+        if (wanted.empty()) return false;  // nothing copied, and nothing read either
+        *selection = wanted;  // a program that will not copy: what was read is what there is
+    }
+    if (selection->size() > limit) {
+        selection->resize(limit);
+        cut = true;
+    }
     if (shortened) *shortened = cut;
-    return true;
+    return !selection->empty();
 }
 
 void TextService::_process_selection_translate() {

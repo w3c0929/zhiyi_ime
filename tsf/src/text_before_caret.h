@@ -33,4 +33,12 @@ TextBeforeCaret read_text_before_caret(ITfContext* context, TfClientId client_id
 TextBeforeCaret read_selection_text(ITfContext* context, TfClientId client_id, size_t max_chars,
                                     std::wstring* text, bool* truncated = nullptr);
 
+// The line the caret is on, which it *selects* for the caller (docs/ai.md: an action key with
+// nothing selected works on that line, so it is copied and the copy is what gets processed — and
+// the line being selected is how the user sees what is about to be handled). The line ends at the
+// newlines around the caret, and is bounded to max_chars on either side of it: `truncated` says
+// the line went past that bound, so the caller treats it like a cut selection.
+TextBeforeCaret select_line_at_caret(ITfContext* context, TfClientId client_id, size_t max_chars,
+                                     std::wstring* text, bool* truncated = nullptr);
+
 #endif  // ZHIYU_TSF_TEXT_BEFORE_CARET_H_

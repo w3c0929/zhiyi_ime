@@ -64,8 +64,12 @@ bool is_chromium_document(ITfContext* context) {
 
 class ReadSession : public ITfEditSession {
 public:
-    ReadSession(ITfContext* context, size_t max_chars, bool selection)
-        : _context(context), _max(max_chars), _selection(selection) {}
+    // What to read: the text before the caret, the selection, or the line the caret is on (which
+    // is selected as well, so it can be copied).
+    enum class Mode { kBeforeCaret, kSelection, kLineAtCaret };
+
+    ReadSession(ITfContext* context, size_t max_chars, Mode mode)
+        : _context(context), _max(max_chars), _mode(mode) {}
 
     STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
         if (!ppv) return E_INVALIDARG;
@@ -99,7 +103,7 @@ public:
         }
         com_ptr<ITfRange> range;
         if (FAILED(caret->Clone(&range))) return E_FAIL;
-        if (_selection) {
+        if (_mode == Mode::kSelection) {
             // The selection itself: what the selection translation and the AI actions read (empty
             // when collapsed). One character more than asked for, so that filling the buffer
             // completely says the selection is longer rather than guessing.
@@ -120,6 +124,9 @@ public:
             text = std::move(buffer);
             result = TextBeforeCaret::kRead;
             return S_OK;
+        }
+        if (_mode == Mode::kLineAtCaret) {
+            return read_line(ec, caret.Get());
         }
         range->Collapse(ec, TF_ANCHOR_START);  // typing replaces a selection: read before it
         LONG shifted = 0;
@@ -144,10 +151,99 @@ public:
     bool more = false;  // the selection went past max_chars
 
 private:
+    // The line the caret is on, bounded by _max on either side: the window before and after the
+    // caret is scanned (in one read each) for the newlines around it, the range is brought in to
+    // them, and that range becomes the selection — the caller copies it, and the answer replaces
+    // it or lands under it like any other selection's. `more` when the line ran past the window.
+    HRESULT read_line(TfEditCookie ec, ITfRange* caret) {
+        LONG back = 0;
+        std::wstring before;
+        bool cut_back = false;
+        if (!scan_side(ec, caret, TF_ANCHOR_START, -1, &back, &before, &cut_back)) return E_FAIL;
+        LONG forward = 0;
+        std::wstring after;
+        bool cut_forward = false;
+        if (!scan_side(ec, caret, TF_ANCHOR_END, 1, &forward, &after, &cut_forward)) return E_FAIL;
+
+        // Up to the newline after the last one before the caret, and to the one before the first
+        // one after it: what is left is the line.
+        const std::size_t last_break = before.find_last_of(L"\r\n");
+        const LONG line_back =
+            last_break == std::wstring::npos
+                ? static_cast<LONG>(before.size())
+                : static_cast<LONG>(before.size() - last_break - 1);
+        const std::size_t first_break = after.find_first_of(L"\r\n");
+        const LONG line_forward = first_break == std::wstring::npos ? static_cast<LONG>(after.size())
+                                                                   : static_cast<LONG>(first_break);
+        // A window full of line with no newline in it: the line goes on past it.
+        more = (last_break == std::wstring::npos && cut_back) ||
+               (first_break == std::wstring::npos && cut_forward);
+
+        com_ptr<ITfRange> line;
+        if (FAILED(caret->Clone(&line))) return E_FAIL;
+        line->Collapse(ec, TF_ANCHOR_START);
+        LONG shifted = 0;
+        if (FAILED(line->ShiftStart(ec, -line_back, &shifted, nullptr)) || shifted != -line_back) {
+            return E_FAIL;
+        }
+        if (FAILED(line->ShiftEnd(ec, line_forward, &shifted, nullptr)) || shifted != line_forward) {
+            return E_FAIL;
+        }
+        TF_SELECTION selection = {};
+        selection.range = line.Get();
+        selection.style.ase = TF_AE_NONE;
+        selection.style.fInterimChar = FALSE;
+        if (FAILED(_context->SetSelection(ec, 1, &selection))) return E_FAIL;
+
+        std::wstring buffer(_max + 1, L'\0');
+        ULONG length = 0;
+        if (FAILED(line->GetText(ec, 0, buffer.data(), static_cast<ULONG>(buffer.size()), &length))) {
+            return E_FAIL;
+        }
+        buffer.resize((std::min)(static_cast<size_t>(length), buffer.size()));
+        buffer.erase(std::remove_if(buffer.begin(), buffer.end(),
+                                    [](wchar_t c) {
+                                        return c == TS_CHAR_EMBEDDED || c == TS_CHAR_REGION;
+                                    }),
+                     buffer.end());
+        more = more || buffer.size() > _max;
+        if (buffer.size() > _max) buffer.resize(_max);
+        text = std::move(buffer);
+        result = TextBeforeCaret::kRead;
+        return S_OK;
+    }
+
+    // `direction` -1: the window before the anchor (how far the range could move is `moved`, the
+    // text is `out`); +1: the window after it. `cut` when the window's full width was used, which
+    // means the text goes on beyond it. One more character than the bound, to tell the two apart.
+    bool scan_side(TfEditCookie ec, ITfRange* caret, TfAnchor anchor, int direction, LONG* moved,
+                   std::wstring* out, bool* cut) {
+        com_ptr<ITfRange> probe;
+        if (FAILED(caret->Clone(&probe))) return false;
+        probe->Collapse(ec, anchor);
+        LONG shifted = 0;
+        const LONG width = static_cast<LONG>(_max + 1);
+        const LONG want = direction < 0 ? -width : width;
+        if (FAILED(probe->ShiftEnd(ec, want, &shifted, nullptr))) {
+            return false;
+        }
+        *moved = shifted;
+        *cut = shifted == want;
+        std::wstring buffer(static_cast<size_t>(shifted < 0 ? -shifted : shifted), L'\0');
+        ULONG length = 0;
+        if (!buffer.empty() &&
+            FAILED(probe->GetText(ec, 0, buffer.data(), static_cast<ULONG>(buffer.size()),
+                                  &length))) {
+            return false;
+        }
+        buffer.resize((std::min)(static_cast<size_t>(length), buffer.size()));
+        *out = std::move(buffer);
+        return true;
+    }
     LONG _ref = 1;
     ITfContext* _context;
     size_t _max;
-    const bool _selection;
+    const Mode _mode;
 };
 
 }  // namespace
@@ -159,15 +255,19 @@ bool context_is_imm_document(ITfContext* context) {
 }
 
 static TextBeforeCaret read_impl(ITfContext* context, TfClientId client_id, size_t max_chars,
-                                 std::wstring* text, bool selection, bool* truncated = nullptr) {
+                                 std::wstring* text, ReadSession::Mode mode,
+                                 bool* truncated = nullptr) {
     if (truncated) *truncated = false;
     if (!context || client_id == TF_CLIENTID_NULL || max_chars == 0) return TextBeforeCaret::kUnavailable;
     // Classic Win32 edit boxes: a read "succeeds" with no text.
     if (context_is_imm_document(context)) return TextBeforeCaret::kUnavailable;
-    ReadSession* session = new (std::nothrow) ReadSession(context, max_chars, selection);
+    ReadSession* session = new (std::nothrow) ReadSession(context, max_chars, mode);
     if (!session) return TextBeforeCaret::kUnavailable;
     HRESULT session_hr = E_FAIL;
-    const HRESULT hr = context->RequestEditSession(client_id, session, TF_ES_SYNC | TF_ES_READ, &session_hr);
+    // The line is selected as it is read, so that session writes; the others only read.
+    const DWORD flags = TF_ES_SYNC | (mode == ReadSession::Mode::kLineAtCaret ? TF_ES_READWRITE
+                                                                            : TF_ES_READ);
+    const HRESULT hr = context->RequestEditSession(client_id, session, flags, &session_hr);
     TextBeforeCaret result = TextBeforeCaret::kUnavailable;
     if (SUCCEEDED(hr) && SUCCEEDED(session_hr)) {
         result = session->result;
@@ -180,10 +280,16 @@ static TextBeforeCaret read_impl(ITfContext* context, TfClientId client_id, size
 
 TextBeforeCaret read_text_before_caret(ITfContext* context, TfClientId client_id, size_t max_chars,
                                        std::wstring* text) {
-    return read_impl(context, client_id, max_chars, text, false);
+    return read_impl(context, client_id, max_chars, text, ReadSession::Mode::kBeforeCaret);
 }
 
 TextBeforeCaret read_selection_text(ITfContext* context, TfClientId client_id, size_t max_chars,
                                     std::wstring* text, bool* truncated) {
-    return read_impl(context, client_id, max_chars, text, true, truncated);
+    return read_impl(context, client_id, max_chars, text, ReadSession::Mode::kSelection, truncated);
+}
+
+TextBeforeCaret select_line_at_caret(ITfContext* context, TfClientId client_id, size_t max_chars,
+                                     std::wstring* text, bool* truncated) {
+    return read_impl(context, client_id, max_chars, text, ReadSession::Mode::kLineAtCaret,
+                     truncated);
 }
