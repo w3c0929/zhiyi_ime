@@ -10,7 +10,7 @@
     "autoupdate": {
         "url": "https://github.com/w3c0929/zhiyi_ime/releases/download/v$version/zhiyu-v$version-setup.exe"
     },
-    "hash": "sha256:c31ec9038336907c55798c66bb926c9e0449735f63d64d6f4e81805f34e34055",
+    "hash": "sha256:34ca1e11d520f6c94856ed42a2ece19d2ac80b6eae77303b2063071df87b6b55",
     "installer": {
         "script": [
             "New-Item -ItemType Directory -Force $persist_dir | Out-Null",

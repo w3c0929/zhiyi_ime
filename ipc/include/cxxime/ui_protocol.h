@@ -146,6 +146,11 @@ enum class UiCommandType : std::uint32_t {
     // \fy (docs/ai.md): show the menu of languages the translate action offers. The client picks
     // one and sends it back (IPCCommand::SET_AI_LANGUAGE). Clients from before ignore it.
     kAiLanguageMenu = 17,
+    // The highest type this build understands: everything above is a command from a newer server
+    // and is ignored rather than rejected (ui_protocol.cc, decode_ui_command_packet). **Raise it
+    // with valid_command_type() whenever a type is added** — a new type left above it is silently
+    // dropped on the receiving side (kAiLanguageMenu was, for all of 1.7.32).
+    kLastKnown = kAiLanguageMenu,
 };
 
 struct UiCommand {

@@ -59,7 +59,7 @@ bool valid_command_type(UiCommandType type) {
     case UiCommandType::kOpenAbout:
     case UiCommandType::kRefreshInputIndicator:
     case UiCommandType::kRefreshCandidates:
-    case UiCommandType::kAiLanguageMenu:
+    case UiCommandType::kAiLanguageMenu:  // == kLastKnown: keep the two in step (ui_protocol.h)
         return true;
     default:
         return false;  // also the removed status window commands (4 - 8, 14)
@@ -249,8 +249,8 @@ UiPacketParseResult decode_ui_command_packet(const void* data, std::size_t size,
     if (result != UiPacketParseResult::kAccepted) {
         return result;
     }
-    if (parsed.type > UiCommandType::kRefreshCandidates) {
-        return UiPacketParseResult::kIgnored;
+    if (parsed.type > UiCommandType::kLastKnown) {
+        return UiPacketParseResult::kIgnored;  // a type from a newer server (ui_protocol.h)
     }
     if (!is_valid_ui_command(parsed)) {
         return UiPacketParseResult::kInvalid;

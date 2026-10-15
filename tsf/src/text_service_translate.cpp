@@ -547,7 +547,10 @@ bool TextService::_show_menu_window() {
     } else if (!_aiMenuWindow->ensure_created(owner)) {
         return false;
     }
-    _aiMenuWindow->set_layout(_config.layout);
+    // The \fy language list is long (12), so it is a vertical list rather than the candidate bar's
+    // row: a row of twelve would run past the edge of the screen. The actions (five) keep the
+    // layout the user chose.
+    _aiMenuWindow->set_layout(_menuIsLanguage ? std::string("vertical") : _config.layout);
     _aiMenuWindow->set_page_info(1, 1);  // one page: no turning arrows
     _aiMenuWindow->set_preedit(std::string(), size_t{0}, size_t{0}, size_t{0}, size_t{0}, false);
     _aiMenuHighlight = 0;
