@@ -633,6 +633,9 @@ private:
     // The text had to come from the program's own copy (its document could not be read): the answer
     // goes back the same way — pasted — so the program replaces what it has selected (docs/ai.md).
     bool _textProgramOwnsItsText = false;
+    // The program's own copy was exactly the caret's line (break and all): it is selected before the
+    // answer is pasted, so that the answer replaces the line instead of landing in the middle of it.
+    bool _textProgramCopiedLine = false;
     // The "正在润色…" window: what it says, and that it is the one on screen. Some editors take it
     // down behind our back while the answer is being fetched (their input context moves over the
     // copy that read the text), so it is put back on every poll (docs/ai.md).

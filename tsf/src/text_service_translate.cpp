@@ -118,6 +118,35 @@ void put_clipboard_text(const std::wstring& text) {
     CloseClipboard();
 }
 
+// The trailing line break taken off the end of `text` (a program that copies the whole line hands
+// it over with its break; the answer belongs to the line itself).
+std::wstring without_trailing_line_break(const std::wstring& text) {
+    std::size_t end = text.size();
+    while (end > 0 && (text[end - 1] == L'\n' || text[end - 1] == L'\r')) --end;
+    return text.substr(0, end);
+}
+
+// Makes the program select the line the caret is on (`Home`, then `Shift+End`): a program that
+// copies the whole line when nothing is selected hands the answer a *line*, and without this the
+// paste would land in the middle of it (docs/ai.md). The keys carry the mark ours do, so the input
+// method's own key handling skips them.
+void select_line_in_program() {
+    INPUT inputs[6] = {};
+    const auto key = [](INPUT* input, WORD virtual_key, DWORD flags) {
+        input->type = INPUT_KEYBOARD;
+        input->ki.wVk = virtual_key;
+        input->ki.dwFlags = flags;
+        input->ki.dwExtraInfo = TextService::kInjectedCopyMark;
+    };
+    key(&inputs[0], VK_HOME, 0);
+    key(&inputs[1], VK_HOME, KEYEVENTF_KEYUP);
+    key(&inputs[2], VK_SHIFT, 0);
+    key(&inputs[3], VK_END, 0);
+    key(&inputs[4], VK_END, KEYEVENTF_KEYUP);
+    key(&inputs[5], VK_SHIFT, KEYEVENTF_KEYUP);
+    SendInput(6, inputs, sizeof(INPUT));
+}
+
 // An answer delivered the way the user would put it there: on the clipboard, then Ctrl+V, which
 // the program applies to its own selection. Only a program whose text the input method cannot read
 // needs this — TSF sees no selection in a transitory document, so an ordinary insert would land at
@@ -245,6 +274,7 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
         static_cast<std::size_t>((std::max)(100, _config.translate_max_selection_chars));
     std::wstring wanted;
     bool cut = false;
+    _textProgramCopiedLine = false;  // decided again below, by what this read finds
     const char* tier = "selection";
     TextBeforeCaret read = read_selection_text(context, _clientId, limit, &wanted, &cut);
     if (read == TextBeforeCaret::kRead && wanted.empty()) {
@@ -295,7 +325,19 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
             _readingSource = false;
         }
         const DWORD after_keys = GetClipboardSequenceNumber();
-        if (after_keys != sequence) read_clipboard_text(selection);
+        if (after_keys != sequence) {
+            read_clipboard_text(selection);
+            // A program that copies the whole line when nothing is selected (Sublime Text does):
+            // that copy *is* the caret's line, break and all, and the answer belongs over that line
+            // — so the break is taken off what is worked on, and the program is asked to select the
+            // line before the answer is pasted (docs/ai.md). Only a copy of exactly one line is
+            // treated this way: with several, the line we would select is not the text we worked on.
+            const std::wstring line = without_trailing_line_break(*selection);
+            _textProgramCopiedLine =
+                line.size() != selection->size() &&
+                line.find_first_of(L"\r\n") == std::wstring::npos;
+            if (_textProgramCopiedLine) *selection = line;
+        }
         char detail[160] = {};
         snprintf(detail, sizeof(detail), "program_copy seq=%u message=%u keys=%u chars=%zu",
                  static_cast<unsigned>(sequence), static_cast<unsigned>(after_message),
@@ -535,6 +577,7 @@ void TextService::_poll_translation() {
     // its own, and wants none.
     if (deliver && _textInsert == cxxime::AiActionInsert::kReplace) {
         if (program_owns_its_text) {
+            if (_textProgramCopiedLine) select_line_in_program();  // so the paste replaces the line
             paste_text(translation);
         } else {
             insert_text(translation, true, nullptr, false, false);  // replaces the selection
