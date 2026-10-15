@@ -161,15 +161,18 @@ bool TextService::_send_selected_text(std::uint32_t purpose, const std::string& 
                                       const std::string& text, const std::wstring& source,
                                       bool replace, const std::wstring& note) {
     if (!_ensure_ipc_session()) return false;
+    const bool long_text = text.size() > kTextChunkBytes;
     _textPurpose = purpose;
     _textActionId = action_id;
-    _textLong = text.size() > kTextChunkBytes;
+    // The answer comes back in pieces whenever the chunked channel carried the text — and an AI
+    // action always uses it (only the translate command has an answer of its own in the poll).
+    _textPieces = long_text || purpose != cxxime::kTextUploadTranslate;
     _textReplace = replace;
     _textNote = note;
     _translateSource = source;
 
     cxxime::IPCResponse response = {};
-    if (_textLong) {
+    if (long_text) {
         if (!_client.text_upload_begin(_sessionId, purpose, action_id, text.size(), response)) {
             return false;
         }
@@ -220,8 +223,8 @@ void TextService::_poll_translation() {
         return;
     }
     cxxime::IPCResponse response = {};
-    const bool polled = _textLong ? _client.text_result_poll(_sessionId, _textPurpose, response)
-                                  : _client.translate_status(_sessionId, response);
+    const bool polled = _textPieces ? _client.text_result_poll(_sessionId, _textPurpose, response)
+                                    : _client.translate_status(_sessionId, response);
     if (!polled) {
         _stop_translation_poll();
         return;
@@ -232,9 +235,10 @@ void TextService::_poll_translation() {
     const bool failed = response.translate_state == cxxime::kTranslateFailed;
     if (response.translate_state != cxxime::kTranslateDone && !failed) return;
 
-    // The answer: one field, or as many pieces as the server says are ready.
+    // The answer: one field (the translate command), or as many pieces as the server says are
+    // ready.
     std::string answer;
-    if (_textLong) {
+    if (_textPieces) {
         const std::size_t total = response.text_result_bytes;
         for (std::size_t offset = 0; offset < total;) {
             cxxime::IPCResponse piece = {};
@@ -348,14 +352,11 @@ RECT TextService::_query_caret_rect() {
 }
 
 bool TextService::_handle_ai_action_key(WPARAM key) {
-    const cxxime::KeyboardShortcut& sc = _config.ai_action_shortcut;
-    if (!sc.enabled() || key != sc.virtual_key) return false;
-    if ((_get_modifiers() & cxxime::kShortcutModifierMask) != sc.modifiers) return false;
-
     // The gesture is the translate key's, one key further: the translate key first (Ctrl+C by
     // default — the application copies the selection, and the translate handler has recorded that
-    // press), then this key within the same window. So the first press of the pair is one
-    // programs already know, and this key only has to be a combination they do not use.
+    // press), then this key within the same window. That second key is the menu key, or one
+    // action's own key, which runs it without the menu. So the first press of the pair is one
+    // programs already know, and the second only has to be a combination they do not use.
     constexpr ULONGLONG kDoubleTapMs = 350;
     constexpr ULONGLONG kPairMs = 50;  // OnTestKeyDown and OnKeyDown report one press
     const ULONGLONG now = GetTickCount64();
@@ -364,8 +365,30 @@ bool TextService::_handle_ai_action_key(WPARAM key) {
     const bool after_translate_key =
         _lastTranslateCopyTick != 0 && now - _lastTranslateCopyTick <= kDoubleTapMs;
     if (!after_translate_key) return false;
+
+    const std::uint32_t modifiers = _get_modifiers() & cxxime::kShortcutModifierMask;
+    const auto matches = [&](const cxxime::KeyboardShortcut& shortcut) {
+        return shortcut.enabled() && key == shortcut.virtual_key &&
+               modifiers == shortcut.modifiers;
+    };
+    std::string action_id;  // empty: the menu
+    bool taken = false;
+    if (matches(_config.ai.action_key)) {
+        taken = true;
+    } else {
+        for (const auto& entry : _config.ai.action_keys) {
+            cxxime::KeyboardShortcut shortcut;
+            if (!cxxime::parse_keyboard_shortcut(entry.second, &shortcut)) continue;
+            if (!matches(shortcut)) continue;
+            action_id = entry.first;
+            taken = true;
+            break;
+        }
+    }
+    if (!taken) return false;
     _lastTranslateCopyTick = 0;  // the pair is used up
     _aiActionKeyDown = static_cast<UINT>(key);
+    _pendingAiActionId = action_id;
     // Reading the selection and placing the menu need an edit session and the caret, which cannot
     // be done inside a key callback: the message goes to the config window, as the translation's
     // does.
@@ -374,17 +397,33 @@ bool TextService::_handle_ai_action_key(WPARAM key) {
 }
 
 void TextService::_process_ai_action_selection() {
-    if (cxxime::ai_actions().empty()) return;  // no data file, or nothing usable in it
+    const std::string action_id = _pendingAiActionId;
+    _pendingAiActionId.clear();
+    const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
+    if (actions.empty()) return;  // no data file, or nothing usable in it
     std::wstring selection;
     bool shortened = false;
     if (!_read_selected_text(&selection, &shortened)) return;
-    _open_ai_menu(selection, shortened);
+    if (action_id.empty()) {
+        _open_ai_menu(selection, shortened);
+        return;
+    }
+    // An action's own key: straight to it, no menu.
+    for (std::size_t i = 0; i < actions.size(); ++i) {
+        if (actions[i].id != action_id) continue;
+        _start_ai_action(i, selection, shortened);
+        return;
+    }
 }
 
 void TextService::_open_ai_menu(const std::wstring& source, bool shortened) {
     _close_ai_menu();
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
-    for (std::size_t i = 0; i < actions.size(); ++i) _aiMenuRows.push_back(i);
+    for (std::size_t i = 0; i < actions.size(); ++i) {
+        const auto hidden = _config.ai.action_disabled.find(actions[i].id);
+        if (hidden != _config.ai.action_disabled.end() && hidden->second) continue;
+        _aiMenuRows.push_back(i);
+    }
     if (_aiMenuRows.empty()) return;
 
     HWND owner = reinterpret_cast<HWND>(_effectiveEditTarget.view_window);
@@ -478,29 +517,36 @@ bool TextService::_handle_ai_menu_key(WPARAM key, BOOL* pfEaten) {
 
 void TextService::_run_ai_action(std::size_t row) {
     if (row >= _aiMenuRows.size()) return;
-    const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
     const std::size_t index = _aiMenuRows[row];
-    if (index >= actions.size()) return;
-    const cxxime::AiAction action = actions[index];  // a copy: the menu goes below
-    std::wstring text = _aiMenuSource;
-    bool shortened = _aiMenuShortened;
+    const std::wstring source = _aiMenuSource;
+    const bool shortened = _aiMenuShortened;
     _close_ai_menu();
+    _start_ai_action(index, source, shortened);
+}
 
+void TextService::_start_ai_action(std::size_t index, const std::wstring& source,
+                                   bool shortened) {
+    const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
+    if (index >= actions.size()) return;
+    const cxxime::AiAction action = actions[index];
+    std::wstring text = source;
+    bool cut = shortened;
     // Cut to what this action accepts and say so. A cut selection is never typed back: the answer
     // only covers what was sent, and replacing the whole selection would lose the rest.
     if (action.max_input_chars > 0 &&
         text.size() > static_cast<std::size_t>(action.max_input_chars)) {
         text.resize(static_cast<std::size_t>(action.max_input_chars));
-        shortened = true;
+        cut = true;
     }
-    const std::wstring note = shortened ? shortened_note(text.size()) : std::wstring();
+    const std::wstring note = cut ? shortened_note(text.size()) : std::wstring();
     const RECT caret = _query_caret_rect();
 
     // Working: the window says so until the poll brings the answer (or the reason it failed).
-    const std::wstring label = selection_from_utf8(cxxime::ai_action_label(action, _config.ui_language));
+    const std::wstring label =
+        selection_from_utf8(cxxime::ai_action_label(action, _config.ui_language));
     _present_translate_window(L"正在" + label + L"…", text, note, caret);
     if (!_send_selected_text(cxxime::kTextUploadAiAction, action.id, selection_to_utf8(text), text,
-                             action.replace && !shortened, note)) {
+                             action.replace && !cut, note)) {
         _present_translate_window(L"无法完成：与后台服务的连接断开", text, std::wstring(), caret);
     }
 }

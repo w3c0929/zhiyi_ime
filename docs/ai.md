@@ -20,6 +20,9 @@
 | `ai.timeout_ms` | `8000` | 单次请求超时（1000–120000） |
 | `ai.keys` | `[]` | **多把** API 密钥，**DPAPI（当前用户）加密后的 base64**，不是明文。一把被拒（401/429）自动换下一把 |
 | `ai.use_for.*` | 全 `false` | 哪些功能允许走线上：`translate`（划词翻译）/ `selection`（选中文字的 AI 动作）/ `english` / `voice` / `glossary` |
+| `ai.action_key` | `""` | 动作菜单键（**第二个**键，见下节）。空 = 关闭 |
+| `ai.action_keys` | `{}` | 某个动作自己的第二个键：`{"proofread": "Ctrl+K"}`，按它就直跑该动作、不弹菜单 |
+| `ai.action_disabled` | `{}` | 不在菜单里列出的动作：`{"rewrite": true}`。没写的都列出 |
 
 密钥不写明文：设置页会把输入的密钥用 `CryptProtectData` 加密后存进 `ai.keys`，只有同一台机器的
 同一个用户能解回来（`shared/src/ai_client.cc` 的 `protect_secret` / `unprotect_secret`）。
@@ -40,9 +43,59 @@
 | 功能 | 状态 |
 |------|------|
 | **划词翻译**（`Ctrl+C+C`） | 已接入：`ai.use_for.translate` 打开后由 API 翻译（自然更省内存、也不用下载本地翻译模型），失败自动回退本地模型（`server/src/translate_service.cc`） |
-| 选中文字的 AI 动作（润色/改写/摘要/纠错） | 规划中 |
+| **选中文字的 AI 动作**（润色/纠错/改写） | 已接入：`ai.use_for.selection` + `ai.action_key` 打开后，选中文字 → 按「翻译键 + 这个键」弹出动作菜单，选一个由 API 处理（见下节） |
+| 摘要（summarize） | 动作定义里加一条即可（`data/ai_actions.json`），默认未提供 |
 | 英文补全 / 语音后处理 / 语言包兜底 | 规划中 |
-| 设置界面「AI」页 | 规划中（当前直接编辑 `default.json` 即可） |
+| 设置界面「AI」页 | 已接入（总开关、密钥、动作菜单键、每个动作的开关与独立键） |
+
+## 选中文字的 AI 动作
+
+选中一段文字，**先按划词翻译键（默认 `Ctrl+C`：程序会先复制这段文字），紧接着按「动作菜单键」**，
+光标处弹出这个菜单：
+
+```
+ 1. 润色
+ 2. 纠错
+ 3. 改写
+```
+
+（菜单是候选窗口的一种用法，但没有拼音行、也没有翻页箭头；顺序就是 `ai_actions.json` 里的顺序，
+被 `ai.action_disabled` 关掉的不列出。）
+
+按 `1`～`9` 或方向键选择、`回车`执行、`Esc`取消；也可以给某个动作配一个**自己的第二个键**
+（`ai.action_keys`），按它就直跑那个动作、不弹菜单。
+
+- **动作定义是数据**：`data/ai_actions.json`（随安装包发布，也可以自己改）。每条 =
+  `id` + 名字（中/英）+ `prompt`（system 提示词，用户消息就是选中的原文）+
+  `insert`（`replace` 替换选中文字，可 `Ctrl+Z` 一步撤销；`preview` 只显示）+
+  `max_input_chars`（超过就只处理前面这么多，并明确提示）+ `timeout_ms`。加一个动作不用改程序。
+- **只走线上 AI**：需要 `ai.enabled` + `ai.use_for.selection` + 有密钥。没配好时窗口会直接说明
+  原因（例如「没有配置 API 密钥（设置 → AI）」），而不是悄悄什么都不做。
+- **执行中**：窗口显示「正在润色…」，超时或失败显示原因；`Esc` 可取消。
+- **长选区**：超过 `translate.max_selection_chars`（默认 32000 字）或该动作的 `max_input_chars`
+  时，只处理前面那一段并提示「（只处理了前 N 字）」，此时**只显示、不替换**——免得把没处理的部分丢了。
+- **撤销**：替换走的是一次编辑（与「划词翻译 → 直接上屏」同一条路），`Ctrl+Z` 一步还原。
+- 实现：`shared/src/ai_actions.cc`（读动作）、`shared/src/ai_client.cc`（`run_action`，含去引号/
+  去「以下是…」这类包装）、`server/src/ai_action_service.cc`（后台线程跑、结果留内存供分块取回）、
+  `tsf/src/text_service_translate.cpp`（菜单与写回）。
+
+### 长文本怎么走 IPC
+
+选中的文字和 AI 的回答都可能很长，而 IPC 的普通字段只有 4096 字节。短文本仍走老路
+（`TRANSLATE_SELECTION` / `TRANSLATE_STATUS`，一字未改）；超过一个字段时改用四个追加式命令
+（`shared/include/cxxime/ipc_protocol.h`）：
+
+| 命令 | 用途 |
+|---|---|
+| `TEXT_UPLOAD_BEGIN` (37) | 开始上传：`key_code`=用途、`search_query`=动作 id、`modifiers`=总字节数 |
+| `TEXT_UPLOAD_CHUNK` (38) | `candidate_index`=偏移、`translate_text`=一块（≤4095 字节） |
+| `TEXT_RESULT_POLL` (39) | 状态 + `text_result_bytes`=已就绪字节数 |
+| `TEXT_RESULT_READ` (40) | 按偏移取回一块 |
+
+这样收发都没有 4096 字节的天花板，也没有结构体改动（`IPCRequest`/`IPCResponse` 的
+baseline 与 static_assert 全部保持）。**顺带修掉了划词翻译的两个老问题**：选区超过 1000 字
+以前会被静默砍掉、并且开着「直接上屏」时会把整段选区替换成那一小段的译文（后面的原文就丢了）；
+现在超长会提示且不替换（`docs/settings-guide.md` 的 `translate.max_selection_chars`）。
 
 ## 设置界面
 
@@ -62,3 +115,9 @@
 
 `zhiyu-server.exe --ai-test --key <key> [--provider id] [--base-url url] [--model name] [--text "文本"] [--out 结果文件]`
 走的就是输入法用的那条链路（DPAPI 往返 → 提供方表 → WinHTTP → 协议 → 解析），用来确认密钥/网络通不通。
+
+AI 动作也可以这样自查（`--data` 指向带 `ai_actions.json` 的 data 目录；打印结果与耗时）：
+
+```
+zhiyu-server.exe --ai-action --action proofread --key <key> --text "我觉得这个方按可以" --out r.txt
+```

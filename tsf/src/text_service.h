@@ -454,7 +454,8 @@ private:
     void _open_ai_menu(const std::wstring& source, bool shortened);
     void _close_ai_menu();
     void _render_ai_menu();  // redraw the rows (the highlight moved)
-    void _run_ai_action(std::size_t row);
+    void _run_ai_action(std::size_t row);  // a menu row
+    void _start_ai_action(std::size_t index, const std::wstring& source, bool shortened);
     // The selected text, with the clipboard as the fallback and translate.max_selection_chars as
     // the limit; false when there is nothing to work on.
     bool _read_selected_text(std::wstring* selection, bool* shortened);
@@ -568,12 +569,13 @@ private:
     std::wstring _aiMenuSource;               // the selection the menu was opened for
     bool _aiMenuShortened = false;            // only its beginning was read
     std::vector<std::size_t> _aiMenuRows;
+    std::string _pendingAiActionId;  // an action's own key was pressed: run it, no menu
     std::unique_ptr<cxxime::CandidateWindow> _aiMenuWindow;
     // Long text over IPC (TEXT_UPLOAD_*): what the request in flight is for, whether it went
     // through the chunked channel, whether it may be typed back, and what to note beside it.
     std::uint32_t _textPurpose = 0;           // kTextUploadTranslate / kTextUploadAiAction
     std::string _textActionId;                // the AI action, when that is what it is
-    bool _textLong = false;                   // the chunked channel is in use
+    bool _textPieces = false;                 // the answer is read in pieces (chunked channel)
     bool _textReplace = false;                // the answer may replace the selection
     std::wstring _textNote;                   // shown beside the answer (a shortened selection…)
     // The translate key (Ctrl+C by default): the second press is taken, the first stays the

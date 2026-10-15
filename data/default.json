@@ -114,7 +114,10 @@
             "english": false,
             "voice": false,
             "glossary": false
-        }
+        },
+        "action_key": "",
+        "action_keys": {},
+        "action_disabled": {}
     },
     "theme": "moon_light",
     "ui": {

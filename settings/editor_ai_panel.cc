@@ -19,6 +19,7 @@
 #include "key_capture.h"
 
 #include <algorithm>
+#include <cxxime/ai_actions.h>
 #include <chrono>
 #include <string>
 #include <vector>
@@ -42,7 +43,20 @@ constexpr int kAiKeyRemoveId = 6017;
 constexpr int kAiDetectId = 6018;
 constexpr int kAiEffortId = 6019;
 constexpr int kAiThinkingId = 6020;
-constexpr int kAiActionKeyId = 6021;  // AI actions on the selection: the menu key
+constexpr int kAiActionKeyId = 6021;       // AI actions on the selection: the menu key
+constexpr int kAiActionListFirstId = 6022;  // .. 6029: one checkbox per action (in the menu)
+constexpr int kAiActionKeyFirstId = 6040;   // .. 6047: one key box per action
+constexpr std::size_t kAiActionRowMax = 8;  // more actions than the page has room for
+
+// A key that cannot work for an AI action: the pair starts with the translate key, so that same
+// combination twice would never reach the actions (the translation takes both presses).
+std::wstring action_key_notice(const KeyChoice& choice, const KeyChoice& translate_choice) {
+    if (choice.kind == KeyChoice::Kind::kCombo &&
+        same_key_choice(choice, translate_choice)) {
+        return tr("ai.action_key_same");
+    }
+    return std::wstring();
+}
 
 // The two modes, in the order of the combo (AiConfig::mode).
 const char* const kAiModeKeys[] = {"ai.mode_prefer_remote", "ai.mode_remote_only"};
@@ -221,7 +235,7 @@ void EditorApp::create_ai_panel(HWND panel) {
     y = card_end(panel, y);
 
     // AI actions on the selection (docs/ai.md): the key that opens the menu of actions beside the
-    // selected text, like the translate key (press it twice; the first press is the program's).
+    // selected text, and a row per action — whether the menu lists it, and a key of its own.
     y = card_begin(panel, y, tr("ai.card_actions"));
     const int action_x = make_aligned_label(tr("ai.action_key"), x0, labels, y, panel);
     hAiActionKey_ = create_key_capture(kAiActionKeyId, action_x, y, S(160), kCtrlH, panel, false);
@@ -231,19 +245,39 @@ void EditorApp::create_ai_panel(HWND panel) {
     key_capture_set_allow_double(hAiActionKey_, true);
     key_capture_set_allow_common(hAiActionKey_, true);
     key_capture_set_check(hAiActionKey_, [this](const KeyChoice& choice) -> std::wstring {
-        // The pair starts with the translate key: the same combination twice would never reach
-        // the AI actions.
-        if (choice.kind == KeyChoice::Kind::kCombo && hTranslateKey_ &&
-            same_key_choice(choice, key_capture_get(hTranslateKey_))) {
-            return tr("ai.action_key_same");
-        }
-        return std::wstring();
+        return action_key_notice(choice, hTranslateKey_ ? key_capture_get(hTranslateKey_)
+                                                        : KeyChoice::none());
     });
     y += kRowH;
+
+    hAiActionRows_.clear();
+    hAiActionKeys_.clear();
+    const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
+    if (!actions.empty()) {
+        const int row_x = make_aligned_label(tr("ai.action_list"), x0, labels, y, panel);
+        for (std::size_t i = 0; i < actions.size() && i < kAiActionRowMax; ++i) {
+            const int row_y = y + static_cast<int>(i) * kRowH;
+            hAiActionRows_.push_back(make_check(
+                kAiActionListFirstId + static_cast<int>(i),
+                utf8_to_wstr(cxxime::ai_action_label(actions[i], ui_language_)).c_str(), row_x,
+                row_y, S(200), panel));
+            HWND key = create_key_capture(kAiActionKeyFirstId + static_cast<int>(i),
+                                          row_x + S(210), row_y, S(150), kCtrlH, panel, false);
+            key_capture_set_allow_double(key, true);
+            key_capture_set_allow_common(key, true);
+            key_capture_set_check(key, [this](const KeyChoice& choice) -> std::wstring {
+                return action_key_notice(choice, hTranslateKey_ ? key_capture_get(hTranslateKey_)
+                                                                : KeyChoice::none());
+            });
+            hAiActionKeys_.push_back(key);
+        }
+        y += kRowH * static_cast<int>((std::min)(actions.size(), kAiActionRowMax));
+    }
     make_hint(tr("ai.action_key_hint"), action_x, y - S(6), hint_w, panel, 2);
     y += S(44);
     card_end(panel, y);
 }
+
 
 // The stored keys, masked, into the list; the hint says how many there are.
 void EditorApp::refresh_ai_key_list() {
@@ -303,7 +337,19 @@ void EditorApp::populate_ai() {
     set_check(hAiUseVoice_, config_.ai.use_for.voice);
     set_check(hAiUseGlossary_, config_.ai.use_for.glossary);
 
-    key_capture_set(hAiActionKey_, KeyChoice::of(config_.ai_action_shortcut));
+    key_capture_set(hAiActionKey_, KeyChoice::of(config_.ai.action_key));
+    const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
+    for (std::size_t i = 0; i < hAiActionRows_.size() && i < actions.size(); ++i) {
+        const std::string& id = actions[i].id;
+        const auto hidden = config_.ai.action_disabled.find(id);
+        set_check(hAiActionRows_[i], hidden == config_.ai.action_disabled.end() || !hidden->second);
+        cxxime::KeyboardShortcut shortcut;
+        const auto stored = config_.ai.action_keys.find(id);
+        if (stored != config_.ai.action_keys.end()) {
+            cxxime::parse_keyboard_shortcut(stored->second, &shortcut);
+        }
+        key_capture_set(hAiActionKeys_[i], KeyChoice::of(shortcut));
+    }
 
     refresh_ai_key_list();
 }
@@ -334,12 +380,26 @@ void EditorApp::read_ai(cxxime::Config& config) {
     config.ai.use_for.voice = get_check(hAiUseVoice_);
     config.ai.use_for.glossary = get_check(hAiUseGlossary_);
     const KeyChoice action_key = key_capture_get(hAiActionKey_);
-    cxxime::KeyboardShortcut action_shortcut =
+    cxxime::KeyboardShortcut menu_key =
         action_key.kind == KeyChoice::Kind::kCombo ? action_key.combo : cxxime::KeyboardShortcut{};
     // One press of this key, after the translate key: the box may have stored it as a double press
     // (its two presses are the pair, not a repetition).
-    action_shortcut.repeat = 1;
-    config.ai_action_shortcut = action_shortcut;
+    menu_key.repeat = 1;
+    config.ai.action_key = menu_key;
+
+    const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
+    config.ai.action_keys.clear();
+    config.ai.action_disabled.clear();
+    for (std::size_t i = 0; i < hAiActionRows_.size() && i < actions.size(); ++i) {
+        const std::string& id = actions[i].id;
+        if (!get_check(hAiActionRows_[i])) config.ai.action_disabled[id] = true;
+        const KeyChoice choice = key_capture_get(hAiActionKeys_[i]);
+        if (choice.kind == KeyChoice::Kind::kCombo) {
+            cxxime::KeyboardShortcut shortcut = choice.combo;
+            shortcut.repeat = 1;
+            config.ai.action_keys[id] = cxxime::keyboard_shortcut_string(shortcut);
+        }
+    }
 
     // Row two is the key in use and is editable: a value that is not among the stored ones is a
     // new key and is added (SuMail's box adds one the same way); an unchanged one is left alone,

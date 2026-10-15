@@ -122,6 +122,17 @@ downloaded when Settings opens (with the reminder above on) and on "Check" or "C
 file on "Download" or "Update to vN", and both are used only after their signature and SHA-256
 are verified. Translations are looked up on this computer; nothing you type is sent.
 
+## Online AI (optional, off by default)
+
+Settings has an "AI" page (see [docs/ai.md](ai.md)): **off by default**, and with it off this
+program behaves exactly as it does without the feature — nothing leaves the computer. Once it is
+turned on, and then **each feature** turned on, the text that feature works on is sent to the
+service you configured yourself (the selection the translate key or an AI action works on, for
+instance). These are your own calls: what is sent and to whom is your configuration's business;
+this program neither relays them nor keeps the requests' contents. API keys are stored in the
+local configuration encrypted with Windows DPAPI (only this machine and this user can read them).
+Turning the page's master switch off stops everything from going out at once.
+
 ## Backups (not part of this program)
 
 A backup made with "Export…" in Settings > Dictionary holds the settings, the lexicon and the

@@ -246,6 +246,10 @@
 | `ui.language` | auto | 界面语言：auto、zh-CN、en-US |
 | `shortcuts.ascii_toggle` / `english_style` / `punct_toggle` / `shape_toggle` | 见“按键” | 切换键，如 `Ctrl+Space`；`disabled` 表示不用 |
 | `shortcuts.page_up` / `page_down` | `""` | 有候选时翻到上一页 / 下一页的键：`-` `,` `[` / `=` `.` `]`，`""` 表示不用（见“按键”的候选翻页） |
+| `shortcuts.translate_selection` | `Ctrl+C+C` | 划词翻译键：选中文字后按两次（第一下留给程序去复制） |
+| `translate.max_selection_chars` | 32000 | 一次最多读多少字：划词翻译与 AI 动作共用的上限。超过就只处理前面这一段并提示，且**不替换**（免得把没处理的部分丢掉） |
+| `ai.action_key` | `""` | AI 动作的菜单键：先按划词翻译键、再按这个键，选中文字旁弹出动作菜单（见 [在线 AI](ai.md)）；空 = 关闭 |
+| `ai.action_keys` | `{}` | 给某个动作配的独立键（同样是「第二个键」）：`{"proofread": "Ctrl+K"}`，按它就直跑该动作 |
 | `ascii_composer.switch_key` | Shift 切换 | 单独轻按 Shift / Ctrl 的行为（`code`、`clear`、`set_ascii_mode`、`noop` 等，见 [组合输入](ascii-composer.md)）；`..._L` / `..._R` 两侧同值表示不区分左右，只写一侧表示只认该侧 |
 | `english.word_mode` | true | 英文模式默认单词联想 |
 | `english.correction` | true | 英文拼写纠错 |

@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include <cxxime/keyboard_shortcut.h>
+
 namespace cxxime {
 
 // The features that may run on the API (Config::ai.use_for).
@@ -45,6 +47,15 @@ struct AiConfig {
     AiUseFor use_for;
     // Off: the reasoning level is not sent at all (SuMail's thinking switch).
     bool thinking = true;
+    // AI actions on the selected text (ai_actions.h, docs/ai.md). `action_key` opens the menu of
+    // actions; it is the second key of a pair whose first key is the translate key (Ctrl+C: the
+    // application copies the selection), so the program in front only has to leave this key alone.
+    // `action_keys` gives an action a key of its own, run straight away instead of through the
+    // menu, with the same reading. `action_disabled` hides an action from the menu (an id that is
+    // not there is listed).
+    KeyboardShortcut action_key;
+    std::map<std::string, std::string> action_keys;
+    std::map<std::string, bool> action_disabled;
 
     bool uses(bool AiUseFor::*use) const { return enabled && use_for.*use; }
     bool remote_only() const { return mode == "remote_only"; }
