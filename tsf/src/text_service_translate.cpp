@@ -250,8 +250,22 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
     } else {
         if (program_copy_first) {
             const DWORD sequence = GetClipboardSequenceNumber();
-            press_copy();
-            Sleep(kClipboardWaitMs);
+            // Ask the program to copy first, by message rather than by keys: a classic edit box
+            // handles WM_COPY (and keeps the selection it has), while injected keys of ours go
+            // through the program's input context — which some editors answer by re-activating it
+            // and losing the selection before the copy lands. Only when the message changed
+            // nothing are the keys sent.
+            HWND target = reinterpret_cast<HWND>(_effectiveEditTarget.view_window);
+            if (!target || !IsWindow(target)) target = GetFocus();
+            if (target && IsWindow(target)) {
+                DWORD_PTR result = 0;
+                SendMessageTimeoutW(target, WM_COPY, 0, 0, SMTO_ABORTIFHUNG | SMTO_NORMAL, 200,
+                                    &result);
+            }
+            if (GetClipboardSequenceNumber() == sequence) {
+                press_copy();
+                Sleep(kClipboardWaitMs);
+            }
             if (GetClipboardSequenceNumber() != sequence) read_clipboard_text(selection);
         }
         // Tier 3: nothing at the caret — the clipboard, which is what the user copied themselves.
@@ -527,12 +541,14 @@ void TextService::_present_translate_window(const std::wstring& translation,
     // placed at, whether it came up visible, and the rect it occupies.
     RECT window_rect = {};
     GetWindowRect(_translateWindow->hwnd_for_test(), &window_rect);
-    char detail[192] = {};
+    const SIZE layout = _translateWindow->layout_size();
+    char detail[256] = {};
     snprintf(detail, sizeof(detail),
-             "answer_window owner=%p caret=%ld,%ld,%ld,%ld visible=%d rect=%ld,%ld,%ld,%ld",
+             "answer_window owner=%p caret=%ld,%ld,%ld,%ld visible=%d rect=%ld,%ld,%ld,%ld "
+             "layout=%ldx%ld chars=%zu",
              static_cast<void*>(owner), caret.left, caret.top, caret.right, caret.bottom,
              _translateWindow->is_visible() ? 1 : 0, window_rect.left, window_rect.top,
-             window_rect.right, window_rect.bottom);
+             window_rect.right, window_rect.bottom, layout.cx, layout.cy, translation.size());
     _enqueue_event_trace("ai_ui", detail);
 }
 
