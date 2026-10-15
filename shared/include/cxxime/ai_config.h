@@ -53,6 +53,10 @@ struct AiConfig {
     KeyboardShortcut action_key;
     std::map<std::string, std::string> action_keys;
     std::map<std::string, bool> action_disabled;
+    // The key that opens the translate language list — the same list \fy opens (docs/ai.md), so it
+    // can be had without typing the command. Written like action_key (a tapped modifier, an F key,
+    // or Ctrl/Alt and a key); empty = off.
+    KeyboardShortcut language_key;
     // What the "translate" action translates into: a language code from that action's own list
     // (ai_actions.json). Changed on the AI page, or from the input box with \fy.
     std::string translate_language = "en";

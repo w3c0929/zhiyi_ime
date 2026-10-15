@@ -283,6 +283,7 @@ private:
     HWND hAiUseVoice_ = nullptr, hAiUseGlossary_ = nullptr;
     HWND hAiTest_ = nullptr, hAiTestResult_ = nullptr, hAiKeyHint_ = nullptr;
     HWND hAiActionKey_ = nullptr;  // AI actions on the selection: the menu key
+    HWND hAiLanguageKey_ = nullptr;  // the key that opens the translate language list
     std::vector<HWND> hAiActionRows_;   // per action: in the menu
     std::vector<HWND> hAiActionKeys_;   // per action: a key of its own
     std::vector<HWND> hAiActionLangs_;  // per action: the language (the translate one; else null)

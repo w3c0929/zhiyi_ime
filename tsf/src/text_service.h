@@ -468,6 +468,12 @@ private:
     // The menu key was taken: read the selection and open the menu (on the config window's thread,
     // like _process_selection_translate).
     void _process_ai_action_selection();
+    // The key that opens the translate language list (ai.language_key): the same list \fy opens,
+    // typed for the user so the engine recognizes the command (docs/ai.md).
+    bool _is_language_key(WPARAM key) const;
+    void _open_language_list();
+    // A key that decided to fire: the language list, or an action (the menu when the id is empty).
+    void _fire_ai_action_key(bool language, const std::string& action_id);
     // A key while the menu is open: true when the menu took it (pfEaten is set then).
     bool _handle_ai_menu_key(WPARAM key, BOOL* pfEaten);
     void _open_ai_menu(const std::wstring& source, bool shortened);
@@ -608,6 +614,8 @@ private:
     bool _aiMenuShortened = false;            // only its beginning was read
     std::vector<std::size_t> _aiMenuRows;
     std::string _pendingAiActionId;  // an action's own key was pressed: run it, no menu
+    bool _pendingLanguageMenu = false;  // the language key was pressed: open \fy's list
+    bool _aiActionKeyLanguage = false;  // the key being tapped is that one, not an action's
     std::unique_ptr<cxxime::CandidateWindow> _aiMenuWindow;
     ULONGLONG _aiUiGraceUntil = 0;  // see _arm_ai_ui_grace
     // Long text over IPC (TEXT_UPLOAD_*): what the request in flight is for, whether it went

@@ -22,6 +22,7 @@
 | `ai.use_for.*` | 全 `false` | 哪些功能允许走线上：`translate`（划词翻译）/ `selection`（选中文字的 AI 动作）/ `voice`（语音识别后处理）/ `glossary`（语言包兜底，尚未实现） |
 | `ai.action_key` | `""` | 动作菜单键：**按一下就弹出菜单**（见下节）。可以是 `"F6"`、`"Ctrl+K"`，或轻按修饰键 `"RShift"` / `"Shift"`（任一侧）/ `"Ctrl"`。空 = 关闭 |
 | `ai.action_keys` | `{}` | 某个动作自己的键：`{"proofread": "F7"}`，按它直跑该动作、不弹菜单（写法同上） |
+| `ai.language_key` | `""` | **语言列表键**：按一下就弹出 `\fy` 那张 12 种语言的列表（写法同 `ai.action_key`，含轻按修饰键）。空 = 关闭 |
 | `ai.translate_language` | `en` | 「翻译」动作译成哪种语言（12 种代码；默认与 `translate` 动作的 `languages` 首项一致）。设置页有下拉可选 |
 | `ai.action_disabled` | `{}` | 不在菜单里列出的动作：`{"summarize": true}`。没写的都列出 |
 | `ai.voice_polish_action` | `proofread` | 语音识别后处理用哪个动作（`data/ai_actions.json` 的 id）；**空 = 不做这一层** |
@@ -142,6 +143,10 @@
   （`ConfigWriteCoordinator::enqueue_patch`，与「英文模式」等同类；`server/src/session_manager.cc` 的
   `persist_ai_language`）。所以这一功能**没有自己的窗口、没有自己的按键、没有额外的 IPC 命令**。
   名字取 `shared/src/ai_actions.cc` 的 `ai_language_label()`（中/英两种，与 `ai_action_label` 同规则）。
+- **也可以配一个键直接弹它**：`ai.language_key`（设置页「动作菜单键」下面那行「语言列表键」）。按它就等于**替你打了 `\fy`**——
+  输入法把这三个按键送给引擎（`TextService::_open_language_list`，用 `_modifierOverride` 保证不带修饰键），
+  于是列表、键位、选法全都与手打命令一模一样；组合成词中（正在打拼音时）不触发，因为那时 `\fy` 只会是标点。
+  **它与 `ai.action_key` 写法完全一致**（单键/组合/轻按修饰键）。
 - **动作定义是数据**：`data/ai_actions.json`（随安装包发布，也可以自己改）。每条 =
   `id` + 名字（中/英）+ `prompt`（system 提示词，用户消息就是选中的原文）+
   `insert`（`replace` 替换选中文字，可 `Ctrl+Z` 一步撤销；`below` 写在选中文字**下方**、自成一行

@@ -279,6 +279,17 @@ void EditorApp::create_ai_panel(HWND panel) {
     });
     y += kRowH;
 
+    // The key that opens the translate language list — the same list \fy opens (docs/ai.md), for
+    // whoever would rather press something than type the command.
+    const int language_x = make_aligned_label(tr("ai.language_key"), x0, labels, y, panel);
+    hAiLanguageKey_ = create_key_capture(kAiLanguageKeyId, language_x, y, S(160), kCtrlH, panel, true);
+    key_capture_set_allow_common(hAiLanguageKey_, false);
+    key_capture_set_check(hAiLanguageKey_, [this](const KeyChoice& choice) -> std::wstring {
+        return action_key_notice(choice, hTranslateKey_ ? key_capture_get(hTranslateKey_)
+                                                        : KeyChoice::none());
+    });
+    y += kRowH;
+
     hAiActionRows_.clear();
     hAiActionKeys_.clear();
     hAiActionLangs_.clear();
@@ -388,6 +399,7 @@ void EditorApp::populate_ai() {
     set_check(hAiUseGlossary_, config_.ai.use_for.glossary);
 
     key_capture_set(hAiActionKey_, action_key_choice(config_.ai.action_key));
+    key_capture_set(hAiLanguageKey_, action_key_choice(config_.ai.language_key));
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
     for (std::size_t i = 0; i < hAiActionRows_.size() && i < actions.size(); ++i) {
         const std::string& id = actions[i].id;
@@ -437,6 +449,7 @@ void EditorApp::read_ai(cxxime::Config& config) {
     config.ai.use_for.voice = get_check(hAiUseVoice_);
     config.ai.use_for.glossary = get_check(hAiUseGlossary_);
     config.ai.action_key = action_key_shortcut(key_capture_get(hAiActionKey_));
+    config.ai.language_key = action_key_shortcut(key_capture_get(hAiLanguageKey_));
 
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
     config.ai.action_keys.clear();

@@ -545,7 +545,7 @@ constexpr ULONGLONG kAiTapMaxHoldMs = 700;
 
 void TextService::_watch_ai_action_tap() {
     const UINT pressed = _aiActionKeyDown;
-    if (pressed == 0 || _aiActionKeyId.empty()) {
+    if (pressed == 0) {
         if (_configWindow) KillTimer(_configWindow, cxxime_tsf::TIMER_CXXIME_AI_TAP_WATCH);
         return;
     }
@@ -554,13 +554,25 @@ void TextService::_watch_ai_action_tap() {
     // not a tap. Released: it was one — unless another key came first, which the key callbacks say.
     if (still_held && GetTickCount64() - _aiActionKeyDownTick < kAiTapMaxHoldMs) return;
     const std::string action_id = _aiActionKeyId;
+    const bool language = _aiActionKeyLanguage;
     const bool moved = _aiActionKeyMoved;
     _aiActionKeyDown = 0;
     _aiActionKeyId.clear();
+    _aiActionKeyLanguage = false;
     _aiActionKeyMoved = false;
     if (_configWindow) KillTimer(_configWindow, cxxime_tsf::TIMER_CXXIME_AI_TAP_WATCH);
     if (moved || still_held) return;
-    _pendingAiActionId = action_id;
+    _fire_ai_action_key(language, action_id);
+}
+
+// What a key that has decided to fire does: the language list, or the action (the menu, when the
+// id is empty).
+void TextService::_fire_ai_action_key(bool language, const std::string& action_id) {
+    if (language) {
+        _pendingLanguageMenu = true;
+    } else {
+        _pendingAiActionId = action_id;
+    }
     PostMessageW(_configWindow, cxxime_tsf::WM_CXXIME_AI_ACTION_SELECTION, 0, 0);
 }
 
@@ -569,13 +581,15 @@ bool TextService::_handle_ai_action_key(WPARAM key) {
     // pair and no Ctrl+C of their own to press. The key is the menu key, or one action's own key,
     // which runs it without the menu.
     std::string action_id;
-    if (!_ai_action_key_for(key, &action_id)) return false;
+    const bool language_key = _is_language_key(key);
+    if (!language_key && !_ai_action_key_for(key, &action_id)) return false;
     if (is_tap_key(key)) {
         // A tapped modifier: a Shift that begins a chord (Shift+A) is not a tap, so the decision
         // waits for the key-up, and the application keeps the key meanwhile. Not every program
         // hands the key-up over, so the key's own state is watched as well.
         _aiActionKeyDown = static_cast<UINT>(key);
         _aiActionKeyId = action_id;
+        _aiActionKeyLanguage = language_key;
         _aiActionKeyMoved = false;
         _aiActionKeyDownTick = GetTickCount64();
         if (_configWindow) {
@@ -584,7 +598,12 @@ bool TextService::_handle_ai_action_key(WPARAM key) {
         return false;
     }
     _aiActionKeyDown = static_cast<UINT>(key);
-    _pendingAiActionId = action_id;
+    _aiActionKeyLanguage = language_key;
+    if (language_key) {
+        _pendingLanguageMenu = true;
+    } else {
+        _pendingAiActionId = action_id;
+    }
     // Reading the selection and placing the menu need an edit session and the caret, which cannot
     // be done inside a key callback: the message goes to the config window, as the translation's
     // does.
@@ -623,22 +642,59 @@ bool TextService::_finish_ai_action_key(WPARAM key, BOOL* pfEaten) {
     if (_aiActionKeyDown == 0 || key != _aiActionKeyDown) return false;
     const UINT pressed = _aiActionKeyDown;
     const std::string action_id = _aiActionKeyId;
+    const bool language = _aiActionKeyLanguage;
     const bool moved = _aiActionKeyMoved;
     _aiActionKeyDown = 0;
     _aiActionKeyId.clear();
+    _aiActionKeyLanguage = false;
     _aiActionKeyMoved = false;
+    if (_configWindow) KillTimer(_configWindow, cxxime_tsf::TIMER_CXXIME_AI_TAP_WATCH);
     if (is_tap_key(pressed)) {
-        if (!moved) {
-            _pendingAiActionId = action_id;
-            PostMessageW(_configWindow, cxxime_tsf::WM_CXXIME_AI_ACTION_SELECTION, 0, 0);
-        }
+        if (!moved) _fire_ai_action_key(language, action_id);
         return false;  // a modifier is the application's: eating its key-up would leave it stuck
     }
     if (pfEaten) *pfEaten = TRUE;  // a combination we took: its key-up goes with it
     return true;
 }
 
+// The key that opens the translate language list, if this is it — the same shape as an action key.
+bool TextService::_is_language_key(WPARAM key) const {
+    const cxxime::KeyboardShortcut& shortcut = _config.ai.language_key;
+    if (!shortcut.enabled() || key != shortcut.virtual_key) return false;
+    std::uint32_t modifiers = _get_modifiers() & cxxime::kShortcutModifierMask;
+    // A tapped modifier arrives with its own bit already set: that bit does not count.
+    if (shortcut.modifiers == 0 && is_tap_key(shortcut.virtual_key)) {
+        modifiers &= ~modifier_family_bit(shortcut.virtual_key);
+    }
+    return modifiers == shortcut.modifiers;
+}
+
+// The language list, for the key that asks for it: the very thing \fy does, typed for the user —
+// the engine recognizes the command, and the list appears in the candidate window as usual, so the
+// keys and the choice are the ones the command already has (docs/ai.md). No modifiers are reported
+// for those three keys, whatever the shortcut itself was pressed with.
+void TextService::_open_language_list() {
+    // \fy is a command typed on its own: mid-word it would be punctuation, not the command.
+    if (_composing) return;
+    ITfContext* context = _current_edit_context_for_composition();
+    if (!context) return;
+    _modifierOverride = 0;
+    for (const WPARAM key : {static_cast<WPARAM>(VK_OEM_5), static_cast<WPARAM>('F'),
+                             static_cast<WPARAM>('Y')}) {
+        BOOL eaten = FALSE;
+        _ProcessKeyEvent(context, key, 0, &eaten);
+    }
+    _modifierOverride.reset();
+    context->Release();
+}
+
 void TextService::_process_ai_action_selection() {
+    if (_pendingLanguageMenu) {
+        // The language list needs no text to work on, so it opens wherever the key is pressed.
+        _pendingLanguageMenu = false;
+        _open_language_list();
+        return;
+    }
     const std::string action_id = _pendingAiActionId;
     _pendingAiActionId.clear();
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
