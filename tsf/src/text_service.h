@@ -59,6 +59,12 @@ public:
     TextService();
     ~TextService();
 
+    // The mark on the keys press_copy() sends a program that cannot be read
+    // (text_service_translate.cpp). The input method's own key handlers skip keys carrying it: they
+    // are the program's to receive, and the 'C' among them would otherwise close the menu that is
+    // opening.
+    static constexpr LPARAM kInjectedCopyMark = 0x5A59'434F;  // 'ZYCO'
+
     // IUnknown
     STDMETHODIMP QueryInterface(REFIID riid, void** ppvObj) override;
     STDMETHODIMP_(ULONG) AddRef() override;

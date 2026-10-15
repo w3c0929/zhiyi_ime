@@ -151,42 +151,31 @@ public:
     bool more = false;  // the selection went past max_chars
 
 private:
-    // The line the caret is on, bounded by _max on either side: the window before and after the
-    // caret is scanned (in one read each) for the newlines around it, the range is brought in to
-    // them, and that range becomes the selection — the caller copies it, and the answer replaces
-    // it or lands under it like any other selection's. `more` when the line ran past the window.
+    // From the start of the caret's line to the caret itself (docs/ai.md), bounded by _max: the
+    // window before the caret is scanned in one read for the newline that starts the line, the
+    // range is brought in to it, and the part that is left becomes the selection — the answer
+    // replaces it or lands under it like any other selection's. `more` when the line began before
+    // the window, or when what is left of it still does not fit.
     HRESULT read_line(TfEditCookie ec, ITfRange* caret) {
         LONG back = 0;
         std::wstring before;
         bool cut_back = false;
-        if (!scan_side(ec, caret, TF_ANCHOR_START, -1, &back, &before, &cut_back)) return E_FAIL;
-        LONG forward = 0;
-        std::wstring after;
-        bool cut_forward = false;
-        if (!scan_side(ec, caret, TF_ANCHOR_END, 1, &forward, &after, &cut_forward)) return E_FAIL;
+        if (!scan_back(ec, caret, &back, &before, &cut_back)) return E_FAIL;
 
-        // Up to the newline after the last one before the caret, and to the one before the first
-        // one after it: what is left is the line.
+        // The line starts after the last newline before the caret; with none in the window, either
+        // the line starts further back (the window was full) or the caret's line is the first.
         const std::size_t last_break = before.find_last_of(L"\r\n");
         const LONG line_back =
             last_break == std::wstring::npos
                 ? static_cast<LONG>(before.size())
                 : static_cast<LONG>(before.size() - last_break - 1);
-        const std::size_t first_break = after.find_first_of(L"\r\n");
-        const LONG line_forward = first_break == std::wstring::npos ? static_cast<LONG>(after.size())
-                                                                   : static_cast<LONG>(first_break);
-        // A window full of line with no newline in it: the line goes on past it.
-        more = (last_break == std::wstring::npos && cut_back) ||
-               (first_break == std::wstring::npos && cut_forward);
+        more = last_break == std::wstring::npos && cut_back;
 
         com_ptr<ITfRange> line;
         if (FAILED(caret->Clone(&line))) return E_FAIL;
         line->Collapse(ec, TF_ANCHOR_START);
         LONG shifted = 0;
         if (FAILED(line->ShiftStart(ec, -line_back, &shifted, nullptr)) || shifted != -line_back) {
-            return E_FAIL;
-        }
-        if (FAILED(line->ShiftEnd(ec, line_forward, &shifted, nullptr)) || shifted != line_forward) {
             return E_FAIL;
         }
         TF_SELECTION selection = {};
@@ -213,23 +202,18 @@ private:
         return S_OK;
     }
 
-    // `direction` -1: the window before the anchor (how far the range could move is `moved`, the
-    // text is `out`); +1: the window after it. `cut` when the window's full width was used, which
-    // means the text goes on beyond it. One more character than the bound, to tell the two apart.
-    bool scan_side(TfEditCookie ec, ITfRange* caret, TfAnchor anchor, int direction, LONG* moved,
-                   std::wstring* out, bool* cut) {
+    // The window of up to _max+1 characters before the caret (one more than the bound, so filling
+    // it says the text goes on beyond). `moved` is how far the range could go.
+    bool scan_back(TfEditCookie ec, ITfRange* caret, LONG* moved, std::wstring* out, bool* cut) {
         com_ptr<ITfRange> probe;
         if (FAILED(caret->Clone(&probe))) return false;
-        probe->Collapse(ec, anchor);
-        LONG shifted = 0;
+        probe->Collapse(ec, TF_ANCHOR_START);
         const LONG width = static_cast<LONG>(_max + 1);
-        const LONG want = direction < 0 ? -width : width;
-        if (FAILED(probe->ShiftEnd(ec, want, &shifted, nullptr))) {
-            return false;
-        }
-        *moved = shifted;
-        *cut = shifted == want;
-        std::wstring buffer(static_cast<size_t>(shifted < 0 ? -shifted : shifted), L'\0');
+        LONG shifted = 0;
+        if (FAILED(probe->ShiftEnd(ec, -width, &shifted, nullptr))) return false;
+        *moved = -shifted;
+        *cut = shifted == -width;
+        std::wstring buffer(static_cast<size_t>(*moved), L'\0');
         ULONG length = 0;
         if (!buffer.empty() &&
             FAILED(probe->GetText(ec, 0, buffer.data(), static_cast<ULONG>(buffer.size()),

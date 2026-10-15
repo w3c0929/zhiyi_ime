@@ -110,6 +110,11 @@ STDMETHODIMP TextService::OnSetFocus(BOOL fForeground) {
 }
 
 STDMETHODIMP TextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+    // Our own copy, on its way to a program that cannot be read: not the user's key.
+    if (GetMessageExtraInfo() == kInjectedCopyMark) {
+        *pfEaten = FALSE;
+        return S_OK;
+    }
     wParam = static_cast<WPARAM>(modifier_vk_with_side(wParam, lParam));
     // The translation window is transient, like the candidate window: any key dismisses it.
     _hide_translate_window();
@@ -181,6 +186,10 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
 }
 
 STDMETHODIMP TextService::OnTestKeyUp(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+    if (GetMessageExtraInfo() == kInjectedCopyMark) {
+        *pfEaten = FALSE;
+        return S_OK;
+    }
     wParam = static_cast<WPARAM>(modifier_vk_with_side(wParam, lParam));
     _fTestKeyDownPending = false;
     if (_translateKeyDown != 0 && wParam == _translateKeyDown) {
@@ -207,6 +216,10 @@ STDMETHODIMP TextService::OnTestKeyUp(ITfContext* pic, WPARAM wParam, LPARAM lPa
 }
 
 STDMETHODIMP TextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+    if (GetMessageExtraInfo() == kInjectedCopyMark) {
+        *pfEaten = FALSE;
+        return S_OK;
+    }
     wParam = static_cast<WPARAM>(modifier_vk_with_side(wParam, lParam));
     if (_aiActionKeyDown != 0 && wParam != _aiActionKeyDown) _aiActionKeyMoved = true;
     _hide_translate_window();
@@ -243,6 +256,10 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lPara
 }
 
 STDMETHODIMP TextService::OnKeyUp(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+    if (GetMessageExtraInfo() == kInjectedCopyMark) {
+        *pfEaten = FALSE;
+        return S_OK;
+    }
     wParam = static_cast<WPARAM>(modifier_vk_with_side(wParam, lParam));
     if (_translateKeyDown != 0 && wParam == _translateKeyDown) {
         _translateKeyDown = 0;

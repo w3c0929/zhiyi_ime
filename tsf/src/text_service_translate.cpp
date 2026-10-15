@@ -76,19 +76,42 @@ uint32_t modifier_family_bit(uint32_t virtual_key) {
 }
 
 // Ctrl+C, pressed for the application (SendInput): what the selection translation leaves to the
-// user's own first press is done here, since an AI action key is a single press.
+// user's own first press is done here, since an AI action key is a single press. Only a program
+// whose text cannot be read needs this (see _read_selected_text): the keys carry
+// TextService::kInjectedCopyMark, so the input method's own key handling ignores them — without it
+// the 'C' would count as another key and close the menu it was about to open.
 void press_copy() {
     INPUT inputs[4] = {};
     const auto key = [](INPUT* input, WORD virtual_key, DWORD flags) {
         input->type = INPUT_KEYBOARD;
         input->ki.wVk = virtual_key;
         input->ki.dwFlags = flags;
+        input->ki.dwExtraInfo = TextService::kInjectedCopyMark;
     };
     key(&inputs[0], VK_CONTROL, 0);
     key(&inputs[1], 'C', 0);
     key(&inputs[2], 'C', KEYEVENTF_KEYUP);
     key(&inputs[3], VK_CONTROL, KEYEVENTF_KEYUP);
     SendInput(4, inputs, sizeof(INPUT));
+}
+
+// What this key press is to work on, put on the clipboard ourselves (an AI action key copies for
+// the user, docs/ai.md). The program is not asked to copy: sending it a Ctrl+C would put key
+// events of ours in flight, and they would reach the input method's own handlers.
+void put_clipboard_text(const std::wstring& text) {
+    if (text.empty() || !OpenClipboard(nullptr)) return;
+    if (EmptyClipboard()) {
+        const std::size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+        if (HANDLE memory = GlobalAlloc(GMEM_MOVEABLE, bytes)) {
+            if (void* target = GlobalLock(memory)) {
+                memcpy(target, text.c_str(), bytes);
+                GlobalUnlock(memory);
+                if (SetClipboardData(CF_UNICODETEXT, memory)) memory = nullptr;
+            }
+            if (memory) GlobalFree(memory);
+        }
+    }
+    CloseClipboard();
 }
 
 // How long the application is given to put the copied selection on the clipboard.
@@ -161,9 +184,10 @@ bool TextService::_handle_translate_key(WPARAM key) {
 }
 
 // What the key works on (docs/ai.md), up to translate.max_selection_chars: the selection, or with
-// nothing selected the line the caret is on. Either way it is **copied first**, and what was copied
-// is what comes back — so what is handled is always what the user can see, and a program the input
-// method cannot read (a classic Win32 edit box) is reached the same way as everything else.
+// nothing selected what is written on the caret's line so far (from its start to the caret, which
+// is selected for the user). It is put on the clipboard as it is taken — the key copies for the
+// user — and what the clipboard happened to hold *before* is never used: that is what made the
+// same key work on text the user could not see.
 bool TextService::_read_selected_text(std::wstring* selection, bool* shortened) {
     if (shortened) *shortened = false;
     ITfContext* context = _current_edit_context_for_composition();
@@ -171,33 +195,40 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened) 
     const std::size_t limit =
         static_cast<std::size_t>((std::max)(100, _config.translate_max_selection_chars));
     // What the key is to work on, decided before anything is copied (docs/ai.md): the selection, or
-    // — with nothing selected — the line the caret is on, which select_line_at_caret() selects for
-    // the user so that what is about to be handled is on screen.
+    // — with nothing selected — what is written on the caret's line so far (from its start to the
+    // caret), which select_line_at_caret() selects for the user so that what is about to be handled
+    // is on screen.
     std::wstring wanted;
     bool cut = false;
     TextBeforeCaret read = read_selection_text(context, _clientId, limit, &wanted, &cut);
+    bool make_the_program_copy = false;
     if (read == TextBeforeCaret::kRead && wanted.empty()) {
         read = select_line_at_caret(context, _clientId, limit, &wanted, &cut);
     } else if (read != TextBeforeCaret::kRead) {
         // A classic Win32 edit box, or a program that keeps its text to itself: it may well have a
-        // selection we cannot see, and the copy below is the only way to learn what it holds.
+        // selection we cannot see, and its own Ctrl+C is the only way to learn what it holds.
         read = TextBeforeCaret::kRead;
         cut = false;
+        make_the_program_copy = true;
     }
     context->Release();
     if (read != TextBeforeCaret::kRead) return false;
 
-    // **Copy it, and work on what was copied** — never on whatever the clipboard happened to hold:
-    // that is what made the same key work on something the user could not see. The copy is also
-    // what reaches a program the input method cannot read.
-    const DWORD sequence = GetClipboardSequenceNumber();
-    press_copy();
-    Sleep(kClipboardWaitMs);
-    const bool copied = GetClipboardSequenceNumber() != sequence && read_clipboard_text(selection) &&
-                        !selection->empty();
-    if (!copied) {
-        if (wanted.empty()) return false;  // nothing copied, and nothing read either
-        *selection = wanted;  // a program that will not copy: what was read is what there is
+    if (make_the_program_copy) {
+        const DWORD sequence = GetClipboardSequenceNumber();
+        press_copy();
+        Sleep(kClipboardWaitMs);
+        if (GetClipboardSequenceNumber() == sequence || !read_clipboard_text(selection) ||
+            selection->empty()) {
+            return false;  // it copied nothing: there was no selection to copy
+        }
+    } else {
+        // What was read is what gets handled, and it goes on the clipboard as well — the copy is
+        // the point of the key (the user should not have to press Ctrl+C themselves), but it is
+        // done here rather than by asking the program for it, because key events of ours would
+        // otherwise reach the input method's own handlers and close the menu this opens.
+        *selection = wanted;
+        put_clipboard_text(*selection);
     }
     if (selection->size() > limit) {
         selection->resize(limit);
