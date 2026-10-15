@@ -7,6 +7,8 @@
 #include <optional>
 #include <utility>
 
+#include <cxxime/ai_actions.h>
+#include <cxxime/ai_client.h>
 #include <cxxime/gpu_adapters.h>
 #include <cxxime/ipc_protocol.h>
 #include <cxxime/logging.h>
@@ -18,6 +20,18 @@ namespace {
 constexpr auto kDoneTimeout = std::chrono::seconds(5);
 // The model leaves memory after this long unused.
 constexpr auto kModelIdle = std::chrono::minutes(10);
+
+// A model's answer without the whitespace it tends to end with: the text goes into the input box
+// as it is, so a trailing newline would land there.
+std::string trim_whitespace(std::string text) {
+    const auto not_space = [](char ch) {
+        return ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n';
+    };
+    const auto first = std::find_if(text.begin(), text.end(), not_space);
+    const auto last = std::find_if(text.rbegin(), text.rend(), not_space).base();
+    if (first >= last) return {};
+    return std::string(first, last);
+}
 
 VoiceOverlay::Message message_for(VoiceRecorder::Error error) {
     switch (error) {
@@ -394,6 +408,10 @@ void VoiceService::finish_recording(uint64_t generation) {
         end(VoiceOverlay::Message::kNoText);
         return;
     }
+    // ai.use_for.voice (docs/ai.md): between the recognizer and the input box, with the client
+    // still polling — what it hears next is the proofread text. The worker is the one thread that
+    // may block here; the voice key and the recording are untouched by it.
+    text = post_process(std::move(text));
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (generation != generation_) return;
@@ -402,6 +420,42 @@ void VoiceService::finish_recording(uint64_t generation) {
         done_at_ = std::chrono::steady_clock::now();
     }
     overlay_.hide();
+}
+
+std::string VoiceService::post_process(std::string text) {
+    std::shared_ptr<const cxxime::Config> config;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        config = config_;
+    }
+    const cxxime::AiAction* action = cxxime::find_ai_action(cxxime::kAiProofreadActionId);
+    if (!config || !action || action->prompt.empty() ||
+        !cxxime::ai::usable_for(config->ai, &cxxime::AiUseFor::voice)) {
+        return text;  // the switch is off, or the API is not configured: as recognized
+    }
+    if (action->max_input_chars > 0 &&
+        static_cast<int>(text.size()) > action->max_input_chars) {
+        return text;  // longer than the action takes (the selection path refuses these too)
+    }
+    const auto start = std::chrono::steady_clock::now();
+    std::string answer;
+    std::string error;
+    // No cancel flag: this runs on the worker with the generation checked right after (a
+    // recording dropped in the meantime is not delivered), and the request is bounded by
+    // ai.timeout_ms anyway.
+    if (!cxxime::ai::run_action(config->ai, action->prompt, text, &answer, &error, nullptr)) {
+        CXXIME_LOG(L"voice: post-processing failed: %S", error.c_str());
+        return text;
+    }
+    answer = trim_whitespace(std::move(answer));
+    if (answer.empty()) {
+        return text;
+    }
+    CXXIME_LOG(L"voice: post-processed %zu -> %zu bytes in %lld ms", text.size(), answer.size(),
+               static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::steady_clock::now() - start)
+                                          .count()));
+    return answer;
 }
 
 std::string VoiceService::tidy(std::string text, uint32_t owner) {

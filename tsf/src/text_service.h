@@ -463,8 +463,10 @@ private:
     void _render_ai_menu();  // redraw the rows (the highlight moved)
     void _run_ai_action(std::size_t row);  // a menu row
     void _start_ai_action(std::size_t index, const std::wstring& source, bool shortened);
-    // The selected text, with the clipboard as the fallback and translate.max_selection_chars as
-    // the limit; false when there is nothing to work on.
+    // The text to work on: what is selected — or, when nothing is selected, what is on the
+    // clipboard (docs/ai.md: a copied passage can be polished without selecting it). The clipboard
+    // is also the fallback for a selection the program will not let us read. Truncated at
+    // translate.max_selection_chars; false when there is nothing to work on.
     bool _read_selected_text(std::wstring* selection, bool* shortened);
     // Sends the selected text for `purpose` (kTextUpload*): the short command when it fits the IPC
     // field, the chunked one otherwise. `insert` is what the answer does (ai_actions.h: over the

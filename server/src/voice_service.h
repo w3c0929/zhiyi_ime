@@ -75,6 +75,9 @@ private:
     bool ensure_detector(std::string* error);
     bool ensure_recognizer(std::string* error);
     std::string tidy(std::string text, uint32_t owner);
+    // ai.use_for.voice (docs/ai.md): the recognized text through the "proofread" action, or the
+    // text as it is when the API is off, has no key, is too slow or fails.
+    std::string post_process(std::string text);
 
     Sessions sessions_;
     VoiceOverlay overlay_;

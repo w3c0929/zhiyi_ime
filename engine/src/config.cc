@@ -525,7 +525,6 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
             auto& use = ai["use_for"];
             load_bool(use, "translate", config.ai.use_for.translate);
             load_bool(use, "selection", config.ai.use_for.selection);
-            load_bool(use, "english", config.ai.use_for.english);
             load_bool(use, "voice", config.ai.use_for.voice);
             load_bool(use, "glossary", config.ai.use_for.glossary);
         }
@@ -918,7 +917,6 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["ai"]["keys_by_provider"] = config.ai.keys_by_provider;
     j["ai"]["use_for"]["translate"] = config.ai.use_for.translate;
     j["ai"]["use_for"]["selection"] = config.ai.use_for.selection;
-    j["ai"]["use_for"]["english"] = config.ai.use_for.english;
     j["ai"]["use_for"]["voice"] = config.ai.use_for.voice;
     j["ai"]["use_for"]["glossary"] = config.ai.use_for.glossary;
     j["ai"]["action_key"] = ai_action_key_string(config.ai.action_key);

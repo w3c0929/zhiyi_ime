@@ -257,8 +257,6 @@ void EditorApp::create_ai_panel(HWND panel) {
     hAiUseSelection_ =
         make_check(kAiUseSelectionId, tr("ai.use_selection"), use_x, y, hint_w, panel);
     y += kRowH;
-    hAiUseEnglish_ = make_check(kAiUseEnglishId, tr("ai.use_english"), use_x, y, hint_w, panel);
-    y += kRowH;
     hAiUseVoice_ = make_check(kAiUseVoiceId, tr("ai.use_voice"), use_x, y, hint_w, panel);
     y += kRowH;
     hAiUseGlossary_ = make_check(kAiUseGlossaryId, tr("ai.use_glossary"), use_x, y, hint_w, panel);
@@ -377,7 +375,6 @@ void EditorApp::populate_ai() {
 
     set_check(hAiUseTranslate_, config_.ai.use_for.translate);
     set_check(hAiUseSelection_, config_.ai.use_for.selection);
-    set_check(hAiUseEnglish_, config_.ai.use_for.english);
     set_check(hAiUseVoice_, config_.ai.use_for.voice);
     set_check(hAiUseGlossary_, config_.ai.use_for.glossary);
 
@@ -428,7 +425,6 @@ void EditorApp::read_ai(cxxime::Config& config) {
     config.ai.timeout_ms = (std::max)(1000, (std::min)(get_edit_int(hAiTimeout_), 120000));
     config.ai.use_for.translate = get_check(hAiUseTranslate_);
     config.ai.use_for.selection = get_check(hAiUseSelection_);
-    config.ai.use_for.english = get_check(hAiUseEnglish_);
     config.ai.use_for.voice = get_check(hAiUseVoice_);
     config.ai.use_for.glossary = get_check(hAiUseGlossary_);
     config.ai.action_key = action_key_shortcut(key_capture_get(hAiActionKey_));

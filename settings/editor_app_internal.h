@@ -130,7 +130,6 @@ constexpr int kAiModeId = 6005;
 constexpr int kAiTimeoutId = 6006;
 constexpr int kAiUseTranslateId = 6007;
 constexpr int kAiUseSelectionId = 6008;
-constexpr int kAiUseEnglishId = 6009;
 constexpr int kAiUseVoiceId = 6010;
 constexpr int kAiUseGlossaryId = 6011;
 constexpr int kAiTestId = 6012;

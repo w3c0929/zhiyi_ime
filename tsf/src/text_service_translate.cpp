@@ -110,8 +110,10 @@ std::wstring selection_from_utf8(const std::string& text) {
     return out;
 }
 
-// The selected text, from the clipboard: the first press of the translate key (Ctrl+C) copied
-// it, and many input boxes (classic Win32 edits) cannot be read through TSF at all.
+// The clipboard's text: the input method's own copy of the selection, or — with nothing selected
+// (docs/ai.md) — the text the user copied a moment ago. Only the **current** entry is taken: the
+// clipboard's own history (Win+V) is never walked, and what is in `text` is replaced rather than
+// added to, so this is always exactly the last thing copied, and only if it is text.
 bool read_clipboard_text(std::wstring* text) {
     if (!text || !OpenClipboard(nullptr)) return false;
     bool ok = false;
@@ -163,10 +165,20 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened) 
         static_cast<std::size_t>((std::max)(100, _config.translate_max_selection_chars));
     bool cut = false;
     TextBeforeCaret read = read_selection_text(context, _clientId, limit, selection, &cut);
-    if (read != TextBeforeCaret::kRead || selection->empty()) {
-        // A classic Win32 edit box, or a program that keeps its text to itself: copy it ourselves
-        // and take the clipboard. The translate key had the user's own first press for this; an AI
-        // action key is one press, so nothing has been copied yet.
+    if (read == TextBeforeCaret::kRead && selection->empty()) {
+        // Nothing selected (docs/ai.md): the text already on the clipboard is what the key works
+        // on, so an action can be run on what was copied a moment ago without selecting it first.
+        // The clipboard is read as it is — no Ctrl+C of our own, since copying an empty selection
+        // can wipe the very text we are after. An empty clipboard leaves nothing to work on, and
+        // then the key does nothing at all.
+        if (read_clipboard_text(selection) && selection->size() > limit) {
+            selection->resize(limit);
+            cut = true;
+        }
+    } else if (read != TextBeforeCaret::kRead) {
+        // A classic Win32 edit box, or a program that keeps its text to itself: copy the selection
+        // ourselves and take the clipboard. The translate key had the user's own first press for
+        // this; an AI action key is one press, so nothing has been copied yet.
         press_copy();
         Sleep(kClipboardWaitMs);
         if (read_clipboard_text(selection)) {
