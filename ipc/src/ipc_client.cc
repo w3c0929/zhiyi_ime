@@ -377,17 +377,6 @@ bool IpcClient::text_result_read(uint32_t session_id, uint32_t purpose, uint64_t
     return send_request(req, response) && response.status == IPCStatus::OK;
 }
 
-bool IpcClient::set_ai_language(uint32_t session_id, const std::string& code,
-                               IPCResponse& response) {
-    if (code.size() >= sizeof(IPCRequest::search_query)) return false;
-    IPCRequest req = {};
-    req.command = IPCCommand::SET_AI_LANGUAGE;
-    req.session_id = session_id;
-    std::memcpy(req.search_query, code.data(), code.size());
-    req.search_query[code.size()] = '\0';
-    return send_request(req, response) && response.status == IPCStatus::OK;
-}
-
 bool IpcClient::clear_composition(uint32_t session_id) {
     IPCRequest req = {};
     req.command = IPCCommand::CLEAR_COMPOSITION;

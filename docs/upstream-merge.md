@@ -67,11 +67,16 @@
   结果的去向由动作自己的 `insert` 决定：`replace` 替换选区、`below` 写在选区**下方**
   （`EditSession::Action::INSERT_TEXT_UNDER_SELECTION`，`tsf/src/edit_session.cpp`）、`preview` 只显示。
   开关是 `ai.use_for.selection`，键是 `ai.action_key` + `ai.action_keys`（都是「第二个键」，第一个键是划词翻译键）。
-- **`\fy` 换翻译语言**：引擎识别（`engine/src/symbol_processor.cc` + `kAiLanguageCommand`）→ 服务端
-  `UiCommandType::kAiLanguageMenu = 17`（`ipc/include/cxxime/ui_protocol.h`）把菜单交给客户端 →
-  选完 `IPCCommand::SET_AI_LANGUAGE = 41` 回传，服务端写 `ai.translate_language`。
-  **坑**：`ipc/src/ui_protocol.cc` 的 `valid_command_type()` 是**白名单**，新增的 UiCommandType 忘了加进去
-  会被 `build_ui_command_packet` 静默丢掉（命令发不出去、界面毫无反应，1.7.32 就是这么坏过一次）。
+- **`\fy` 换翻译语言**：**没有自己的窗口/按键/IPC 命令**——`\fy` 是一次普通符号组字，候选换成 12 种语言
+  （`Engine::ai_language_result`，`engine/src/engine.cc`；候选带 `AiLanguageAction`，`candidate_selection.h`），
+  选中走 `Engine::dispatch_candidate_selection` → `Context::choose_ai_language()`（记下语言、结束组字、不上屏），
+  服务端 `SessionManager::persist_ai_language()` 取走并写 `ai.translate_language`。引擎识别在
+  `engine/src/symbol_processor.cc`（`kAiLanguageCommand`，见 `symbol_table.h`）。
+  **坑（以后加 UiCommandType 或 IPCCommand 时记住）**：1.7.32–1.7.33 这一功能走过"另发一条 UI 命令"的老路，
+  连着被两道关口静默丢掉——`ipc/src/ui_protocol.cc` 的 `valid_command_type()` 白名单（没登记 = 发不出去）和
+  `decode_ui_command_packet()` 里 `> kLastKnown` 的上限（没抬高 = 收到也当"更新的服务端发来的"扔掉）。
+  现在 `kLastKnown` 与白名单在 `ipc/include/cxxime/ui_protocol.h` 同一处注释里互相点名；**能不加协议就不加**，
+  `\fy` 的重做就是例子。
 - **长文本分块通道**：`TEXT_UPLOAD_BEGIN = 37` / `TEXT_UPLOAD_CHUNK = 38` / `TEXT_RESULT_POLL = 39` /
   `TEXT_RESULT_READ = 40`（`ipc_protocol.h`，**零结构体改动**，靠 `key_code`/`candidate_index`/`modifiers`/
   `search_query`/`translate_text` 的按命令含义；`text_result_bytes` 是追加在 `IPCResponse` 末尾的新字段）。

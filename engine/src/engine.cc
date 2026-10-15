@@ -11,6 +11,7 @@
 
 #include <windows.h>
 
+#include <cxxime/ai_actions.h>
 #include <cxxime/commit_learning.h>
 #include <cxxime/input_limits.h>
 #include <cxxime/english_candidates.h>
@@ -1333,6 +1334,44 @@ TranslationResult Engine::translate_current_composition(const QueryDeadline& dea
                                  context_.page_offset(), deadline);
 }
 
+TranslationResult Engine::ai_language_result(int page_index, int page_offset,
+                                             int page_size) const {
+    TranslationResult result;
+    const cxxime::AiAction* action = cxxime::find_ai_action(kAiLanguageActionId);
+    if (!action || action->languages.empty() || page_size <= 0) {
+        return result;
+    }
+    // Nine to a page at most: the labels the window draws are 1..9 (the symbol categories are
+    // paged the same way, symbol_table.cc).
+    const int page_capacity = (std::min)(page_size, 9);
+    const int known_count = static_cast<int>(action->languages.size());
+    const int offset = page_offset >= 0 ? page_offset : page_index * page_capacity;
+    result.page_index = page_index;
+    result.page_offset = offset;
+    result.page_size = page_capacity;
+    result.extent =
+        make_candidate_extent(known_count, (std::min)(offset + page_capacity, known_count), false);
+    if (offset < 0 || offset >= known_count) {
+        return result;
+    }
+    const int end = (std::min)(offset + page_capacity, known_count);
+    const std::string& ui_language = runtime_->config().ui_language;
+    result.entries.reserve(static_cast<std::size_t>(end - offset));
+    for (int index = offset; index < end; ++index) {
+        const std::string& code = action->languages[index];
+        Candidate candidate;
+        candidate.text = cxxime::ai_language_label(code, ui_language);
+        candidate.code = std::string(1, kSymbolPrefix) + kAiLanguageCommand;
+        candidate.source = CandidateSource::kSymbol;
+        CandidateEntry entry;
+        entry.candidate = std::move(candidate);
+        entry.selection = cxxime::AiLanguageAction{code};
+        result.entries.push_back(std::move(entry));
+    }
+    result.highlighted = result.entries.empty() ? -1 : 0;
+    return result;
+}
+
 TranslationResult Engine::translate_composition(const CompositionState& state,
                                                 int page_index,
                                                 int page_offset,
@@ -1340,12 +1379,21 @@ TranslationResult Engine::translate_composition(const CompositionState& state,
                                                 int candidate_limit,
                                                 uint32_t continuation_effort) {
     if (state.active().scheme == CompositionScheme::kSymbol) {
+        const int page_size = candidate_limit > 0 ? candidate_limit : runtime_->config().page_size;
+        // \fy is a command, not a symbol code (docs/ai.md): its candidates are the languages the
+        // translate action offers, and picking one sets a setting rather than typing text. The
+        // keys that walk a candidate page — digits, arrows, Tab, the page keys, a mouse click —
+        // are the ones a symbol code's candidates use, so the list needs nothing of its own.
+        if (state.active().input ==
+            std::string(1, kSymbolPrefix) + kAiLanguageCommand) {
+            return ai_language_result(page_index, page_offset, page_size);
+        }
         TranslationRequest request;
         request.scheme = CompositionScheme::kSymbol;
         request.input = state.active().input.substr(1);
         request.page_index = page_index;
         request.page_offset = page_offset;
-        request.page_size = candidate_limit > 0 ? candidate_limit : runtime_->config().page_size;
+        request.page_size = page_size;
         const SymbolTable* symbol_table = runtime_->symbol_table();
         return symbol_table ? symbol_table->translate(request) : TranslationResult{};
     }
@@ -1931,6 +1979,12 @@ bool Engine::dispatch_candidate_selection(int index, const QueryDeadline& deadli
     }
     last_pick_ = pick;
     CandidateEntry entry = *current;
+    if (const auto* language = std::get_if<cxxime::AiLanguageAction>(&entry.selection)) {
+        // \fy (docs/ai.md): a language, not a word. The choice is left for the server to put into
+        // the settings and the composition ends here — nothing is typed.
+        context_.choose_ai_language(language->code);
+        return true;
+    }
     if (const auto* replacement = std::get_if<ReplaceActiveInputAction>(&entry.selection)) {
         return replace_active_input(*replacement, deadline);
     }

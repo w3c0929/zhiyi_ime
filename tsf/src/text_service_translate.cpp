@@ -52,24 +52,6 @@ bool is_bare_modifier(WPARAM key) {
            key == VK_RMENU || key == VK_LWIN || key == VK_RWIN;
 }
 
-// How the \fy menu names a language. The input method's own text is Chinese, as the voice
-// overlay's is; the settings page names the same languages from data/ui.*.json ("lang.*").
-const wchar_t* language_menu_name(const std::string& code) {
-    if (code == "zh") return L"中文";
-    if (code == "en") return L"英语";
-    if (code == "ja") return L"日语";
-    if (code == "ko") return L"韩语";
-    if (code == "fr") return L"法语";
-    if (code == "de") return L"德语";
-    if (code == "es") return L"西班牙语";
-    if (code == "ru") return L"俄语";
-    if (code == "vi") return L"越南语";
-    if (code == "pt") return L"葡萄牙语";
-    if (code == "it") return L"意大利语";
-    if (code == "ar") return L"阿拉伯语";
-    return L"";
-}
-
 // A tapped modifier, as an AI action key may be one (shortcuts.ai_action and the actions' own
 // keys): Windows hands these to input methods, Alt it does not.
 bool is_tap_key(uint32_t virtual_key) {
@@ -523,16 +505,6 @@ void TextService::_open_ai_menu(const std::wstring& source, bool shortened) {
     if (!_show_menu_window()) _close_ai_menu();
 }
 
-// \fy (docs/ai.md): the languages the translate action offers, to pick the one Chinese goes into.
-void TextService::_open_ai_language_menu() {
-    _close_ai_menu();
-    const cxxime::AiAction* action = cxxime::find_ai_action("translate");
-    if (!action || action->languages.empty()) return;
-    _menuIsLanguage = true;
-    _menuLanguages = action->languages;
-    if (!_show_menu_window()) _close_ai_menu();
-}
-
 // The menu window: created (or reused), placed at the caret, filled with the current rows, shown.
 bool TextService::_show_menu_window() {
     HWND owner = reinterpret_cast<HWND>(_effectiveEditTarget.view_window);
@@ -547,10 +519,7 @@ bool TextService::_show_menu_window() {
     } else if (!_aiMenuWindow->ensure_created(owner)) {
         return false;
     }
-    // The \fy language list is long (12), so it is a vertical list rather than the candidate bar's
-    // row: a row of twelve would run past the edge of the screen. The actions (five) keep the
-    // layout the user chose.
-    _aiMenuWindow->set_layout(_menuIsLanguage ? std::string("vertical") : _config.layout);
+    _aiMenuWindow->set_layout(_config.layout);
     _aiMenuWindow->set_page_info(1, 1);  // one page: no turning arrows
     _aiMenuWindow->set_preedit(std::string(), size_t{0}, size_t{0}, size_t{0}, size_t{0}, false);
     _aiMenuHighlight = 0;
@@ -565,48 +534,26 @@ bool TextService::_show_menu_window() {
 void TextService::_render_ai_menu() {
     if (!_aiMenuOpen || !_aiMenuWindow) return;
     cxxime::CandidatePresentationPage page;
-    const std::size_t rows = _menuIsLanguage ? _menuLanguages.size() : _aiMenuRows.size();
-    page.page_size = static_cast<uint32_t>(rows);
+    page.page_size = static_cast<uint32_t>(_aiMenuRows.size());
     page.highlighted = static_cast<int>(_aiMenuHighlight);
-    if (_menuIsLanguage) {
-        for (const std::string& code : _menuLanguages) {
-            cxxime::CandidatePresentationItem item;
-            item.text = selection_to_utf8(language_menu_name(code));
-            page.items.push_back(std::move(item));
+    const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
+    for (std::size_t row : _aiMenuRows) {
+        cxxime::CandidatePresentationItem item;
+        if (row < actions.size()) {
+            item.text = cxxime::ai_action_label(actions[row], _config.ui_language);
         }
-    } else {
-        const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
-        for (std::size_t row : _aiMenuRows) {
-            cxxime::CandidatePresentationItem item;
-            if (row < actions.size()) {
-                item.text = cxxime::ai_action_label(actions[row], _config.ui_language);
-            }
-            page.items.push_back(std::move(item));
-        }
+        page.items.push_back(std::move(item));
     }
     _aiMenuWindow->update(page);
 }
 
 void TextService::_close_ai_menu() {
     _aiMenuOpen = false;
-    _menuIsLanguage = false;
-    _menuLanguages.clear();
     _aiMenuRows.clear();
     _aiMenuHighlight = 0;
     _aiMenuSource.clear();
     _aiMenuShortened = false;
     if (_aiMenuWindow) _aiMenuWindow->hide();
-}
-
-// The language chosen in the \fy menu: the server keeps it (ai.translate_language) with a merge
-// patch, so the next translation goes there.
-void TextService::_choose_ai_language(std::size_t row) {
-    if (row >= _menuLanguages.size()) return;
-    const std::string code = _menuLanguages[row];
-    _close_ai_menu();
-    if (!_ensure_ipc_session()) return;
-    cxxime::IPCResponse response = {};
-    _client.set_ai_language(_sessionId, code, response);
 }
 
 // A key while the menu is open: the menu's own keys are taken, anything else closes it and stays
@@ -620,13 +567,7 @@ bool TextService::_handle_ai_menu_key(WPARAM key, BOOL* pfEaten) {
     };
     if (key >= '1' && key <= '9') {
         const std::size_t row = key - '1';
-        if (row < rows) {
-            if (_menuIsLanguage) {
-                _choose_ai_language(row);
-            } else {
-                _run_ai_action(row);
-            }
-        }
+        if (row < rows) _run_ai_action(row);
         return taken();
     }
     if (key == VK_DOWN || key == VK_TAB) {
@@ -640,11 +581,7 @@ bool TextService::_handle_ai_menu_key(WPARAM key, BOOL* pfEaten) {
         return taken();
     }
     if (key == VK_RETURN) {
-        if (_menuIsLanguage) {
-            _choose_ai_language(_aiMenuHighlight);
-        } else {
-            _run_ai_action(_aiMenuHighlight);
-        }
+        _run_ai_action(_aiMenuHighlight);
         return taken();
     }
     if (key == VK_ESCAPE) {

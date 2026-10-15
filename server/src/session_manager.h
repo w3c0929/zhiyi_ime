@@ -177,10 +177,6 @@ public:
     void cancel_prepared_config();
     bool apply_config(const std::shared_ptr<const cxxime::Config>& config);
     void set_config_patch_handler(ConfigPatchHandler handler);
-    // The \fy command (docs/ai.md): how to ask the client showing session `session_id` for the
-    // translation language menu.
-    using AiLanguageMenuHandler = std::function<void(uint32_t session_id)>;
-    void set_ai_language_menu_handler(AiLanguageMenuHandler handler);
     cxxime::IPCStatus reload_dictionaries();
     bool reload_punctuation(const std::string& path);
 
@@ -311,6 +307,9 @@ private:
     // engine.input_mode and engine.pinyin_initials are removed).
     void persist_input_style();
     void persist_english_word_mode(bool enabled);
+    // \fy (docs/ai.md): the language picked from the composition's candidate list, written to
+    // ai.translate_language with a merge patch, like the input style above.
+    void persist_ai_language(cxxime::Engine& engine);
     // The style key in Chinese mode: full pinyin -> initials -> Wubi -> shuangpin -> full pinyin,
     // skipping Wubi without its dictionary and shuangpin without its spelling table.
     static void cycle_input_style(const cxxime::EngineRuntimeState* runtime,
@@ -328,7 +327,6 @@ private:
     std::mutex state_mutex_;
     std::mutex reload_mutex_;
     ConfigPatchHandler config_patch_handler_;
-    AiLanguageMenuHandler ai_language_menu_handler_;
     std::mutex continuation_mutex_;
     std::unique_ptr<ContinuationWorker> continuation_worker_;
     RefreshNotifier refresh_notifier_;

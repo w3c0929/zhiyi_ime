@@ -230,18 +230,6 @@ bool ServerApp::initialize(const std::string& dict_path, const std::string& conf
             CXXIME_LOG(L"%s", L"config_write event=enqueue_internal result=0");
         }
     });
-    // \fy (docs/ai.md): the language menu belongs to the client showing the session; the server
-    // only carries the request over. The choice comes back as IPCCommand::SET_AI_LANGUAGE.
-    session_mgr_.set_ai_language_menu_handler([this](uint32_t session_id) {
-        cxxime::UiEndpointId endpoint = {};
-        cxxime::UiCommand command;
-        if (!ui_presentation_controller_.make_command(
-                session_id, cxxime::UiCommandType::kAiLanguageMenu, &endpoint, &command)) {
-            return;
-        }
-        ui_presentation_router_.send_command(endpoint, command);
-    });
-
     // Voice input (voice_service.h): recording and the model run on threads of their own.
     VoiceService::Sessions voice_sessions;
     voice_sessions.set_capture = [this](uint32_t id, bool capturing) {
@@ -733,27 +721,6 @@ cxxime::IPCResponse ServerApp::handle_request(const cxxime::IPCRequest& request)
         break;
     }
 
-    case cxxime::IPCCommand::SET_AI_LANGUAGE: {
-        // \fy (docs/ai.md): the language chosen in the menu. Only one the translate action offers
-        // is kept — which is also what makes it safe to put in a patch.
-        const std::string code = request.search_query;
-        const cxxime::AiAction* action = cxxime::find_ai_action("translate");
-        const bool known =
-            action && std::find(action->languages.begin(), action->languages.end(), code) !=
-                          action->languages.end();
-        if (!known) {
-            CXXIME_LOG(L"%s", L"SET_AI_LANGUAGE: not a language of the translate action");
-            response.status = cxxime::IPCStatus::ERR_INVALID_REQUEST;
-            break;
-        }
-        nlohmann::json patch;
-        patch["ai"]["translate_language"] = code;
-        if (!config_writer_.enqueue_patch(patch.dump())) {
-            response.status = cxxime::IPCStatus::ERR_ENGINE_PROCESS_FAILED;
-        }
-        break;
-    }
-
     case cxxime::IPCCommand::TEXT_UPLOAD_BEGIN:
     case cxxime::IPCCommand::TEXT_UPLOAD_CHUNK:
     case cxxime::IPCCommand::TEXT_RESULT_POLL:
@@ -868,7 +835,7 @@ void ServerApp::finish_text_upload(uint32_t session_id) {
         // the action does not offer — an old configuration, a hand-edited file — falls back to its
         // first one.
         std::string target = upload.action_id;
-        if (const cxxime::AiAction* action = cxxime::find_ai_action("translate")) {
+        if (const cxxime::AiAction* action = cxxime::find_ai_action(cxxime::kAiLanguageActionId)) {
             if (std::find(action->languages.begin(), action->languages.end(), target) ==
                 action->languages.end()) {
                 target = action->languages.empty() ? std::string() : action->languages.front();

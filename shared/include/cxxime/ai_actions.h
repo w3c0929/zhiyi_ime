@@ -21,6 +21,10 @@ namespace cxxime {
 //   kPreview: the answer is only shown, the selection stays.
 enum class AiActionInsert { kReplace, kBelow, kPreview };
 
+// The action that translates (docs/ai.md): the one with a language list. It is the action the
+// \fy command and the settings page's language row belong to.
+inline constexpr char kAiLanguageActionId[] = "translate";
+
 struct AiAction {
     std::string id;      // "proofread": the key of the action
     std::string label;   // the Chinese name shown in the menu
@@ -45,6 +49,10 @@ const AiAction* find_ai_action(const std::string& id);
 // "en-US", ...). Anything that is not English — "auto" included — gets the Chinese name, which is
 // what the input method's own messages use.
 const std::string& ai_action_label(const AiAction& action, const std::string& ui_language);
+
+// The name of a language of the translate action ("ja" → 日语, or Japanese for an English
+// interface), as the \fy candidate list shows it. An unknown code comes back as it is.
+std::string ai_language_label(const std::string& code, const std::string& ui_language);
 
 // An AI action key (ai.action_key, ai.action_keys): one press on its own — the text the user
 // selected is read (copied) for them, so no second key and no key of their own is needed. Any of

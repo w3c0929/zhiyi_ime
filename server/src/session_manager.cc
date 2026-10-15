@@ -1379,10 +1379,6 @@ void SessionManager::set_config_patch_handler(ConfigPatchHandler handler) {
     config_patch_handler_ = std::move(handler);
 }
 
-void SessionManager::set_ai_language_menu_handler(AiLanguageMenuHandler handler) {
-    ai_language_menu_handler_ = std::move(handler);
-}
-
 cxxime::IPCStatus SessionManager::reload_dictionaries() {
     std::lock_guard<std::mutex> reload_lock(reload_mutex_);
 
@@ -1785,10 +1781,9 @@ ProcessKeyResult SessionManager::process_key(uint32_t id, const cxxime::KeyEvent
     const bool was_composing = engine.context().is_composing();
     const auto key_start = std::chrono::steady_clock::now();
     auto result = engine.process_key(event, opts, static_cast<int>(visible_candidate_count));
-    // \fy (docs/ai.md): the translation language menu goes to the client showing this session.
-    if (engine.take_ai_language_menu_request() && ai_language_menu_handler_) {
-        ai_language_menu_handler_(id);
-    }
+    // \fy (docs/ai.md): a language picked from the composition's candidate list — that key both
+    // chose it and ended the composition, so only the settings are left to write.
+    persist_ai_language(engine);
     if (result == cxxime::ProcessResult::COMMIT_TRANSLATION) {
         // Ctrl+1..9 in learning mode: the first sense of the translation the window shows.
         std::string translation;
@@ -2031,6 +2026,8 @@ ProcessKeyResult SessionManager::select_candidate(uint32_t id, int index,
     const bool was_composing = s.engine->context().is_composing();
     std::optional<cxxime::CandidatePick> pick;
     if (s.engine->select_candidate(index)) {
+        // A mouse pick of a \fy language (docs/ai.md): the choice, not text, as in process_key.
+        persist_ai_language(*s.engine);
         pick = s.engine->take_candidate_pick();
         if (pick) cxxime::ExperienceLog::instance().record_pick(*pick);
         if (s.engine->context().is_composing()) {
@@ -2490,6 +2487,16 @@ void SessionManager::persist_english_word_mode(bool enabled) {
         patch["english"]["word_mode"] = enabled;
         config_patch_handler_(patch.dump());
     }
+}
+
+void SessionManager::persist_ai_language(cxxime::Engine& engine) {
+    const std::string code = engine.take_ai_language_choice();
+    if (code.empty() || !config_patch_handler_) {
+        return;
+    }
+    nlohmann::json patch;
+    patch["ai"]["translate_language"] = code;
+    config_patch_handler_(patch.dump());
 }
 
 void SessionManager::persist_input_style() {

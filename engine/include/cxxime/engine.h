@@ -96,8 +96,9 @@ public:
         translation_request_.reset();
         return index;
     }
-    // The \fy command (docs/ai.md): the client is to show the translation language menu, once.
-    bool take_ai_language_menu_request() { return context_.take_ai_language_menu_request(); }
+    // The \fy command (docs/ai.md): the language picked from the composition's candidate list, to
+    // be put into the settings, once (empty when the user picked none).
+    std::string take_ai_language_choice() { return context_.take_ai_language_choice(); }
     // Voice input (docs/voice-input.md): the voice key asks the server to start or stop
     // recording (kToggle; a composition is committed as typed first), Esc while recording to
     // drop it (kCancel). The server reads the request after each key, once.
@@ -187,6 +188,10 @@ private:
     }
     bool symbol_input_enabled(const OutputOptions& opts) const;
     TranslationResult translate_current_composition(const QueryDeadline& deadline);
+    // The candidates of the \fy command (docs/ai.md): one page of the languages the translate
+    // action offers, named for the interface language. Picking one is an AiLanguageAction — the
+    // choice goes into the settings, nothing is typed.
+    TranslationResult ai_language_result(int page_index, int page_offset, int page_size) const;
     TranslationResult translate_composition(const CompositionState& state,
                                             int page_index,
                                             int page_offset,

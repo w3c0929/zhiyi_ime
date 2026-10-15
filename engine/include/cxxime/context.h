@@ -82,13 +82,17 @@ public:
     bool finalize_raw(CommitSource source);
     bool request_candidate_selection(int index);
     std::optional<int> take_requested_candidate_selection();
-    // The \fy command (docs/ai.md): the translation language menu was asked for. The client shows
-    // it and sends the chosen language back (IPCCommand::SET_AI_LANGUAGE).
-    void request_ai_language_menu() { ai_language_menu_requested_ = true; }
-    bool take_ai_language_menu_request() {
-        const bool requested = ai_language_menu_requested_;
-        ai_language_menu_requested_ = false;
-        return requested;
+    // The \fy command (docs/ai.md): the language the user picked from the composition's own
+    // candidate list. Nothing is typed — the server puts the choice into the settings, which is
+    // what take_ai_language_choice() is for, and what choose_ai_language() sets.
+    void choose_ai_language(const std::string& code) {
+        ai_language_choice_ = code;
+        reset();
+    }
+    std::string take_ai_language_choice() {
+        const std::string code = ai_language_choice_;
+        ai_language_choice_.clear();
+        return code;
     }
     CommitLearningPlan take_commit_learning_plan();
     std::string commit();
@@ -144,8 +148,9 @@ private:
     CommitLearningPlan commit_learning_plan_;
     std::optional<int> requested_candidate_index_;
     std::optional<CandidateNavigationRequest> requested_navigation_;
-    // The \fy command: the client is to show the AI translation language menu.
-    bool ai_language_menu_requested_ = false;
+    // The \fy command: the language picked from the composition's candidate list, to be taken by
+    // the server (empty when there is none).
+    std::string ai_language_choice_;
     uint32_t continuation_effort_ = 0;
     std::optional<CompositionOrigin> composition_origin_;
 };

@@ -135,12 +135,10 @@ ProcessResult SymbolProcessor::process_key(const KeyEvent& event, Context& conte
 
     if (event.keycode >= 'A' && event.keycode <= 'Z') {
         context.insert_preedit(static_cast<char>(event.keycode - 'A' + 'a'));
-        // \fy is a command, not a symbol name (docs/ai.md): the translation language menu. The
-        // composition ends here; the client opens the menu and sends the language back.
-        if (context.active_input() == std::string(1, kSymbolPrefix) + kAiLanguageCommand) {
-            context.request_ai_language_menu();
-            context.reset();
-        }
+        // \fy is a command rather than a symbol name (docs/ai.md): its candidates are the
+        // translation languages, which the translation step (Engine::translate_composition) puts
+        // in place of the symbol table's. The composition stays as it is so that the keys that
+        // walk a candidate page select the language the way they select a symbol.
         return ProcessResult::ACCEPTED;
     }
 

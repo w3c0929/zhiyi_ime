@@ -60,7 +60,15 @@ struct ReplaceActiveInputAction {
     std::size_t cursor = 0;
 };
 
-using CandidateSelection = std::variant<TextSelectionAction, ReplaceActiveInputAction>;
+// A candidate whose pick is not text to type (the \fy language list, docs/ai.md): choosing it
+// sets a setting and ends the composition with nothing committed. `code` is one of the languages
+// the translate action offers ("ja").
+struct AiLanguageAction {
+    std::string code;
+};
+
+using CandidateSelection =
+    std::variant<TextSelectionAction, ReplaceActiveInputAction, AiLanguageAction>;
 
 inline bool same_candidate_variant(const CandidateCanonicalVariant& left,
                                    const CandidateCanonicalVariant& right) {
@@ -92,6 +100,9 @@ inline bool same_selection_action(const CandidateSelection& left,
         const auto& right_text = std::get<TextSelectionAction>(right);
         return left_text->text == right_text.text &&
                left_text->consumed_input_bytes == right_text.consumed_input_bytes;
+    }
+    if (const auto* left_language = std::get_if<AiLanguageAction>(&left)) {
+        return left_language->code == std::get<AiLanguageAction>(right).code;
     }
     const auto& left_replace = std::get<ReplaceActiveInputAction>(left);
     const auto& right_replace = std::get<ReplaceActiveInputAction>(right);

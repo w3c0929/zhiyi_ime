@@ -36,13 +36,9 @@ STDMETHODIMP TextService::OnEndEdit(ITfContext* context, TfEditCookie edit_cooki
     }
     // The translation window is transient, like the candidate window: an edit (a click that moves
     // the caret) dismisses it. The AI action menu belongs to the selection that was there, so it
-    // goes with it. The \fy language menu does not: it belongs to no selection, and the very edit
-    // it was asked for — the symbol composition `\fy` being cleared away — lands right after it
-    // opens (docs/ai.md).
+    // goes with it.
     _hide_translate_window();
-    if (!_menuIsLanguage) {
-        _close_ai_menu();
-    }
+    _close_ai_menu();
     if (!_composing || !_composition || context != _textEditSinkContext) {
         return S_OK;
     }

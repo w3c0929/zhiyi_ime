@@ -105,6 +105,34 @@ const std::string& ai_action_label(const AiAction& action, const std::string& ui
 
 namespace {
 
+// The twelve languages of the translate action, as the list names them: the same names the
+// settings page shows (data/ui.*.json, "lang.*"), kept here because the candidate list is built
+// where the input method's own text is (the command line and the settings program read it too).
+struct LanguageName {
+    const char* code;
+    const char* zh;
+    const char* en;
+};
+
+constexpr LanguageName kLanguageNames[] = {
+    {"zh", "中文", "Chinese"},   {"en", "英语", "English"},   {"ja", "日语", "Japanese"},
+    {"ko", "韩语", "Korean"},    {"fr", "法语", "French"},    {"de", "德语", "German"},
+    {"es", "西班牙语", "Spanish"}, {"ru", "俄语", "Russian"},  {"vi", "越南语", "Vietnamese"},
+    {"pt", "葡萄牙语", "Portuguese"}, {"it", "意大利语", "Italian"}, {"ar", "阿拉伯语", "Arabic"},
+};
+
+} // namespace
+
+std::string ai_language_label(const std::string& code, const std::string& ui_language) {
+    const bool english = ui_language.compare(0, 2, "en") == 0;
+    for (const LanguageName& language : kLanguageNames) {
+        if (code == language.code) return english ? language.en : language.zh;
+    }
+    return code;  // an unexpected code: showing it beats showing nothing
+}
+
+namespace {
+
 // A tapped modifier, as a KeyboardShortcut holds one: the key, no modifiers. Windows hands these
 // to input methods; Alt it does not, so an Alt tap would never arrive.
 struct TappedModifier {

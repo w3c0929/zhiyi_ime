@@ -82,11 +82,18 @@
   - 选中的是**其它语言** → 一律译成**中文**（线上）；
   - **离线模型**（线上失败时的回退）**总是**按「学习」页的候选翻译两行取目标 —— 与 Ctrl+C+C 完全一致。
   **离线模型只覆盖 9 种**（中英日韩法德西俄越），葡/意/阿只有线上可用。
-- **在输入框里换语言**：打 **`\fy`**（`\` 就是符号输入的前缀，命令优先于符号名），光标处弹出 12 种语言的列表，
-  按数字或方向键选、回车确定；选中的语言即存进 `ai.translate_language`（与设置页那个下拉是同一项）。
-  引擎识别这条命令（`engine/src/symbol_processor.cc`），服务端把它变成一条 UI 命令发给输入框所在的客户端，
-  客户端用动作菜单那个窗口显示列表，选完用 `IPCCommand::SET_AI_LANGUAGE` 回传，服务端以合并补丁写入配置
-  （`ConfigWriteCoordinator::enqueue_patch`，与「英文模式」等同类）。
+- **在输入框里换语言**：打 **`\fy`**（`\` 就是符号输入的前缀，命令优先于符号名），**候选条里列出的就是那 12 种语言**
+  —— 它就是一次普通的符号组字，只不过候选不是符号而是语言名。选法也完全是原来那套：数字键、方向键 + 空格/
+  回车、Tab 循环、`,` `.` 翻页、鼠标点选；**选中的语言存进 `ai.translate_language`**（与设置页那个下拉是同一项），
+  **不上屏任何文字**（这条命令只是改设置），组字随之结束。
+  实现：引擎识别这条命令（`engine/src/symbol_processor.cc`）后**不结束组字**，由翻译那一步
+  （`Engine::translate_composition` → `Engine::ai_language_result`）用语言列表替换符号表；每个候选带一个
+  `AiLanguageAction`（`engine/include/cxxime/candidate_selection.h`），选中时不走"上屏文字"那条路，而是走
+  `Context::choose_ai_language()` 记下语言并结束组字（`Engine::dispatch_candidate_selection`）。服务端在这次按键/
+  这次点选之后把它取走（`Engine::take_ai_language_choice()`），以合并补丁写进配置
+  （`ConfigWriteCoordinator::enqueue_patch`，与「英文模式」等同类；`server/src/session_manager.cc` 的
+  `persist_ai_language`）。所以这一功能**没有自己的窗口、没有自己的按键、没有额外的 IPC 命令**。
+  名字取 `shared/src/ai_actions.cc` 的 `ai_language_label()`（中/英两种，与 `ai_action_label` 同规则）。
 - **动作定义是数据**：`data/ai_actions.json`（随安装包发布，也可以自己改）。每条 =
   `id` + 名字（中/英）+ `prompt`（system 提示词，用户消息就是选中的原文）+
   `insert`（`replace` 替换选中文字，可 `Ctrl+Z` 一步撤销；`below` 写在选中文字**下方**、自成一行
