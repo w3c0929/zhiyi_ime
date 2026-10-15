@@ -174,11 +174,12 @@ void TranslateService::update_config(const std::shared_ptr<const cxxime::Config>
     config_ = config;
 }
 
-void TranslateService::request(uint32_t id, const std::string& text, const std::string& target) {
+void TranslateService::request(uint32_t id, const std::string& text,
+                              const std::string& chinese_target) {
     uint64_t generation = 0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        requested_target_ = target;
+        chinese_target_ = chinese_target;
         if (text.empty()) {
             phase_ = Phase::kIdle;
             owner_ = id;
@@ -296,19 +297,23 @@ void TranslateService::do_translate(uint32_t id, uint64_t generation, std::strin
     std::string error;
 
     std::shared_ptr<const cxxime::Config> config;
-    std::string requested_target;
+    std::string chinese_target;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         config = config_;
-        requested_target = requested_target_;
+        chinese_target = chinese_target_;
     }
     const std::string source = detect_source_language(text);
-    // What this request asked for (the translate action's language), else the learning page's row
-    // for the text's language, else the old Chinese into English rule.
-    const std::string target =
-        !requested_target.empty()
-            ? requested_target
-            : (config ? translation_target(*config, source) : (source == "zh" ? "en" : "zh"));
+    // The offline model always goes by the learning page's rows — the translate key and the
+    // translate action alike (the rows are where the languages and their packs are).
+    const std::string offline_target =
+        config ? translation_target(*config, source) : (source == "zh" ? "en" : "zh");
+    // The API: the translate action puts Chinese into the language its list has selected and
+    // anything else into Chinese; the translate key goes by the learning rows there too.
+    std::string online_target = offline_target;
+    if (!chinese_target.empty()) {
+        online_target = source == "zh" ? chinese_target : std::string("zh");
+    }
 
     // The online AI first, when the user turned it on for the selection translation
     // (Config::ai.use_for.translate). A failure falls back to the offline model, unless the
@@ -318,7 +323,8 @@ void TranslateService::do_translate(uint32_t id, uint64_t generation, std::strin
         remote_only = config->ai.remote_only();
         std::string translation;
         std::string ai_error;
-        if (cxxime::ai::translate(config->ai, text, target, &translation, &ai_error, nullptr) &&
+        if (cxxime::ai::translate(config->ai, text, online_target, &translation, &ai_error,
+                                  nullptr) &&
             !translation.empty()) {
             result = std::move(translation);
         }
@@ -328,7 +334,7 @@ void TranslateService::do_translate(uint32_t id, uint64_t generation, std::strin
         last_used_ = std::chrono::steady_clock::now();
         cxxime::mt::Item item;
         item.source = source;
-        item.target = target;
+        item.target = offline_target;
         item.text = text;
         const int max_tokens = std::clamp(static_cast<int>(text.size()) * 2, 64, 1024);
         const std::vector<std::string> out =

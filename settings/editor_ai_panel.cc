@@ -314,6 +314,8 @@ void EditorApp::create_ai_panel(HWND panel) {
             hAiActionLangs_.push_back(language);
         }
         y += kRowH * static_cast<int>((std::min)(actions.size(), kAiActionRowMax));
+        make_hint(tr("ai.action_rows_hint"), row_x, y - S(4), hint_w, panel, 2);
+        y += S(44);
     }
     make_hint(tr("ai.action_key_hint"), action_x, y - S(6), hint_w, panel, 2);
     y += S(44);

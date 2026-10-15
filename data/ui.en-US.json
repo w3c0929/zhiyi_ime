@@ -59,6 +59,7 @@
     "ai.use_voice": "Voice input post-processing",
     "ai.use_glossary": "Fallback translation for language packs",
     "ai.card_actions": "AI actions on the selection",
+    "ai.action_rows_hint": "The checkbox: whether the menu lists it. The box: a key of its own (one press runs it, no menu). The drop-down beside Translate is what Chinese goes into (anything else becomes Chinese); the offline model follows the Learning page's two rows.",
     "ai.action_key": "Action menu key:",
     "ai.action_key_same": "Same as the translate key: both presses would be taken by the translation. Pick another key.",
     "ai.action_key_hint": "With text selected, **one press of this key** opens the menu of actions (the selection is read for you, so there is no Ctrl+C to press first). It may be a key like F6, a combination like Ctrl+K, or a **tapped** right Shift. Empty: off. Backspace or a right click clears the box.",

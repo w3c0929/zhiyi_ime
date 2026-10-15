@@ -36,10 +36,12 @@ public:
     void stop();
     void update_config(const std::shared_ptr<const cxxime::Config>& config);
 
-    // Session `id` selected `text` (UTF-8): translate it. An explicit `target` (the translate
-    // action's language) wins over the learning page's row for the text's language; empty: use
-    // that row.
-    void request(uint32_t id, const std::string& text, const std::string& target = std::string());
+    // Session `id` selected `text` (UTF-8): translate it. `chinese_target` is the translate
+    // action's language (its list's selection): the API then puts Chinese into that language and
+    // anything else into Chinese. Empty — the translate key — and the API goes by the learning
+    // page's rows, as the offline model always does.
+    void request(uint32_t id, const std::string& text,
+                 const std::string& chinese_target = std::string());
     // The session ended or lost the focus: drop its request.
     void session_ended(uint32_t id);
 
@@ -62,7 +64,9 @@ private:
     uint32_t owner_ = 0;
     uint64_t generation_ = 0;
     std::string text_;
-    std::string requested_target_;  // what this request asked for, "" to derive it
+    // The translate action's language: what Chinese goes into on the API. "" for the translate
+    // key, which the learning page's rows answer for.
+    std::string chinese_target_;
     std::shared_ptr<const cxxime::Config> config_;
 
     // The worker's own.

@@ -828,9 +828,11 @@ void ServerApp::finish_text_upload(uint32_t session_id) {
     if (upload.purpose == cxxime::kTextUploadTranslate) {
         translate_.request(session_id, std::move(upload.text));
     } else if (upload.purpose == cxxime::kTextUploadAiTranslate) {
-        // The translate action: the translation service's work, into the language the client sent
-        // (ai.translate_language; the tag carries it for this purpose). A language the action does
-        // not offer — an old configuration, a hand-edited file — falls back to its first one.
+        // The translate action: the translation service's work, with the language the client sent
+        // (the selected one of the action's list; the tag carries it for this purpose). Chinese
+        // goes into it on the API; the service's own rules answer for everything else. A language
+        // the action does not offer — an old configuration, a hand-edited file — falls back to its
+        // first one.
         std::string target = upload.action_id;
         if (const cxxime::AiAction* action = cxxime::find_ai_action("translate")) {
             if (std::find(action->languages.begin(), action->languages.end(), target) ==
