@@ -126,25 +126,30 @@ std::wstring without_trailing_line_break(const std::wstring& text) {
     return text.substr(0, end);
 }
 
-// Makes the program select the line the caret is on (`Home`, then `Shift+End`): a program that
-// copies the whole line when nothing is selected hands the answer a *line*, and without this the
-// paste would land in the middle of it (docs/ai.md). The keys carry the mark ours do, so the input
-// method's own key handling skips them.
+// Makes the program select the line the caret is on: a program that copies the whole line when
+// nothing is selected hands the answer a *line*, and without this the paste would land in the middle
+// of it (docs/ai.md).
+//
+// Ctrl+L, not Home and Shift+End: these editors take the line-copy from the *selection* being empty,
+// and a Shift of ours does not make one — measured in Sublime Text, a synthesized Shift+End leaves
+// the selection empty (its Ctrl+C still copies the line, break and all) while Ctrl+L selects the
+// line exactly (its Ctrl+C then copies it without the break). Ctrl+L is what the editors that copy
+// the line when nothing is selected bind "select the line" to; a program whose text can be read
+// never comes here, so a browser's Ctrl+L (the address bar) cannot be hit by it. The keys carry the
+// mark ours do, so the input method's own key handling skips them.
 void select_line_in_program() {
-    INPUT inputs[6] = {};
+    INPUT inputs[4] = {};
     const auto key = [](INPUT* input, WORD virtual_key, DWORD flags) {
         input->type = INPUT_KEYBOARD;
         input->ki.wVk = virtual_key;
         input->ki.dwFlags = flags;
         input->ki.dwExtraInfo = TextService::kInjectedCopyMark;
     };
-    key(&inputs[0], VK_HOME, 0);
-    key(&inputs[1], VK_HOME, KEYEVENTF_KEYUP);
-    key(&inputs[2], VK_SHIFT, 0);
-    key(&inputs[3], VK_END, 0);
-    key(&inputs[4], VK_END, KEYEVENTF_KEYUP);
-    key(&inputs[5], VK_SHIFT, KEYEVENTF_KEYUP);
-    SendInput(6, inputs, sizeof(INPUT));
+    key(&inputs[0], VK_CONTROL, 0);
+    key(&inputs[1], 'L', 0);
+    key(&inputs[2], 'L', KEYEVENTF_KEYUP);
+    key(&inputs[3], VK_CONTROL, KEYEVENTF_KEYUP);
+    SendInput(4, inputs, sizeof(INPUT));
 }
 
 // An answer delivered the way the user would put it there: on the clipboard, then Ctrl+V, which
