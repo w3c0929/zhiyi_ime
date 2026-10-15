@@ -275,6 +275,14 @@ void TextService::_present_failure(const std::wstring& reason, const std::wstrin
     _present_translate_window(L"无法完成：" + reason, source, std::wstring(), _query_caret_rect());
 }
 
+void TextService::_arm_ai_ui_grace() {
+    _aiUiGraceUntil = GetTickCount64() + 900;
+}
+
+bool TextService::_ai_ui_grace_active() const {
+    return GetTickCount64() < _aiUiGraceUntil;
+}
+
 // Sends the selected text for `purpose`: the short command when it fits the IPC field (the path
 // the selection translation has always used), the chunked one otherwise. The result is polled the
 // same way either way (see _poll_translation).
@@ -461,6 +469,7 @@ void TextService::_present_translate_window(const std::wstring& translation,
     _translateWindow->move_to_caret(caret);
     _translateWindow->update(page);
     _translateWindow->show();
+    _arm_ai_ui_grace();  // the copy that got the text may bounce the edit target just now
 }
 
 void TextService::_hide_translate_window() {
@@ -624,6 +633,7 @@ bool TextService::_show_menu_window() {
     _aiMenuWindow->move_to_caret(_query_caret_rect());
     _render_ai_menu();
     _aiMenuWindow->show();
+    _arm_ai_ui_grace();  // the copy that got the text may bounce the edit target just now
     return true;
 }
 

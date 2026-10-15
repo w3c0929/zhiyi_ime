@@ -495,6 +495,16 @@ private:
                                    const std::wstring& note, const RECT& caret);
     // A key that could not do anything says why (docs/ai.md, 无法完成：…).
     void _present_failure(const std::wstring& reason, const std::wstring& source);
+
+    // Our own windows (the answer's, and the action menu) get a moment of grace: reading the text
+    // copies it for the user, and in some editors (Sublime Text and other classic ones, especially
+    // elevated) that makes the program re-activate its input context. The input method then sees
+    // its edit target change — and the code that tidies up after such a change would take the
+    // window down again before it could be seen (they have no window of their own to show it in,
+    // which is why this shows up there and not in a browser).
+    void _arm_ai_ui_grace();
+    bool _ai_ui_grace_active() const;
+
     void _hide_translate_window();
     // The caret of the focused input box, asked for now: the cached one may be stale with nothing
     // typed. The candidate window does the same before it opens.
@@ -596,6 +606,7 @@ private:
     std::vector<std::size_t> _aiMenuRows;
     std::string _pendingAiActionId;  // an action's own key was pressed: run it, no menu
     std::unique_ptr<cxxime::CandidateWindow> _aiMenuWindow;
+    ULONGLONG _aiUiGraceUntil = 0;  // see _arm_ai_ui_grace
     // Long text over IPC (TEXT_UPLOAD_*): what the request in flight is for, whether it went
     // through the chunked channel, whether it may be typed back, and what to note beside it.
     std::uint32_t _textPurpose = 0;           // kTextUploadTranslate / kTextUploadAiAction

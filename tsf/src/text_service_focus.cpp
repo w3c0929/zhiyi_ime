@@ -156,8 +156,14 @@ void TextService::_clear_effective_edit_target(const char* source, bool target_u
     if (_sessionId && _client.is_connected()) {
         _client.focus_out(_sessionId);
     }
-    _hide_translate_window();
-    _close_ai_menu();
+    if (!_ai_ui_grace_active()) {
+        _hide_translate_window();
+        _close_ai_menu();
+    } else {
+        // The text was just copied for the action: an editor that re-activates its input context
+        // over that (docs/ai.md, _arm_ai_ui_grace) must not take the window away unseen.
+        _enqueue_event_trace("ai_ui", "keep:target_cleared");
+    }
     _AbortComposition();
     _unadvise_text_edit_sink();
     _unadvise_text_layout_sink();
@@ -248,8 +254,12 @@ bool TextService::_synchronize_effective_edit_target(ITfContext* event_context,
         if (_composing && _sessionId && _client.is_connected()) {
             _client.focus_out(_sessionId);
         }
-        _hide_translate_window();
-        _close_ai_menu();
+        if (!_ai_ui_grace_active()) {
+            _hide_translate_window();
+            _close_ai_menu();
+        } else {
+            _enqueue_event_trace("ai_ui", "keep:target_rebound");
+        }
         _AbortComposition();
         _unadvise_text_edit_sink();
         _unadvise_text_layout_sink();
