@@ -46,9 +46,8 @@ std::wstring shortened_note(std::size_t chars) {
 
 // Why a key could not do anything (the window says 无法完成：…, docs/ai.md). Nothing to work on is
 // the one a user meets most: nothing selected, and the line the caret is on has no text.
-constexpr const wchar_t kNothingToWorkOn[] = L"没有选中内容，光标这一行也没有文字";
-// The other failure: the program would not let the input method read (or copy) its text at all.
-constexpr const wchar_t kCannotReadText[] = L"这个程序不让输入法取文字，请先手动选中要处理的内容";
+constexpr const wchar_t kNothingToWorkOn[] =
+    L"没有可处理的内容（没选中、光标这一行没字、剪贴板里也没有文本）";
 constexpr const wchar_t kNoServerConnection[] = L"与后台服务的连接断开";
 
 // A bare modifier press is not "another key": it must not close the menu (the user is still
@@ -185,11 +184,15 @@ bool TextService::_handle_translate_key(WPARAM key) {
     return true;
 }
 
-// What the key works on (docs/ai.md), up to translate.max_selection_chars: the selection, or with
-// nothing selected what is written on the caret's line so far (from its start to the caret, which
-// is selected for the user). It is put on the clipboard as it is taken — the key copies for the
-// user — and what the clipboard happened to hold *before* is never used: that is what made the
-// same key work on text the user could not see.
+// What the key works on (docs/ai.md), up to translate.max_selection_chars, in that order:
+//   1. the selection;
+//   2. with nothing selected, what is written on the caret's line so far (its start to the caret),
+//      which select_line_at_caret() selects for the user so that what is about to be handled is on
+//      screen — and which is put on the clipboard, since the key copies for the user;
+//   3. only when neither has anything: **the clipboard**, so what the user copied can be handled in
+//      an empty box (or in a program that will not give its text up). Being last is what keeps the
+//      same key from handling text the user cannot see — a selection, or the caret's own line,
+//      always wins over whatever the clipboard happens to hold.
 bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
                                       const wchar_t** reason) {
     if (shortened) *shortened = false;
@@ -198,53 +201,48 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
     if (!context) return false;
     const std::size_t limit =
         static_cast<std::size_t>((std::max)(100, _config.translate_max_selection_chars));
-    // What the key is to work on, decided before anything is copied (docs/ai.md): the selection, or
-    // — with nothing selected — what is written on the caret's line so far (from its start to the
-    // caret), which select_line_at_caret() selects for the user so that what is about to be handled
-    // is on screen.
     std::wstring wanted;
     bool cut = false;
     TextBeforeCaret read = read_selection_text(context, _clientId, limit, &wanted, &cut);
-    bool make_the_program_copy = false;
     if (read == TextBeforeCaret::kRead && wanted.empty()) {
+        // Tier 2: the caret's line, from its start to the caret.
         read = select_line_at_caret(context, _clientId, limit, &wanted, &cut);
-    } else if (read != TextBeforeCaret::kRead) {
-        // A classic Win32 edit box, or a program that keeps its text to itself: it may well have a
-        // selection we cannot see, and its own Ctrl+C is the only way to learn what it holds.
-        read = TextBeforeCaret::kRead;
-        cut = false;
-        make_the_program_copy = true;
     }
-    context->Release();
-    if (read != TextBeforeCaret::kRead) {
-        if (reason) *reason = kCannotReadText;
+    if (read == TextBeforeCaret::kPrivate) {
+        // A password field: the input method is not to look at it, and it will not use the
+        // clipboard in its place either (docs/ai.md).
+        context->Release();
         return false;
     }
+    // A classic Win32 edit box, or a program that keeps its text to itself: it may well have a
+    // selection we cannot see, and its own Ctrl+C is the only way to learn what it holds.
+    const bool program_copy_first = read != TextBeforeCaret::kRead;
+    context->Release();
 
-    if (make_the_program_copy) {
-        const DWORD sequence = GetClipboardSequenceNumber();
-        press_copy();
-        Sleep(kClipboardWaitMs);
-        if (GetClipboardSequenceNumber() == sequence || !read_clipboard_text(selection) ||
-            selection->empty()) {
-            // It copied nothing: either there was no selection, or it will not give its text away.
-            if (reason) *reason = wanted.empty() ? kCannotReadText : kNothingToWorkOn;
-            return false;
-        }
-    } else {
-        // What was read is what gets handled, and it goes on the clipboard as well — the copy is
-        // the point of the key (the user should not have to press Ctrl+C themselves), but it is
-        // done here rather than by asking the program for it, because key events of ours would
-        // otherwise reach the input method's own handlers and close the menu this opens.
+    if (!wanted.empty()) {
+        // Tiers 1-2 gave something. It goes on the clipboard as well — the key copies for the user,
+        // but the copy is made here rather than by asking the program for it, because key events of
+        // ours would otherwise reach the input method's own handlers and close the menu this opens.
         *selection = wanted;
         put_clipboard_text(*selection);
+    } else {
+        if (program_copy_first) {
+            const DWORD sequence = GetClipboardSequenceNumber();
+            press_copy();
+            Sleep(kClipboardWaitMs);
+            if (GetClipboardSequenceNumber() != sequence) read_clipboard_text(selection);
+        }
+        // Tier 3: nothing at the caret — the clipboard, which is what the user copied themselves.
+        // Being last is what keeps this key from handling text the user cannot see.
+        if (selection->empty()) read_clipboard_text(selection);
     }
+    if (selection->empty()) return false;
     if (selection->size() > limit) {
         selection->resize(limit);
         cut = true;
     }
     if (shortened) *shortened = cut;
-    return !selection->empty();
+    return true;
 }
 
 void TextService::_process_selection_translate() {

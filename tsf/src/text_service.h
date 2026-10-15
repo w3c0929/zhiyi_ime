@@ -473,9 +473,10 @@ private:
     void _render_ai_menu();  // redraw the rows (the highlight moved)
     void _run_ai_action(std::size_t row);  // a menu row
     void _start_ai_action(std::size_t index, const std::wstring& source, bool shortened);
-    // The text to work on (docs/ai.md): the selection, or with nothing selected what is written on
-    // the caret's line so far — which is selected for the user, and put on the clipboard. A program
-    // the input method cannot read is asked to copy instead. Truncated at
+    // The text to work on (docs/ai.md), in that order: the selection; with nothing selected the
+    // part of the caret's line written so far — which is selected for the user and put on the
+    // clipboard; and, only when neither has anything, the clipboard itself (what the user copied).
+    // A program the input method cannot read is asked to copy its selection. Truncated at
     // translate.max_selection_chars; false when there is nothing to work on, with `reason` (when
     // given) set to what the window should say.
     bool _read_selected_text(std::wstring* selection, bool* shortened,
