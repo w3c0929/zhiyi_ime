@@ -238,6 +238,7 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
     // A classic Win32 edit box, or a program that keeps its text to itself: it may well have a
     // selection we cannot see, and its own Ctrl+C is the only way to learn what it holds.
     const bool program_copy_first = read != TextBeforeCaret::kRead;
+    _readNeededProgramCopy = program_copy_first;
     context->Release();
 
     if (!wanted.empty()) {
@@ -316,6 +317,7 @@ bool TextService::_send_selected_text(std::uint32_t purpose, const std::string& 
     const bool long_text = text.size() > kTextChunkBytes;
     _textPurpose = purpose;
     _textActionId = action_id;
+    _textProgramOwnsItsText = _readNeededProgramCopy;
     // The answer comes back in pieces whenever the chunked channel carried the text — and an AI
     // action always uses it (only the translate command has an answer of its own in the poll).
     _textPieces = long_text || purpose != cxxime::kTextUploadTranslate;
@@ -429,9 +431,20 @@ void TextService::_poll_translation() {
     // selection cannot be done that way (a paste would throw the selection away), so an action
     // that wants that is only shown there.
     ITfContext* write_context = _current_edit_context_for_composition();
+    // Either the read showed the document could not be read at all (the strongest signal: the text
+    // came from the program's own copy), or it looks like one of the programs that keeps its text
+    // to itself (a transitory document, Sublime Text and the like).
     const bool program_owns_its_text =
-        write_context && context_is_imm_document(write_context);
+        _textProgramOwnsItsText || (write_context && context_is_imm_document(write_context));
     if (write_context) write_context->Release();
+    {
+        // Which way the answer goes, for whenever it lands somewhere unexpected (docs/ai.md).
+        char detail[128] = {};
+        snprintf(detail, sizeof(detail), "deliver insert=%d program_owns_its_text=%d context=%d",
+                 static_cast<int>(_textInsert), program_owns_its_text ? 1 : 0,
+                 write_context ? 1 : 0);
+        _enqueue_event_trace("ai_ui", detail);
+    }
 
     // An answer is an ordinary edit, not a "correction": that way the program's own undo (Ctrl+Z)
     // takes it back exactly as it takes back typing (docs/ai.md). The input method has no undo of
@@ -510,6 +523,17 @@ void TextService::_present_translate_window(const std::wstring& translation,
     _translateWindow->update(page);
     _translateWindow->show();
     _arm_ai_ui_grace();  // the copy that got the text may bounce the edit target just now
+    // Where it ended up, for whenever it cannot be seen (docs/ai.md): the owner, the caret it was
+    // placed at, whether it came up visible, and the rect it occupies.
+    RECT window_rect = {};
+    GetWindowRect(_translateWindow->hwnd_for_test(), &window_rect);
+    char detail[192] = {};
+    snprintf(detail, sizeof(detail),
+             "answer_window owner=%p caret=%ld,%ld,%ld,%ld visible=%d rect=%ld,%ld,%ld,%ld",
+             static_cast<void*>(owner), caret.left, caret.top, caret.right, caret.bottom,
+             _translateWindow->is_visible() ? 1 : 0, window_rect.left, window_rect.top,
+             window_rect.right, window_rect.bottom);
+    _enqueue_event_trace("ai_ui", detail);
 }
 
 void TextService::_hide_translate_window() {
@@ -757,10 +781,20 @@ bool TextService::_show_menu_window() {
     _aiMenuHighlight = 0;
     _aiMenuOpen = true;
     // The order the translation window uses: place it, fill it, show it.
-    _aiMenuWindow->move_to_caret(_query_caret_rect());
+    const RECT caret = _query_caret_rect();
+    _aiMenuWindow->move_to_caret(caret);
     _render_ai_menu();
     _aiMenuWindow->show();
     _arm_ai_ui_grace();  // the copy that got the text may bounce the edit target just now
+    RECT window_rect = {};
+    GetWindowRect(_aiMenuWindow->hwnd_for_test(), &window_rect);
+    char detail[192] = {};
+    snprintf(detail, sizeof(detail),
+             "menu_window owner=%p caret=%ld,%ld,%ld,%ld visible=%d rect=%ld,%ld,%ld,%ld",
+             static_cast<void*>(owner), caret.left, caret.top, caret.right, caret.bottom,
+             _aiMenuWindow->is_visible() ? 1 : 0, window_rect.left, window_rect.top,
+             window_rect.right, window_rect.bottom);
+    _enqueue_event_trace("ai_ui", detail);
     return true;
 }
 

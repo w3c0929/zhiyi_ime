@@ -625,6 +625,12 @@ private:
     bool _textPieces = false;                 // the answer is read in pieces (chunked channel)
     cxxime::AiActionInsert _textInsert =      // what the answer does with the selection
         cxxime::AiActionInsert::kPreview;
+    // The text had to come from the program's own copy (its document could not be read): the answer
+    // goes back the same way — pasted — so the program replaces what it has selected (docs/ai.md).
+    bool _textProgramOwnsItsText = false;
+    // What the last _read_selected_text found: the document could not be read at all, so the text
+    // came from the program's own Ctrl+C (or not at all).
+    bool _readNeededProgramCopy = false;
     std::wstring _textNote;                   // shown beside the answer (a shortened selection…)
     // The translate key (Ctrl+C by default): the second press is taken, the first stays the
     // application's (copy).
