@@ -19,6 +19,7 @@ class ReadingUIElement;
 #include <optional>
 #include <string>
 
+#include <cxxime/ai_actions.h>
 #include <cxxime/config.h>
 #include <cxxime/control_protocol.h>
 #include <cxxime/ime_menu.h>
@@ -119,9 +120,10 @@ public:
                                      ITfCandidateList** candidates) override;
     STDMETHODIMP SetResult(BSTR query, BSTR application_id, BSTR result) override;
 
-    // Helper
+    // Helper. `under_selection` writes the text after the selection instead of over it — an AI
+    // action whose insert mode is "below" (a summary belongs under the text it summarizes).
     HRESULT insert_text(const std::wstring& text, bool sync = false,
-                        uint64_t* request_generation = nullptr);
+                        uint64_t* request_generation = nullptr, bool under_selection = false);
     bool select_candidate_from_ui(UINT index, uint64_t candidate_revision);
     bool navigate_candidate_page_from_ui(bool previous);
     // The server's candidates changed without a key (UiCommandType::kRefreshCandidates).
@@ -468,11 +470,12 @@ private:
     // the limit; false when there is nothing to work on.
     bool _read_selected_text(std::wstring* selection, bool* shortened);
     // Sends the selected text for `purpose` (kTextUpload*): the short command when it fits the IPC
-    // field, the chunked one otherwise. `replace` is whether the answer may be typed over the
-    // selection; `note` is what the window shows beside it (a shortened selection, for instance).
+    // field, the chunked one otherwise. `insert` is what the answer does (ai_actions.h: over the
+    // selection, under it, or only shown); `note` is what the window shows beside it (a shortened
+    // selection, for instance).
     bool _send_selected_text(std::uint32_t purpose, const std::string& action_id,
-                             const std::string& text, const std::wstring& source, bool replace,
-                             const std::wstring& note);
+                             const std::string& text, const std::wstring& source,
+                             cxxime::AiActionInsert insert, const std::wstring& note);
     void _start_translation_poll();
     void _stop_translation_poll();
     void _poll_translation();
@@ -587,7 +590,8 @@ private:
     std::uint32_t _textPurpose = 0;           // kTextUploadTranslate / kTextUploadAiAction
     std::string _textActionId;                // the AI action, when that is what it is
     bool _textPieces = false;                 // the answer is read in pieces (chunked channel)
-    bool _textReplace = false;                // the answer may replace the selection
+    cxxime::AiActionInsert _textInsert =      // what the answer does with the selection
+        cxxime::AiActionInsert::kPreview;
     std::wstring _textNote;                   // shown beside the answer (a shortened selection…)
     // The translate key (Ctrl+C by default): the second press is taken, the first stays the
     // application's (copy).

@@ -59,12 +59,19 @@
   `thinking_levels()` 与 `apply_thinking()` 按服务商映射「关思考」字段）。
   `server/src/translate_service.cc` 让划词翻译优先走线上、失败回退本地。
   数据文件 `data/ai_thinking_levels.json`。**默认关，关着时行为与从前完全一致**——合并时别把它改成默认开。
-- **选中文字的 AI 动作（润色 / 纠错 / 改写）**：动作定义是数据（`data/ai_actions.json`，
+- **选中文字的 AI 动作（翻译 / 润色 / 纠错 / 改写 / 摘要）**：动作定义是数据（`data/ai_actions.json`，
   读取器 `shared/src/ai_actions.cc`，三端共用：服务端取提示词、TSF 取名字画菜单、设置页列行）；
   提示词调用 `ai_client` 的 `run_action()`（含去引号/去「以下是…」包装）；服务端
   `server/src/ai_action_service.cc`（单 worker 线程、`owner_`/`generation_` 失效、结果留内存供分块取回、
   失败给可读原因 `kTranslateFailed`）；TSF 侧在 `tsf/src/text_service_translate.cpp`（菜单、写回、长选区提示）。
+  结果的去向由动作自己的 `insert` 决定：`replace` 替换选区、`below` 写在选区**下方**
+  （`EditSession::Action::INSERT_TEXT_UNDER_SELECTION`，`tsf/src/edit_session.cpp`）、`preview` 只显示。
   开关是 `ai.use_for.selection`，键是 `ai.action_key` + `ai.action_keys`（都是「第二个键」，第一个键是划词翻译键）。
+- **`\fy` 换翻译语言**：引擎识别（`engine/src/symbol_processor.cc` + `kAiLanguageCommand`）→ 服务端
+  `UiCommandType::kAiLanguageMenu = 17`（`ipc/include/cxxime/ui_protocol.h`）把菜单交给客户端 →
+  选完 `IPCCommand::SET_AI_LANGUAGE = 41` 回传，服务端写 `ai.translate_language`。
+  **坑**：`ipc/src/ui_protocol.cc` 的 `valid_command_type()` 是**白名单**，新增的 UiCommandType 忘了加进去
+  会被 `build_ui_command_packet` 静默丢掉（命令发不出去、界面毫无反应，1.7.32 就是这么坏过一次）。
 - **长文本分块通道**：`TEXT_UPLOAD_BEGIN = 37` / `TEXT_UPLOAD_CHUNK = 38` / `TEXT_RESULT_POLL = 39` /
   `TEXT_RESULT_READ = 40`（`ipc_protocol.h`，**零结构体改动**，靠 `key_code`/`candidate_index`/`modifiers`/
   `search_query`/`translate_text` 的按命令含义；`text_result_bytes` 是追加在 `IPCResponse` 末尾的新字段）。

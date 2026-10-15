@@ -59,6 +59,7 @@ bool valid_command_type(UiCommandType type) {
     case UiCommandType::kOpenAbout:
     case UiCommandType::kRefreshInputIndicator:
     case UiCommandType::kRefreshCandidates:
+    case UiCommandType::kAiLanguageMenu:
         return true;
     default:
         return false;  // also the removed status window commands (4 - 8, 14)

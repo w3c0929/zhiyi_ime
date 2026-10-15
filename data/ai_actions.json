@@ -2,7 +2,7 @@
     "schema": {
         "name": "Zhiyu IME AI actions",
         "version": "1.0",
-        "description": "The AI actions on selected text (docs/ai.md): the menu order is this order, and 'id' is what travels over IPC. 'insert' is replace (the answer replaces the selection, Ctrl+Z undoes it) or preview (the answer is only shown). 'max_input_chars' is the longest selection the action accepts; a longer one is reported, never cut."
+        "description": "The AI actions on selected text (docs/ai.md): the menu order is this order, and 'id' is what travels over IPC. 'insert' is replace (the answer replaces the selection, Ctrl+Z undoes it), below (the answer is written under the selection, on a line of its own) or preview (the answer is only shown). 'max_input_chars' is the longest selection the action accepts; a longer one is reported, never cut."
     },
     "actions": [
         {
@@ -46,7 +46,7 @@
             "label": "摘要",
             "label_en": "Summarize",
             "prompt": "Summarize the text the user selected, in the same language, as a short paragraph. Output only the summary, with no title, list marks, quotes or preamble.",
-            "insert": "preview",
+            "insert": "below",
             "max_input_chars": 32000,
             "timeout_ms": 60000
         }

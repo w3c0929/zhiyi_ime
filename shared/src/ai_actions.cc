@@ -31,7 +31,14 @@ AiAction action_from_json(const nlohmann::json& row) {
         action.prompt = row["prompt"].get<std::string>();
     }
     if (row.contains("insert") && row["insert"].is_string()) {
-        action.replace = row["insert"].get<std::string>() != "preview";
+        const std::string mode = row["insert"].get<std::string>();
+        if (mode == "preview") {
+            action.insert = AiActionInsert::kPreview;
+        } else if (mode == "below") {
+            action.insert = AiActionInsert::kBelow;
+        } else {
+            action.insert = AiActionInsert::kReplace;
+        }
     }
     if (row.contains("max_input_chars") && row["max_input_chars"].is_number_integer()) {
         action.max_input_chars = (std::max)(0, row["max_input_chars"].get<int>());

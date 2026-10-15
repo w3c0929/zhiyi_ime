@@ -209,8 +209,10 @@ void TextService::_process_selection_translate() {
     if (text.empty()) return;
     // Only part of a shortened selection was worked on: typing the answer back would throw the
     // rest of the selection away, so it is shown instead.
-    const bool replace = _config.translate_direct_insert && !shortened;
-    _send_selected_text(cxxime::kTextUploadTranslate, std::string(), text, selection, replace,
+    const cxxime::AiActionInsert insert =
+        _config.translate_direct_insert && !shortened ? cxxime::AiActionInsert::kReplace
+                                                     : cxxime::AiActionInsert::kPreview;
+    _send_selected_text(cxxime::kTextUploadTranslate, std::string(), text, selection, insert,
                         shortened ? shortened_note(selection.size()) : std::wstring());
 }
 
@@ -219,7 +221,7 @@ void TextService::_process_selection_translate() {
 // same way either way (see _poll_translation).
 bool TextService::_send_selected_text(std::uint32_t purpose, const std::string& action_id,
                                       const std::string& text, const std::wstring& source,
-                                      bool replace, const std::wstring& note) {
+                                      cxxime::AiActionInsert insert, const std::wstring& note) {
     if (!_ensure_ipc_session()) return false;
     const bool long_text = text.size() > kTextChunkBytes;
     _textPurpose = purpose;
@@ -227,7 +229,7 @@ bool TextService::_send_selected_text(std::uint32_t purpose, const std::string& 
     // The answer comes back in pieces whenever the chunked channel carried the text — and an AI
     // action always uses it (only the translate command has an answer of its own in the poll).
     _textPieces = long_text || purpose != cxxime::kTextUploadTranslate;
-    _textReplace = replace;
+    _textInsert = insert;
     _textNote = note;
     _translateSource = source;
 
@@ -324,8 +326,15 @@ void TextService::_poll_translation() {
         note.clear();
     }
 
-    if (_textReplace && !failed) {
+    if (!failed && _textInsert == cxxime::AiActionInsert::kReplace) {
         insert_text(translation, true);  // replaces the selection
+    } else if (!failed && _textInsert == cxxime::AiActionInsert::kBelow) {
+        // Under the selection, on a line of its own (a summary is read under the text it
+        // summarizes). The note — only the beginning of a long selection was worked on — rides
+        // along as the last line: there is no window here to say it in.
+        std::wstring inserted = L"\r\n" + translation;
+        if (!note.empty()) inserted += L"\r\n" + note;
+        insert_text(inserted, true, nullptr, true);
     } else {
         // The cached caret may be stale (nothing typed): ask for it now, like the candidate
         // window does, so the window opens at the selection.
@@ -669,6 +678,13 @@ void TextService::_start_ai_action(std::size_t index, const std::wstring& source
     }
     const std::wstring note = cut ? shortened_note(text.size()) : std::wstring();
     const RECT caret = _query_caret_rect();
+    // Where the answer goes (the action's insert mode, ai_actions.h), except that replacing a
+    // selection that was cut would throw the part that was not sent away — that one is shown
+    // instead. Writing under the selection loses nothing, so it stays as the action asks.
+    cxxime::AiActionInsert insert = action.insert;
+    if (insert == cxxime::AiActionInsert::kReplace && cut) {
+        insert = cxxime::AiActionInsert::kPreview;
+    }
 
     // Working: the window says so until the poll brings the answer (or the reason it failed).
     const std::wstring label =
@@ -683,8 +699,7 @@ void TextService::_start_ai_action(std::size_t index, const std::wstring& source
                                 : action.id;
     const std::uint32_t purpose =
         translates ? cxxime::kTextUploadAiTranslate : cxxime::kTextUploadAiAction;
-    if (!_send_selected_text(purpose, tag, selection_to_utf8(text), text, action.replace && !cut,
-                             note)) {
+    if (!_send_selected_text(purpose, tag, selection_to_utf8(text), text, insert, note)) {
         _present_translate_window(L"无法完成：与后台服务的连接断开", text, std::wstring(), caret);
     }
 }

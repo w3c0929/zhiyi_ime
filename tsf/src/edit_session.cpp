@@ -590,6 +590,22 @@ HRESULT insert_at_selection(ITfContext* context,
     return hr;
 }
 
+// The text written under the selection rather than over it (an AI action whose insert mode is
+// "below"): the caret goes after the last selected character, and insert_at_selection — which
+// writes at the selection — then puts the text there. Everything the user selected stays.
+HRESULT insert_under_selection(ITfContext* context, TfEditCookie ec, const std::wstring& text) {
+    if (!context || text.empty())
+        return E_INVALIDARG;
+    TF_SELECTION selection = {};
+    ULONG fetched = 0;
+    if (SUCCEEDED(context->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &selection, &fetched)) &&
+        fetched > 0 && selection.range) {
+        set_selection_to_range(context, ec, selection.range);
+        selection.range->Release();
+    }
+    return insert_at_selection(context, ec, text);
+}
+
 HRESULT commit_to_context(TextService* service, ITfContext* context, TfEditCookie ec,
                           const std::wstring& text) {
     ITfContext* composition_context = service->get_composition_context();
@@ -714,8 +730,11 @@ void EditSession::set_composition_action(Action action, const std::wstring& text
 }
 
 STDMETHODIMP EditSession::DoEditSession(TfEditCookie ec) {
-    if (_action == Action::INSERT_TEXT && !_text.empty()) {
-        _actionResult = insert_at_selection(_context, ec, _text);
+    if ((_action == Action::INSERT_TEXT || _action == Action::INSERT_TEXT_UNDER_SELECTION) &&
+        !_text.empty()) {
+        _actionResult = _action == Action::INSERT_TEXT
+                            ? insert_at_selection(_context, ec, _text)
+                            : insert_under_selection(_context, ec, _text);
         if (FAILED(_actionResult) && _service) {
             _service->handle_composition_edit_failure(
                 _compositionEditGeneration, _compositionEditContextIdentity);

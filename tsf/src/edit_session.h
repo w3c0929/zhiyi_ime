@@ -25,6 +25,7 @@ public:
 
     enum class Action {
         INSERT_TEXT,
+        INSERT_TEXT_UNDER_SELECTION,  // after the selection, not over it (insert mode "below")
         END_COMPOSITION,
         UPDATE_COMPOSITION,
         ENSURE_COMPOSITION_TEXT,

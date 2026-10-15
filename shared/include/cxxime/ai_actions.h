@@ -14,14 +14,19 @@
 #include <cxxime/keyboard_shortcut.h>
 namespace cxxime {
 
+// What the client does with the answer (the "insert" field of data/ai_actions.json):
+//   kReplace: the answer replaces the selection — one Ctrl+Z undoes it;
+//   kBelow:   the answer is written under the selection, on lines of its own (the selection and
+//             everything after it stay; a summary is read where the text it summarizes is);
+//   kPreview: the answer is only shown, the selection stays.
+enum class AiActionInsert { kReplace, kBelow, kPreview };
+
 struct AiAction {
     std::string id;      // "proofread": the key of the action
     std::string label;   // the Chinese name shown in the menu
     std::string label_en;  // the English one
     std::string prompt;  // the system prompt; the user message is the selected text itself
-    // replace: the answer replaces the selection (one Ctrl+Z undoes it). preview: the answer is
-    // only shown, the selection stays.
-    bool replace = true;
+    AiActionInsert insert = AiActionInsert::kReplace;
     int max_input_chars = 8000;  // a longer selection is refused with a note, never cut
     int timeout_ms = 20000;
     // An action that translates (the "translate" one, docs/ai.md): the languages it offers, the
