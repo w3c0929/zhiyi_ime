@@ -207,11 +207,14 @@ void ctrl_key_copy() {
 // Shift held down while End is pressed, so the selection reaches the line's end; Shift released;
 // then Ctrl+C. A program that copies the whole line when nothing is selected hands the answer a
 // *line*, and without this the selection would not be the line at all (docs/ai.md).
-void select_line_with_keys(bool whole_line) {
+// `copy_line` is the table's fifth step (Ctrl+C). It is left out where the answer is pasted right
+// after: reading the clipboard in between takes the selection away from the program (measured in VS
+// Code: the paste then landed at the caret), and the delivery reads the line back afterwards anyway.
+void select_line_with_keys(bool whole_line, bool copy_line) {
     // The line the answer replaces, as the program's own keys. `whole_line`: the caret's whole line —
     // a program that copied it for us says nothing about where the caret sits in it, so the answer
-    // covers all of it (the table: Home, Shift held, End, Shift released, Ctrl+C). Otherwise just the
-    // part written before the caret, which Shift+Home takes from the caret (docs/ai.md).
+    // covers all of it (the table: Home, Shift held, End, Shift released). Otherwise just the part
+    // written before the caret, which Shift+Home takes from the caret (docs/ai.md).
     if (whole_line) {
         tap_key(VK_HOME);
         hold_key(VK_SHIFT, true);
@@ -222,7 +225,9 @@ void select_line_with_keys(bool whole_line) {
         tap_key(VK_HOME);
         hold_key(VK_SHIFT, false);
     }
-    ctrl_key_copy();  // the last step: the line on the clipboard, then the answer replaces it
+    if (copy_line) {
+        ctrl_key_copy();  // the line on the clipboard, then the answer replaces it
+    }
 }
 
 
@@ -439,16 +444,10 @@ bool try_line_route(int route, ITfContext* context, TfClientId client_id, const 
         tap_key(VK_HOME);
         return select_length_at_caret(context, client_id, line.size());
     }
-    select_line_with_keys(whole_line);
-    if (!readable) {
-        return true;  // a program like these copies the line anyway: no copy can tell a selection
-    }
-    // The copy step 5 made is the proof: a readable program copies a *selection* and nothing else, so
-    // the line is selected exactly when that copy is the line. It is not — the keys did not take —
-    // and the caller writes the answer through TSF instead of pasting (docs/ai.md).
-    std::wstring copied;
-    if (!read_clipboard_text(&copied)) return false;
-    return without_trailing_line_break(copied) == line;
+    // The keys, and no copy of their own: the answer is pasted straight after, and the delivery reads
+    // the line back to see whether it landed (see the paste in _poll_translation, docs/ai.md).
+    select_line_with_keys(whole_line, /*copy_line=*/!readable);
+    return true;
 }
 
 // Selects the line for this program and says whether a route really left it selected. `readable` is
@@ -673,6 +672,24 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
     return true;
 }
 
+// After the paste: does the line the answer was written into start with it? The caret sits right after
+// what was pasted, so the same read the action used — the line up to the caret — holds the answer when
+// the paste landed, and the *old* text when it did not. That is the one step a paste cannot be trusted
+// for: which is why the answer is written through TSF when this says no (docs/ai.md).
+int TextService::_line_starts_with(const std::wstring& expected) {
+    if (expected.empty()) return -1;
+    ITfContext* context = _current_edit_context_for_composition();
+    if (!context) return -1;
+    std::wstring line;
+    bool cut = false;
+    const TextBeforeCaret read =
+        select_line_at_caret(context, _clientId, expected.size() + 32, &line, &cut);
+    context->Release();
+    if (read != TextBeforeCaret::kRead || line.empty()) return -1;  // nothing to ask: take it on trust
+    const std::size_t head = (std::min)(expected.size(), line.size());
+    return head > 0 && line.compare(0, head, expected, 0, head) == 0 ? 1 : 0;
+}
+
 void TextService::_process_selection_translate() {
     std::wstring selection;
     bool shortened = false;
@@ -889,20 +906,18 @@ void TextService::_poll_translation() {
         deliver && _textInsert == cxxime::AiActionInsert::kReplace &&
         (_textProgramCopiedLine || _textLineSelected);
     const char* line_how = nullptr;
-    bool line_selected = true;
     if (line_should_be_replaced) {
         bool line_remembered = false;
         ITfContext* line_context = _current_edit_context_for_composition();
-        line_selected = select_line_for_answer(line_context, _clientId, _textLineText,
-                                               _textProgramCopiedLine, !program_owns_its_text,
-                                               &line_how, &line_remembered);
+        select_line_for_answer(line_context, _clientId, _textLineText, _textProgramCopiedLine,
+                               !program_owns_its_text, &line_how, &line_remembered);
         if (line_context) line_context->Release();
         // Which way selected the line, and whether that answer was already known — the one thing the
         // log needs to tell a program that honours TSF's own selection from one that only answers to
-        // keys (docs/ai.md).
+        // keys (docs/ai.md). Whether it really is the line, the paste below reads back.
         char detail[160] = {};
-        snprintf(detail, sizeof(detail), "line_select how=%s remembered=%d selected=%d",
-                 line_how ? line_how : "none", line_remembered ? 1 : 0, line_selected ? 1 : 0);
+        snprintf(detail, sizeof(detail), "line_select how=%s remembered=%d",
+                 line_how ? line_how : "none", line_remembered ? 1 : 0);
         _enqueue_event_trace("ai_ui", detail);
     }
 
@@ -935,14 +950,7 @@ void TextService::_poll_translation() {
         _enqueue_event_trace("ai_ui", detail);
     }
 
-    if (line_should_be_replaced && !line_selected) {
-        // The program's own keys did not leave the line selected (the copy step 5 made says so):
-        // rather than paste into whatever the caret is on, the answer is written through TSF over the
-        // range the read selected — an ordinary edit there as well, which the program's own Ctrl+Z
-        // takes back (docs/ai.md).
-        insert_text(translation, true, nullptr, false, false);
-        _hide_translate_window();
-    } else if (edit_delivered) {
+    if (edit_delivered) {
         _hide_translate_window();  // the answer is in: the window has done its job
     } else if (uia_delivered) {
         paste_text(translation);
@@ -950,8 +958,32 @@ void TextService::_poll_translation() {
     } else if (deliver && _textInsert == cxxime::AiActionInsert::kReplace && !_textEditControl &&
                !_textUiaTarget) {
         paste_text(translation);
-        _hide_translate_window();  // the answer is in: the window has done its job (OnEndEdit
-                                   // cannot be relied on for it — see the grace window)
+        bool placed = true;
+        if (line_should_be_replaced && !program_owns_its_text) {
+            // Did it land? A paste is the one step nothing here can be sure of, so the line is read
+            // back (the caret sits right after what was pasted). When the answer is not there — the
+            // selection can be lost between the keys and the paste — the line is selected again and
+            // the answer pasted once more; a second miss leaves the answer *shown*, not written
+            // somewhere else (docs/ai.md).
+            // A Chromium editor's text store does not show the paste at once, so the read below waits
+            // longer than a message pump would suggest (docs/ai.md).
+            pump_program_messages(300);
+            int verdict = _line_starts_with(translation);
+            if (verdict == 0) {
+                select_line_with_keys(/*whole_line=*/false, /*copy_line=*/false);
+                paste_text(translation);
+                pump_program_messages(300);
+                verdict = _line_starts_with(translation);
+            }
+            placed = verdict != 0;  // 0: the old text is still there; -1: nothing to ask, trust it
+            char detail[128] = {};
+            snprintf(detail, sizeof(detail), "deliver paste=%d", placed ? 1 : 0);
+            _enqueue_event_trace("ai_ui", detail);
+        }
+        if (placed) {
+            _hide_translate_window();  // the answer is in: the window has done its job (OnEndEdit
+                                       // cannot be relied on for it — see the grace window)
+        }  // It did not land: the window stays, saying the answer. Shown, not written elsewhere.
     } else if (deliver && _textInsert == cxxime::AiActionInsert::kBelow && !program_owns_its_text) {
         // Under the selection, on a line of its own (a summary is read under the text it
         // summarizes). The note — only the beginning of a long selection was worked on — rides

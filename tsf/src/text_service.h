@@ -639,6 +639,11 @@ private:
     // That line, break off: the copy the selection is checked against, so the answer is pasted over
     // it and not over whatever the caret happens to be on (docs/ai.md).
     std::wstring _textLineText;
+    // After a paste: 1 when the line the answer was written into starts with it (the caret sits right
+    // after what was pasted, so the read the action used holds the answer), 0 when that read shows the
+    // *old* text is still there, and -1 when there was nothing to read at all — a program that will
+    // not tell, where the paste is taken on trust (the retry has already run).
+    int _line_starts_with(const std::wstring& expected);
     // The read selected the caret's line itself (the tier-2 read: the part before the caret) in a
     // document the input method *can* read: the answer replaces it, and the delivery selects it with
     // the program's own keys, because a TSF selection is not the program's own (docs/ai.md).
