@@ -639,6 +639,9 @@ private:
     // That line, break off: the copy the selection is checked against, so the answer is pasted over
     // it and not over whatever the caret happens to be on (docs/ai.md).
     std::wstring _textLineText;
+    // The edit session managed to select that line in the document itself (docs/ai.md): the delivery
+    // copies the selection to check it, then pastes over it.
+    bool _textLineSelectionSetByTsf = false;
     // The "正在润色…" window: what it says, and that it is the one on screen. Some editors take it
     // down behind our back while the answer is being fetched (their input context moves over the
     // copy that read the text), so it is put back on every poll (docs/ai.md).

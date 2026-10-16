@@ -41,4 +41,11 @@ TextBeforeCaret read_selection_text(ITfContext* context, TfClientId client_id, s
 TextBeforeCaret select_line_at_caret(ITfContext* context, TfClientId client_id, size_t max_chars,
                                      std::wstring* text, bool* truncated = nullptr);
 
+// Selects the caret's line *without reading it*, when the caller already knows how long it is — a
+// program whose text cannot be read (docs/ai.md) still hands its own copy of the line over, and a
+// selection TSF sets is a real document selection, which is what makes such a program as exact as a
+// readable one. Unlike the reads above this is tried on transitory documents too: whether their
+// text store accepts a selection is exactly what is being asked. True when the edit session set it.
+bool select_line_of_length(ITfContext* context, TfClientId client_id, size_t length);
+
 #endif  // ZHIYU_TSF_TEXT_BEFORE_CARET_H_
