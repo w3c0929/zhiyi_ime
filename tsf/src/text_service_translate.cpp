@@ -130,7 +130,7 @@ std::wstring without_trailing_line_break(const std::wstring& text) {
 // (pump_program_messages): the keys sit in this thread's queue until our handler returns (docs/ai.md),
 // so a program can only take them one at a time if we look away between steps — which is what makes
 // a selection land the way a hand pressing the keys would. How long each step settles for.
-constexpr DWORD kKeyStepMs = 120;
+constexpr DWORD kKeyStepMs = 60;
 
 // A key as real keyboard input: the virtual key, its scan code, and — for the keys that have one —
 // the extended flag. Home, End and the arrows need that flag spelled out: their scan codes are the
@@ -211,19 +211,7 @@ void select_line_with_keys() {
     hold_key(VK_SHIFT, true);
     tap_key(VK_END);
     hold_key(VK_SHIFT, false);
-}
-
-// The same, the old way: Ctrl+L — what an editor that copies the line when nothing is selected binds
-// "select the line" to (Sublime Text's is exactly this). Only used when the keys above are shown not
-// to have selected anything (see line_copy_is_selection).
-void select_line_with_ctrl_l() {
-    INPUT inputs[4] = {};
-    fill_key(&inputs[0], VK_CONTROL, false);
-    fill_key(&inputs[1], 'L', false);
-    fill_key(&inputs[2], 'L', true);
-    fill_key(&inputs[3], VK_CONTROL, true);
-    SendInput(4, inputs, sizeof(INPUT));
-    pump_program_messages(kKeyStepMs);
+    ctrl_key_copy();  // the table's fifth step: the line on the clipboard, then the answer replaces it
 }
 
 // An answer delivered the way the user would put it there: on the clipboard, then Ctrl+V, which
@@ -309,46 +297,20 @@ bool read_clipboard_text(std::wstring* text) {
     return ok;
 }
 
-// Selects the caret's line and copies it, and says whether the copy came back as that line — the
-// copy is what tells "the line is selected" from "nothing is selected and the program copies the
-// whole line anyway": the answer may only be pasted over the line it was made from (docs/ai.md).
-// Ctrl+C now, and what it put on the clipboard.
-bool copy_now(std::wstring* copied) {
-    const DWORD sequence = GetClipboardSequenceNumber();
-    ctrl_key_copy();
-    wait_for_program_copy(sequence);
-    if (GetClipboardSequenceNumber() == sequence) return false;
-    return read_clipboard_text(copied);
-}
+// Selects the caret's line, the way the table says: ① let TSF select it (no keys of ours beyond the
+// Home that puts the caret at the line's start, and that selection is read back and checked by
+// position inside the same edit session), or ② the five steps — Home, Shift held down, End, Shift
+// released, Ctrl+C. The answer is then pasted over what was selected.
+//
+// The keys are *not* checked with a copy of their own: the Shift+Left/Shift+Right probe that would
+// tell "a selection is there" from "nothing is selected" costs two more keystrokes per action, and
+// the call here is that the keys' own table is worth trusting (docs/ai.md).
 
-// Whether a selection of `line` is really there, asked by *shrinking* it by one character: told to
-// shift one to the left, a selection copies one character less, while a program that copies the whole
-// line merely because nothing is selected answers the same copy either way. The shift is undone
-// afterwards, so the line ends up selected exactly as it was. This is what the keys are judged by,
-// and not the copy alone: in these editors the copy of a line and the copy of a selection of that
-// line look the same — both carry the line break (measured in Sublime Text, docs/ai.md).
-bool selection_is_the_line(const std::wstring& line) {
-    std::wstring before;
-    if (!copy_now(&before) || without_trailing_line_break(before) != line) return false;
-    hold_key(VK_SHIFT, true);
-    tap_key(VK_LEFT);
-    hold_key(VK_SHIFT, false);
-    std::wstring shrunk;
-    const bool copied = copy_now(&shrunk);
-    hold_key(VK_SHIFT, true);
-    tap_key(VK_RIGHT);
-    hold_key(VK_SHIFT, false);
-    if (!copied || before.empty()) return false;
-    return shrunk.size() + 1 == before.size() &&
-           shrunk.compare(0, shrunk.size(), before, 0, shrunk.size()) == 0;
-}
-
-// Which of the ways below selects the caret's line in this program, remembered once one of them has
-// worked. The code runs inside the program, so a static map is exactly a per-program cache: the next
-// action tries the way that worked first, and the keys of the ways that did not work never reach the
-// program's input again. Keyed by the class of the focused window (one program can have more than
-// one kind of editor, and the class is what tells them apart).
-enum { kLineRouteNone = 0, kLineRouteTsf = 1, kLineRouteKeys = 2, kLineRouteCtrlL = 3 };
+// The way that selected the line in this program, remembered so that the next action can go straight
+// to it. The code runs inside the program, so a static map is exactly a per-program cache; it is
+// keyed by the class of the focused window, because one program can have more than one kind of
+// editor and that class is what tells them apart.
+enum { kLineRouteNone = 0, kLineRouteTsf = 1, kLineRouteKeys = 2 };
 
 std::unordered_map<std::string, int>& line_route_cache() {
     static std::unordered_map<std::string, int> cache;
@@ -371,55 +333,49 @@ std::string focused_class_key() {
     return key;
 }
 
-// One of the three ways to get the line selected, each answering whether it really is.
+// One of the two ways. True when it selected the line *without* any keys of ours (the TSF way, which
+// is checked as it is set); the key way is the fallback and is not checked.
 bool try_line_route(int route, ITfContext* context, TfClientId client_id, const std::wstring& line) {
-    switch (route) {
-    case kLineRouteTsf:
+    if (route == kLineRouteTsf) {
         // Home — a plain key, which a program that ignores a synthesized Shift still answers to —
         // then TSF selecting the line from there: a real document selection, the same thing a
-        // readable document gets. select_length_at_caret reads it back and compares positions, so a
-        // program that ignored the write is caught before anything is pasted (docs/ai.md).
+        // readable document gets (docs/ai.md).
         if (!context) return false;
         tap_key(VK_HOME);
         return select_length_at_caret(context, client_id, line.size());
-    case kLineRouteKeys:
-        select_line_with_keys();  // Home, Shift+End
-        return selection_is_the_line(line);
-    case kLineRouteCtrlL:
-        select_line_with_ctrl_l();  // what these editors bind "select the line" to
-        return selection_is_the_line(line);
-    default:
-        return false;
     }
+    select_line_with_keys();  // the five steps
+    return true;
 }
 
-bool select_and_copy_line(ITfContext* context, TfClientId client_id, const std::wstring& line,
-                          const char** how_out, bool* remembered_out) {
-    static const char* const kHow[] = {"none", "tsf", "keys", "ctrl_l"};
-    if (how_out) *how_out = kHow[0];
+// Selects the line for this program: the way remembered for it first, then the other. Always leaves
+// the line selected one way or another — the answer has somewhere to land.
+void select_line_for_answer(ITfContext* context, TfClientId client_id, const std::wstring& line,
+                            const char** how_out, bool* remembered_out) {
+    static const char* const kHow[] = {"none", "tsf", "keys"};
+    if (how_out) *how_out = kHow[kLineRouteNone];
     if (remembered_out) *remembered_out = false;
     if (line_route_cache().size() > 64) {
         line_route_cache().clear();  // bounded: the classes this process ever saw
     }
     int& known = line_route_cache()[focused_class_key()];
-    int order[3] = {kLineRouteTsf, kLineRouteKeys, kLineRouteCtrlL};
-    if (known >= kLineRouteTsf && known <= kLineRouteCtrlL) {
-        order[0] = known;  // the way that worked here, first
-        int fill = 1;
-        for (int route = kLineRouteTsf; route <= kLineRouteCtrlL; ++route) {
-            if (route != known) order[fill++] = route;
-        }
+    int order[2] = {kLineRouteTsf, kLineRouteKeys};
+    if (known == kLineRouteTsf || known == kLineRouteKeys) {
+        order[0] = known;  // what worked here before, first
+        order[1] = known == kLineRouteTsf ? kLineRouteKeys : kLineRouteTsf;
         if (remembered_out) *remembered_out = true;
     }
     for (int route : order) {
         if (try_line_route(route, context, client_id, line)) {
             known = route;
             if (how_out) *how_out = kHow[route];
-            return true;
+            return;
         }
     }
-    known = kLineRouteNone;
-    return false;
+    // Neither: the keys are still the best chance of the answer landing on the line.
+    known = kLineRouteKeys;
+    select_line_with_keys();
+    if (how_out) *how_out = kHow[kLineRouteKeys];
 }
 
 }  // namespace
@@ -785,28 +741,21 @@ void TextService::_poll_translation() {
     const bool line_should_be_replaced =
         deliver && _textInsert == cxxime::AiActionInsert::kReplace && _textProgramCopiedLine;
     const char* line_how = nullptr;
-    bool line_remembered = false;
-    bool line_selected = true;
     if (line_should_be_replaced) {
+        bool line_remembered = false;
         ITfContext* line_context = _current_edit_context_for_composition();
-        line_selected = select_and_copy_line(line_context, _clientId, _textLineText, &line_how,
-                                             &line_remembered);
+        select_line_for_answer(line_context, _clientId, _textLineText, &line_how, &line_remembered);
         if (line_context) line_context->Release();
-        // Which of the three ways selected the line, and whether that answer was already known —
-        // the one thing the log needs to tell a program that honours TSF's own selection from one
-        // that only answers to keys (docs/ai.md).
+        // Which way selected the line, and whether that answer was already known — the one thing the
+        // log needs to tell a program that honours TSF's own selection from one that only answers to
+        // keys (docs/ai.md).
         char detail[160] = {};
-        snprintf(detail, sizeof(detail), "line_select how=%s selected=%d remembered=%d",
-                 line_how ? line_how : "none", line_selected ? 1 : 0, line_remembered ? 1 : 0);
+        snprintf(detail, sizeof(detail), "line_select how=%s remembered=%d",
+                 line_how ? line_how : "none", line_remembered ? 1 : 0);
         _enqueue_event_trace("ai_ui", detail);
-        if (!line_selected) {
-            // Nothing to replace: the program would not select that line, so the answer is shown
-            // with the reason instead of being typed over whatever the caret is on (docs/ai.md).
-            note = L"没能选中光标这一行，未替换";
-        }
     }
 
-    if (deliver && _textInsert == cxxime::AiActionInsert::kReplace && line_selected) {
+    if (deliver && _textInsert == cxxime::AiActionInsert::kReplace) {
         paste_text(translation);
         _hide_translate_window();  // the answer is in: the window has done its job (OnEndEdit
                                    // cannot be relied on for it — see the grace window)
