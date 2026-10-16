@@ -130,7 +130,23 @@ std::wstring without_trailing_line_break(const std::wstring& text) {
 // (pump_program_messages): the keys sit in this thread's queue until our handler returns (docs/ai.md),
 // so a program can only take them one at a time if we look away between steps — which is what makes
 // a selection land the way a hand pressing the keys would. How long each step settles for.
-constexpr DWORD kKeyStepMs = 45;
+constexpr DWORD kKeyStepMs = 120;
+
+// A key as the hardware would send it: with its scan code (MapVirtualKey) and, where the scan code
+// asks for it, the extended flag. Measured: a selection made of keys sent as bare virtual keys
+// arrives with the Shift ignored — End then only moves the caret, and the answer is inserted after
+// it instead of replacing the line.
+void fill_key(INPUT* input, WORD virtual_key, bool up) {
+    const UINT scan = MapVirtualKeyW(virtual_key, MAPVK_VK_TO_VSC_EX);
+    input->type = INPUT_KEYBOARD;
+    input->ki.wVk = 0;
+    input->ki.wScan = static_cast<WORD>(scan & 0xFF);
+    input->ki.dwFlags = KEYEVENTF_SCANCODE | (up ? KEYEVENTF_KEYUP : 0);
+    if ((scan >> 8) == 0xE0) {
+        input->ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+    }
+    input->ki.dwExtraInfo = TextService::kInjectedCopyMark;
+}
 
 // While we wait, the program's messages are dispatched — the same idea as wait_for_program_copy.
 void pump_program_messages(DWORD milliseconds) {
@@ -149,38 +165,69 @@ void pump_program_messages(DWORD milliseconds) {
 // One step of a key sequence: press and release `virtual_key`, then let the program work through it.
 void tap_key(WORD virtual_key) {
     INPUT inputs[2] = {};
-    for (int index = 0; index < 2; ++index) {
-        inputs[index].type = INPUT_KEYBOARD;
-        inputs[index].ki.wVk = virtual_key;
-        inputs[index].ki.dwFlags = index == 0 ? 0 : KEYEVENTF_KEYUP;
-        inputs[index].ki.dwExtraInfo = TextService::kInjectedCopyMark;
-    }
+    fill_key(&inputs[0], virtual_key, false);
+    fill_key(&inputs[1], virtual_key, true);
     SendInput(2, inputs, sizeof(INPUT));
     pump_program_messages(kKeyStepMs);
 }
 
-void shift_key(bool down) {
+void hold_key(WORD virtual_key, bool down) {
     INPUT input = {};
-    input.type = INPUT_KEYBOARD;
-    input.ki.wVk = VK_SHIFT;
-    input.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
-    input.ki.dwExtraInfo = TextService::kInjectedCopyMark;
+    fill_key(&input, virtual_key, !down);
     SendInput(1, &input, sizeof(INPUT));
     pump_program_messages(kKeyStepMs);
 }
 
-// Selects the line the caret is on and puts it on the clipboard, the way the keys are pressed by
-// hand: Home to the line's start; Shift held down while End is pressed, so the selection reaches the
-// line's end; Shift released; then Ctrl+C. A program that copies the whole line when nothing is
-// selected hands the answer a *line*, and without this the selection would not be the line at all
-// (docs/ai.md). Every key carries the mark ours do, so the input method's own key handling skips it.
+// Ctrl+C, the copy that puts a selection on the clipboard (its keys carry the mark ours do).
+void ctrl_key_copy() {
+    INPUT inputs[4] = {};
+    fill_key(&inputs[0], VK_CONTROL, false);
+    fill_key(&inputs[1], 'C', false);
+    fill_key(&inputs[2], 'C', true);
+    fill_key(&inputs[3], VK_CONTROL, true);
+    SendInput(4, inputs, sizeof(INPUT));
+    pump_program_messages(kKeyStepMs);
+}
+
+// Selects the line the caret is on, the way the keys are pressed by hand: Home to the line's start;
+// Shift held down while End is pressed, so the selection reaches the line's end; Shift released;
+// then Ctrl+C. A program that copies the whole line when nothing is selected hands the answer a
+// *line*, and without this the selection would not be the line at all (docs/ai.md).
 void select_line_with_keys() {
     tap_key(VK_HOME);
-    shift_key(true);
+    hold_key(VK_SHIFT, true);
     tap_key(VK_END);
-    shift_key(false);
-    press_copy();  // Ctrl+C, the copy that proves the line
+    hold_key(VK_SHIFT, false);
+    ctrl_key_copy();
+}
+
+// The same, the old way: Ctrl+L — what an editor that copies the line when nothing is selected binds
+// "select the line" to (Sublime Text's is exactly this). Only used when the keys above are shown not
+// to have selected anything (see line_copy_is_selection).
+void select_line_with_ctrl_l() {
+    INPUT inputs[4] = {};
+    fill_key(&inputs[0], VK_CONTROL, false);
+    fill_key(&inputs[1], 'L', false);
+    fill_key(&inputs[2], 'L', true);
+    fill_key(&inputs[3], VK_CONTROL, true);
+    SendInput(4, inputs, sizeof(INPUT));
     pump_program_messages(kKeyStepMs);
+    ctrl_key_copy();
+}
+
+// Whether the copy that came back is a *selection* of the line rather than the program's own
+// "nothing was selected, so here is the whole line" copy. The difference is the line break: a
+// selection that ends at Shift+End stops before it, while the program's line copy hands it over
+// with the break on — which is what tells the two apart, and what keeps the answer from being
+// written over whatever the caret happens to be on (docs/ai.md).
+bool line_copy_is_selection(const std::wstring& copied, const std::wstring& line) {
+    if (copied.empty()) {
+        return false;
+    }
+    if (copied.back() == L'\n' || copied.back() == L'\r') {
+        return false;  // the program copied the line itself: nothing is selected
+    }
+    return copied == line;
 }
 
 // An answer delivered the way the user would put it there: on the clipboard, then Ctrl+V, which
@@ -270,12 +317,20 @@ bool read_clipboard_text(std::wstring* text) {
 // copy is what tells "the line is selected" from "nothing is selected and the program copies the
 // whole line anyway": the answer may only be pasted over the line it was made from (docs/ai.md).
 bool select_and_copy_line(const std::wstring& line) {
-    const DWORD sequence = GetClipboardSequenceNumber();
-    select_line_with_keys();
-    wait_for_program_copy(sequence);
-    if (GetClipboardSequenceNumber() == sequence) return false;  // no copy came
-    std::wstring copied;
-    return read_clipboard_text(&copied) && without_trailing_line_break(copied) == line;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const DWORD sequence = GetClipboardSequenceNumber();
+        if (attempt == 0) {
+            select_line_with_keys();
+        } else {
+            // The keys selected nothing here; ask the way these editors bind "select the line".
+            select_line_with_ctrl_l();
+        }
+        wait_for_program_copy(sequence);
+        if (GetClipboardSequenceNumber() == sequence) continue;  // no copy came at all
+        std::wstring copied;
+        if (read_clipboard_text(&copied) && line_copy_is_selection(copied, line)) return true;
+    }
+    return false;
 }
 
 }  // namespace
@@ -638,9 +693,14 @@ void TextService::_poll_translation() {
     // did it. When the copy is not that line — a program that ignores a synthesized Shift+End copies
     // the whole line simply because nothing is selected — the answer is *shown*, not written over
     // whatever the caret is on (docs/ai.md).
-    const bool line_selected =
-        !deliver || _textInsert != cxxime::AiActionInsert::kReplace || !_textProgramCopiedLine ||
-        select_and_copy_line(_textLineText);
+    const bool line_should_be_replaced =
+        deliver && _textInsert == cxxime::AiActionInsert::kReplace && _textProgramCopiedLine;
+    const bool line_selected = !line_should_be_replaced || select_and_copy_line(_textLineText);
+    if (line_should_be_replaced && !line_selected) {
+        // Nothing to replace: the program would not select that line, so the answer is shown with
+        // the reason instead of being typed over whatever the caret is on (docs/ai.md).
+        note = L"没能选中光标这一行，未替换";
+    }
 
     if (deliver && _textInsert == cxxime::AiActionInsert::kReplace && line_selected) {
         paste_text(translation);
