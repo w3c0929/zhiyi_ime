@@ -554,6 +554,47 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
             }
         }
         load_string(ai, "translate_language", config.ai.translate_language);
+
+        // A tapped modifier can only mean one thing, and when the user makes one an AI key — the
+        // menu key, an action's own key, or the language key — that is the meaning it gets. The
+        // switch-key table (ascii_composer.switch_key) would otherwise flip the input mode on the
+        // very same tap, which is how "the right Shift switches Chinese/English instead of opening
+        // the action menu" happened: both were bound to a tap of it, and the mode switch ran first
+        // (docs/ai.md). The tap is watched for the AI key by the text service
+        // (TextService::_watch_ai_action_tap), which is the one that must win.
+        std::vector<std::string> switch_slots;
+        const auto note_tap_shortcut = [&switch_slots](const KeyboardShortcut& shortcut) {
+            if (!shortcut.enabled() || shortcut.modifiers != 0) return;  // a chord is not a tap
+            // The key codes are spelled out: this file does not include the Windows headers (the
+            // ones above are written the same way).
+            switch (shortcut.virtual_key) {
+            case 0xA0: switch_slots.push_back("Shift_L"); break;    // VK_LSHIFT
+            case 0xA1: switch_slots.push_back("Shift_R"); break;    // VK_RSHIFT
+            case 0xA2: switch_slots.push_back("Control_L"); break;  // VK_LCONTROL
+            case 0xA3: switch_slots.push_back("Control_R"); break;  // VK_RCONTROL
+            case 0x10:  // VK_SHIFT, either side
+                switch_slots.push_back("Shift_L");
+                switch_slots.push_back("Shift_R");
+                break;
+            case 0x11:  // VK_CONTROL, either side
+                switch_slots.push_back("Control_L");
+                switch_slots.push_back("Control_R");
+                break;
+            default: break;
+            }
+        };
+        const auto note_tap_name = [&switch_slots](const std::string& name) {
+            if (name == "RShift") switch_slots.push_back("Shift_R");
+            else if (name == "LShift") switch_slots.push_back("Shift_L");
+            else if (name == "Shift") { switch_slots.push_back("Shift_L"); switch_slots.push_back("Shift_R"); }
+            else if (name == "RCtrl") switch_slots.push_back("Control_R");
+            else if (name == "LCtrl") switch_slots.push_back("Control_L");
+            else if (name == "Ctrl") { switch_slots.push_back("Control_L"); switch_slots.push_back("Control_R"); }
+        };
+        note_tap_shortcut(config.ai.action_key);
+        note_tap_shortcut(config.ai.language_key);
+        for (const auto& [id, text] : config.ai.action_keys) note_tap_name(text);
+        for (const std::string& slot : switch_slots) config.ascii_switch_key[slot] = "noop";
     }
 
     bool switch_keys_loaded = true;

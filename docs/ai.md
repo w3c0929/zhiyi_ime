@@ -43,6 +43,14 @@
 实现：`engine/src/engine.cc` 的 `english_symbol_text_fallback()`（判断"这个键之后命令还接得下去吗"，`SymbolTable::has_code_prefix()`），
 `engine/src/symbol_processor.cc` 在英文状态下**保留大小写**（候选/命令的匹配一律折叠大小写）。
 
+## 一个修饰键只有一个含义（1.7.57）
+
+`ascii_composer.switch_key` 里默认把 `Shift_L`/`Shift_R` 都绑成了"轻按切中英"。当用户把**同一个修饰键**又设为 AI 键
+（`ai.action_key` / `ai.action_keys` 里某一项 / `ai.language_key`）时，**同一次轻按会触发两件事**：输入模式切了、菜单却没出来
+（"右 Shift 在浏览器里变成了中英切换"就是这么来的）。现在引擎在加载配置时会**把被 AI 用掉的那个修饰键的 switch_key 槽位置成
+`noop`** —— AI 键的那个含义胜出（`engine/src/config.cc`，加载 `ai` 段之后）。实测（Chrome）：**右 Shift 轻按 = 弹菜单、且不再切中英；
+左 Shift 轻按 = 照旧切中英**。
+
 ## 支持的协议
 
 `shared/include/cxxime/ai_client.h` 的 `Protocol`：

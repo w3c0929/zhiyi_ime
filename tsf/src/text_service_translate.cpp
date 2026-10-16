@@ -130,7 +130,7 @@ std::wstring without_trailing_line_break(const std::wstring& text) {
 // (pump_program_messages): the keys sit in this thread's queue until our handler returns (docs/ai.md),
 // so a program can only take them one at a time if we look away between steps — which is what makes
 // a selection land the way a hand pressing the keys would. How long each step settles for.
-constexpr DWORD kKeyStepMs = 60;
+constexpr DWORD kKeyStepMs = 10;
 
 // A key as real keyboard input: the virtual key, its scan code, and — for the keys that have one —
 // the extended flag. Home, End and the arrows need that flag spelled out: their scan codes are the
