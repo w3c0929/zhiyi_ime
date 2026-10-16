@@ -132,19 +132,32 @@ std::wstring without_trailing_line_break(const std::wstring& text) {
 // a selection land the way a hand pressing the keys would. How long each step settles for.
 constexpr DWORD kKeyStepMs = 120;
 
-// A key as the hardware would send it: with its scan code (MapVirtualKey) and, where the scan code
-// asks for it, the extended flag. Measured: a selection made of keys sent as bare virtual keys
-// arrives with the Shift ignored — End then only moves the caret, and the answer is inserted after
-// it instead of replacing the line.
+// A key as real keyboard input: the virtual key, its scan code, and — for the keys that have one —
+// the extended flag. Home, End and the arrows need that flag spelled out: their scan codes are the
+// same as the numeric keypad's 7, 1, 4 and so on, and MapVirtualKey does not tell the two apart. Sent
+// as a bare scan code, Home arrived as the keypad's 7 and typed a "7" into the document (measured).
 void fill_key(INPUT* input, WORD virtual_key, bool up) {
-    const UINT scan = MapVirtualKeyW(virtual_key, MAPVK_VK_TO_VSC_EX);
     input->type = INPUT_KEYBOARD;
-    input->ki.wVk = 0;
-    input->ki.wScan = static_cast<WORD>(scan & 0xFF);
-    input->ki.dwFlags = KEYEVENTF_SCANCODE | (up ? KEYEVENTF_KEYUP : 0);
-    if ((scan >> 8) == 0xE0) {
-        input->ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+    input->ki.wVk = virtual_key;
+    input->ki.wScan = static_cast<WORD>(MapVirtualKeyW(virtual_key, MAPVK_VK_TO_VSC));
+    DWORD flags = up ? KEYEVENTF_KEYUP : 0;
+    switch (virtual_key) {
+    case VK_HOME:
+    case VK_END:
+    case VK_LEFT:
+    case VK_RIGHT:
+    case VK_UP:
+    case VK_DOWN:
+    case VK_PRIOR:
+    case VK_NEXT:
+    case VK_INSERT:
+    case VK_DELETE:
+        flags |= KEYEVENTF_EXTENDEDKEY;
+        break;
+    default:
+        break;
     }
+    input->ki.dwFlags = flags;
     input->ki.dwExtraInfo = TextService::kInjectedCopyMark;
 }
 
@@ -330,35 +343,82 @@ bool selection_is_the_line(const std::wstring& line) {
            shrunk.compare(0, shrunk.size(), before, 0, shrunk.size()) == 0;
 }
 
-bool select_and_copy_line(ITfContext* context, TfClientId client_id, const std::wstring& line,
-                          const char** how_out) {
-    static const char* const kHow[] = {"none", "home_tsf", "keys", "ctrl_l"};
-    if (how_out) *how_out = kHow[0];
-    // Home first — a plain key, which a program that ignores a synthesized Shift still answers to —
-    // and then TSF selecting the line from there: a real document selection, the same thing a
-    // readable document gets. Nothing is taken on trust: select_length_at_caret reads the selection
-    // back and compares positions, so a program that ignored the write is caught before anything is
-    // pasted (docs/ai.md).
-    if (context) {
+// Which of the ways below selects the caret's line in this program, remembered once one of them has
+// worked. The code runs inside the program, so a static map is exactly a per-program cache: the next
+// action tries the way that worked first, and the keys of the ways that did not work never reach the
+// program's input again. Keyed by the class of the focused window (one program can have more than
+// one kind of editor, and the class is what tells them apart).
+enum { kLineRouteNone = 0, kLineRouteTsf = 1, kLineRouteKeys = 2, kLineRouteCtrlL = 3 };
+
+std::unordered_map<std::string, int>& line_route_cache() {
+    static std::unordered_map<std::string, int> cache;
+    return cache;
+}
+
+std::string focused_class_key() {
+    HWND focus = GetFocus();
+    wchar_t class_name[64] = {};
+    if (!focus || !GetClassNameW(focus, class_name, ARRAYSIZE(class_name))) {
+        return std::string("?");
+    }
+    const int required = WideCharToMultiByte(CP_UTF8, 0, class_name, -1, nullptr, 0, nullptr, nullptr);
+    if (required <= 1) {
+        return std::string("?");
+    }
+    std::string key(static_cast<std::size_t>(required), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, class_name, -1, key.data(), required, nullptr, nullptr);
+    key.pop_back();  // the terminating NUL
+    return key;
+}
+
+// One of the three ways to get the line selected, each answering whether it really is.
+bool try_line_route(int route, ITfContext* context, TfClientId client_id, const std::wstring& line) {
+    switch (route) {
+    case kLineRouteTsf:
+        // Home — a plain key, which a program that ignores a synthesized Shift still answers to —
+        // then TSF selecting the line from there: a real document selection, the same thing a
+        // readable document gets. select_length_at_caret reads it back and compares positions, so a
+        // program that ignored the write is caught before anything is pasted (docs/ai.md).
+        if (!context) return false;
         tap_key(VK_HOME);
-        if (select_length_at_caret(context, client_id, line.size())) {
-            if (how_out) *how_out = kHow[1];
+        return select_length_at_caret(context, client_id, line.size());
+    case kLineRouteKeys:
+        select_line_with_keys();  // Home, Shift+End
+        return selection_is_the_line(line);
+    case kLineRouteCtrlL:
+        select_line_with_ctrl_l();  // what these editors bind "select the line" to
+        return selection_is_the_line(line);
+    default:
+        return false;
+    }
+}
+
+bool select_and_copy_line(ITfContext* context, TfClientId client_id, const std::wstring& line,
+                          const char** how_out, bool* remembered_out) {
+    static const char* const kHow[] = {"none", "tsf", "keys", "ctrl_l"};
+    if (how_out) *how_out = kHow[0];
+    if (remembered_out) *remembered_out = false;
+    if (line_route_cache().size() > 64) {
+        line_route_cache().clear();  // bounded: the classes this process ever saw
+    }
+    int& known = line_route_cache()[focused_class_key()];
+    int order[3] = {kLineRouteTsf, kLineRouteKeys, kLineRouteCtrlL};
+    if (known >= kLineRouteTsf && known <= kLineRouteCtrlL) {
+        order[0] = known;  // the way that worked here, first
+        int fill = 1;
+        for (int route = kLineRouteTsf; route <= kLineRouteCtrlL; ++route) {
+            if (route != known) order[fill++] = route;
+        }
+        if (remembered_out) *remembered_out = true;
+    }
+    for (int route : order) {
+        if (try_line_route(route, context, client_id, line)) {
+            known = route;
+            if (how_out) *how_out = kHow[route];
             return true;
         }
     }
-    // The keys, judged by shrinking what they selected (selection_is_the_line) — which is also what
-    // tells a selection from a program's own line copy.
-    for (int attempt = 0; attempt < 2; ++attempt) {
-        if (attempt == 0) {
-            select_line_with_keys();  // Home, Shift+End
-        } else {
-            select_line_with_ctrl_l();  // what these editors bind "select the line" to
-        }
-        if (selection_is_the_line(line)) {
-            if (how_out) *how_out = kHow[attempt + 2];
-            return true;
-        }
-    }
+    known = kLineRouteNone;
     return false;
 }
 
@@ -725,16 +785,19 @@ void TextService::_poll_translation() {
     const bool line_should_be_replaced =
         deliver && _textInsert == cxxime::AiActionInsert::kReplace && _textProgramCopiedLine;
     const char* line_how = nullptr;
+    bool line_remembered = false;
     bool line_selected = true;
     if (line_should_be_replaced) {
         ITfContext* line_context = _current_edit_context_for_composition();
-        line_selected = select_and_copy_line(line_context, _clientId, _textLineText, &line_how);
+        line_selected = select_and_copy_line(line_context, _clientId, _textLineText, &line_how,
+                                             &line_remembered);
         if (line_context) line_context->Release();
-        // Which of the three ways selected the line — the one thing the log needs to tell a program
-        // that honours TSF's own selection from one that only answers to keys (docs/ai.md).
-        char detail[128] = {};
-        snprintf(detail, sizeof(detail), "line_select how=%s selected=%d",
-                 line_how ? line_how : "none", line_selected ? 1 : 0);
+        // Which of the three ways selected the line, and whether that answer was already known —
+        // the one thing the log needs to tell a program that honours TSF's own selection from one
+        // that only answers to keys (docs/ai.md).
+        char detail[160] = {};
+        snprintf(detail, sizeof(detail), "line_select how=%s selected=%d remembered=%d",
+                 line_how ? line_how : "none", line_selected ? 1 : 0, line_remembered ? 1 : 0);
         _enqueue_event_trace("ai_ui", detail);
         if (!line_selected) {
             // Nothing to replace: the program would not select that line, so the answer is shown
