@@ -126,30 +126,29 @@ std::wstring without_trailing_line_break(const std::wstring& text) {
     return text.substr(0, end);
 }
 
-// Makes the program select the line the caret is on: a program that copies the whole line when
-// nothing is selected hands the answer a *line*, and without this the paste would land in the middle
-// of it (docs/ai.md).
-//
-// Ctrl+L, not Home and Shift+End: these editors take the line-copy from the *selection* being empty,
-// and a Shift of ours does not make one — measured in Sublime Text, a synthesized Shift+End leaves
-// the selection empty (its Ctrl+C still copies the line, break and all) while Ctrl+L selects the
-// line exactly (its Ctrl+C then copies it without the break). Ctrl+L is what the editors that copy
-// the line when nothing is selected bind "select the line" to; a program whose text can be read
-// never comes here, so a browser's Ctrl+L (the address bar) cannot be hit by it. The keys carry the
-// mark ours do, so the input method's own key handling skips them.
-void select_line_in_program() {
-    INPUT inputs[4] = {};
+// Selects the line the caret is on and puts it on the clipboard: Home to the line's start, Shift+End
+// to its end, then Ctrl+C. A program that copies the whole line when nothing is selected hands the
+// answer a *line*, and without this the selection the paste replaces would be the wrong stretch
+// (docs/ai.md). The keys carry the mark ours do, so the input method's own key handling skips them.
+void select_line_with_keys() {
+    INPUT inputs[10] = {};
     const auto key = [](INPUT* input, WORD virtual_key, DWORD flags) {
         input->type = INPUT_KEYBOARD;
         input->ki.wVk = virtual_key;
         input->ki.dwFlags = flags;
         input->ki.dwExtraInfo = TextService::kInjectedCopyMark;
     };
-    key(&inputs[0], VK_CONTROL, 0);
-    key(&inputs[1], 'L', 0);
-    key(&inputs[2], 'L', KEYEVENTF_KEYUP);
-    key(&inputs[3], VK_CONTROL, KEYEVENTF_KEYUP);
-    SendInput(4, inputs, sizeof(INPUT));
+    key(&inputs[0], VK_HOME, 0);
+    key(&inputs[1], VK_HOME, KEYEVENTF_KEYUP);
+    key(&inputs[2], VK_SHIFT, 0);
+    key(&inputs[3], VK_END, 0);
+    key(&inputs[4], VK_END, KEYEVENTF_KEYUP);
+    key(&inputs[5], VK_SHIFT, KEYEVENTF_KEYUP);
+    key(&inputs[6], VK_CONTROL, 0);
+    key(&inputs[7], 'C', 0);
+    key(&inputs[8], 'C', KEYEVENTF_KEYUP);
+    key(&inputs[9], VK_CONTROL, KEYEVENTF_KEYUP);
+    SendInput(10, inputs, sizeof(INPUT));
 }
 
 // An answer delivered the way the user would put it there: on the clipboard, then Ctrl+V, which
@@ -181,7 +180,7 @@ void paste_text(const std::wstring& text) {
 constexpr DWORD kProgramCopyWaitMs = 300;
 constexpr DWORD kProgramCopyStepMs = 20;
 
-void wait_for_program_copy() {
+void wait_for_program_copy(DWORD sequence = 0) {
     const ULONGLONG deadline = GetTickCount64() + kProgramCopyWaitMs;
     for (;;) {
         MSG message;
@@ -190,6 +189,8 @@ void wait_for_program_copy() {
             DispatchMessageW(&message);
         }
         if (GetTickCount64() >= deadline) return;
+        // With a sequence: the copy has come (the caller checks it); without one, wait it out.
+        if (sequence != 0 && GetClipboardSequenceNumber() != sequence) return;
         MsgWaitForMultipleObjectsEx(0, nullptr, kProgramCopyStepMs, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
     }
 }
@@ -231,6 +232,18 @@ bool read_clipboard_text(std::wstring* text) {
     }
     CloseClipboard();
     return ok;
+}
+
+// Selects the caret's line and copies it, and says whether the copy came back as that line — the
+// copy is what tells "the line is selected" from "nothing is selected and the program copies the
+// whole line anyway": the answer may only be pasted over the line it was made from (docs/ai.md).
+bool select_and_copy_line(const std::wstring& line) {
+    const DWORD sequence = GetClipboardSequenceNumber();
+    select_line_with_keys();
+    wait_for_program_copy(sequence);
+    if (GetClipboardSequenceNumber() == sequence) return false;  // no copy came
+    std::wstring copied;
+    return read_clipboard_text(&copied) && without_trailing_line_break(copied) == line;
 }
 
 }  // namespace
@@ -280,6 +293,7 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
     std::wstring wanted;
     bool cut = false;
     _textProgramCopiedLine = false;  // decided again below, by what this read finds
+    _textLineText.clear();
     const char* tier = "selection";
     TextBeforeCaret read = read_selection_text(context, _clientId, limit, &wanted, &cut);
     if (read == TextBeforeCaret::kRead && wanted.empty()) {
@@ -341,7 +355,10 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
             _textProgramCopiedLine =
                 line.size() != selection->size() &&
                 line.find_first_of(L"\r\n") == std::wstring::npos;
-            if (_textProgramCopiedLine) *selection = line;
+            if (_textProgramCopiedLine) {
+                *selection = line;
+                _textLineText = line;
+            }
         }
         char detail[160] = {};
         snprintf(detail, sizeof(detail), "program_copy seq=%u message=%u keys=%u chars=%zu",
@@ -584,8 +601,16 @@ void TextService::_poll_translation() {
     // empties the whole document on the Ctrl+Z after one (measured), and undoes a replacement the
     // input method composed over a selection the same way — the input method cannot ask for better,
     // and has no undo of its own.
-    if (deliver && _textInsert == cxxime::AiActionInsert::kReplace) {
-        if (_textProgramCopiedLine) select_line_in_program();  // so the paste replaces the line
+    // The line the answer was made from has to be the thing the paste replaces: Home selects it,
+    // Shift+End extends it to the line's end, and the Ctrl+C that follows says whether the program
+    // did it. When the copy is not that line — a program that ignores a synthesized Shift+End copies
+    // the whole line simply because nothing is selected — the answer is *shown*, not written over
+    // whatever the caret is on (docs/ai.md).
+    const bool line_selected =
+        !deliver || _textInsert != cxxime::AiActionInsert::kReplace || !_textProgramCopiedLine ||
+        select_and_copy_line(_textLineText);
+
+    if (deliver && _textInsert == cxxime::AiActionInsert::kReplace && line_selected) {
         paste_text(translation);
         _hide_translate_window();  // the answer is in: the window has done its job (OnEndEdit
                                    // cannot be relied on for it — see the grace window)

@@ -636,6 +636,9 @@ private:
     // The program's own copy was exactly the caret's line (break and all): it is selected before the
     // answer is pasted, so that the answer replaces the line instead of landing in the middle of it.
     bool _textProgramCopiedLine = false;
+    // That line, break off: the copy the selection is checked against, so the answer is pasted over
+    // it and not over whatever the caret happens to be on (docs/ai.md).
+    std::wstring _textLineText;
     // The "正在润色…" window: what it says, and that it is the one on screen. Some editors take it
     // down behind our back while the answer is being fetched (their input context moves over the
     // copy that read the text), so it is put back on every poll (docs/ai.md).
