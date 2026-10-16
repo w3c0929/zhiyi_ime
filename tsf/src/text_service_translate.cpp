@@ -126,29 +126,61 @@ std::wstring without_trailing_line_break(const std::wstring& text) {
     return text.substr(0, end);
 }
 
-// Selects the line the caret is on and puts it on the clipboard: Home to the line's start, Shift+End
-// to its end, then Ctrl+C. A program that copies the whole line when nothing is selected hands the
-// answer a *line*, and without this the selection the paste replaces would be the wrong stretch
-// (docs/ai.md). The keys carry the mark ours do, so the input method's own key handling skips them.
+// The keys below are sent one step at a time, with the program's messages dispatched in between
+// (pump_program_messages): the keys sit in this thread's queue until our handler returns (docs/ai.md),
+// so a program can only take them one at a time if we look away between steps — which is what makes
+// a selection land the way a hand pressing the keys would. How long each step settles for.
+constexpr DWORD kKeyStepMs = 45;
+
+// While we wait, the program's messages are dispatched — the same idea as wait_for_program_copy.
+void pump_program_messages(DWORD milliseconds) {
+    const ULONGLONG deadline = GetTickCount64() + milliseconds;
+    for (;;) {
+        MSG message;
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        if (GetTickCount64() >= deadline) return;
+        MsgWaitForMultipleObjectsEx(0, nullptr, 5, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    }
+}
+
+// One step of a key sequence: press and release `virtual_key`, then let the program work through it.
+void tap_key(WORD virtual_key) {
+    INPUT inputs[2] = {};
+    for (int index = 0; index < 2; ++index) {
+        inputs[index].type = INPUT_KEYBOARD;
+        inputs[index].ki.wVk = virtual_key;
+        inputs[index].ki.dwFlags = index == 0 ? 0 : KEYEVENTF_KEYUP;
+        inputs[index].ki.dwExtraInfo = TextService::kInjectedCopyMark;
+    }
+    SendInput(2, inputs, sizeof(INPUT));
+    pump_program_messages(kKeyStepMs);
+}
+
+void shift_key(bool down) {
+    INPUT input = {};
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = VK_SHIFT;
+    input.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
+    input.ki.dwExtraInfo = TextService::kInjectedCopyMark;
+    SendInput(1, &input, sizeof(INPUT));
+    pump_program_messages(kKeyStepMs);
+}
+
+// Selects the line the caret is on and puts it on the clipboard, the way the keys are pressed by
+// hand: Home to the line's start; Shift held down while End is pressed, so the selection reaches the
+// line's end; Shift released; then Ctrl+C. A program that copies the whole line when nothing is
+// selected hands the answer a *line*, and without this the selection would not be the line at all
+// (docs/ai.md). Every key carries the mark ours do, so the input method's own key handling skips it.
 void select_line_with_keys() {
-    INPUT inputs[10] = {};
-    const auto key = [](INPUT* input, WORD virtual_key, DWORD flags) {
-        input->type = INPUT_KEYBOARD;
-        input->ki.wVk = virtual_key;
-        input->ki.dwFlags = flags;
-        input->ki.dwExtraInfo = TextService::kInjectedCopyMark;
-    };
-    key(&inputs[0], VK_HOME, 0);
-    key(&inputs[1], VK_HOME, KEYEVENTF_KEYUP);
-    key(&inputs[2], VK_SHIFT, 0);
-    key(&inputs[3], VK_END, 0);
-    key(&inputs[4], VK_END, KEYEVENTF_KEYUP);
-    key(&inputs[5], VK_SHIFT, KEYEVENTF_KEYUP);
-    key(&inputs[6], VK_CONTROL, 0);
-    key(&inputs[7], 'C', 0);
-    key(&inputs[8], 'C', KEYEVENTF_KEYUP);
-    key(&inputs[9], VK_CONTROL, KEYEVENTF_KEYUP);
-    SendInput(10, inputs, sizeof(INPUT));
+    tap_key(VK_HOME);
+    shift_key(true);
+    tap_key(VK_END);
+    shift_key(false);
+    press_copy();  // Ctrl+C, the copy that proves the line
+    pump_program_messages(kKeyStepMs);
 }
 
 // An answer delivered the way the user would put it there: on the clipboard, then Ctrl+V, which
