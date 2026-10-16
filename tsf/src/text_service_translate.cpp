@@ -926,11 +926,19 @@ void TextService::_poll_translation() {
     // — gets the answer written over the range the read selected: it always replaces it, no key of
     // ours goes near the program, and the editor's own Ctrl+Z takes it back (docs/ai.md). The rest is
     // the keys-and-paste delivery below.
-    const bool write_through_tsf =
-        line_should_be_replaced && !program_owns_its_text && !readable_document_wants_a_paste();
+    // A document the input method can read is delivered the same way as one it cannot: the keys select
+    // the line and the answer is pasted over it. Every attempt at writing it through TSF instead came
+    // out as an insert in a Chromium editor — the session cannot shift its range there, so the write
+    // lands at the caret (measured twice in VS Code: 0 and 1 from the session, the text inserted both
+    // times). The keys-and-paste delivery is the one that replaced the line, with one Ctrl+Z back
+    // (measured in VS Code and Sublime Text, docs/ai.md).
+    const bool write_through_tsf = false;
+    // No key of ours is sent on that way: the range it replaces is the one the *read* selected, and
+    // keys only disturb it (measured in VS Code: the selection was taken apart into a caret and the
+    // write landed beside the line instead of over it, docs/ai.md).
 
     const char* line_how = nullptr;
-    if (line_should_be_replaced) {
+    if (line_should_be_replaced && !write_through_tsf) {
         bool line_remembered = false;
         ITfContext* line_context = _current_edit_context_for_composition();
         select_line_for_answer(line_context, _clientId, _textLineText, _textProgramCopiedLine,
@@ -975,11 +983,19 @@ void TextService::_poll_translation() {
     }
 
     if (write_through_tsf) {
-        insert_text(translation, true, nullptr, false, false);
-        // A written range is left selected, like a paste is: the caret goes after it, the state
-        // typing would have left (docs/ai.md).
-        tap_key(VK_RIGHT);
-        _enqueue_event_trace("ai_ui", "deliver tsf_write=1");
+        // The range and the write in one edit session: the read's selection is not something a
+        // Chromium editor keeps until a later session writes over it (docs/ai.md).
+        ITfContext* write_context = _current_edit_context_for_composition();
+        const bool written =
+            write_context &&
+            replace_line_at_caret(write_context, _clientId, _textLineText.size(), translation);
+        if (write_context) write_context->Release();
+        char detail[128] = {};
+        snprintf(detail, sizeof(detail), "deliver tsf_write=%d", written ? 1 : 0);
+        _enqueue_event_trace("ai_ui", detail);
+        if (written) {
+            tap_key(VK_RIGHT);  // a written range is left selected: the caret goes after it
+        }
         _hide_translate_window();
     } else if (edit_delivered) {
         _hide_translate_window();  // the answer is in: the window has done its job

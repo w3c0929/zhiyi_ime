@@ -46,6 +46,13 @@ TextBeforeCaret select_line_at_caret(ITfContext* context, TfClientId client_id, 
 TextBeforeCaret read_line_at_caret(ITfContext* context, TfClientId client_id, size_t max_chars,
                                    std::wstring* text, bool* truncated = nullptr);
 
+// Replaces the caret's line — from its start to the caret, the same range select_line_at_caret
+// selects — with `text`, in *one* edit session. Setting a selection in one session and writing over it
+// in a later one is not the same thing: a Chromium editor loses it in between and the write lands
+// beside the line instead of over it (measured, docs/ai.md). True when the write went in.
+bool replace_line_at_caret(ITfContext* context, TfClientId client_id, size_t max_chars,
+                           const std::wstring& text);
+
 // Selects `length` characters *from the caret onwards*, without reading them, when the caller
 // already knows both (a program whose text cannot be read still hands its own copy of the line over,
 // docs/ai.md). With the caret moved to the line's start first — a plain Home, which these programs
