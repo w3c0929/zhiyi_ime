@@ -314,15 +314,22 @@ bool read_clipboard_text(std::wstring* text) {
 // Selects the caret's line and copies it, and says whether the copy came back as that line — the
 // copy is what tells "the line is selected" from "nothing is selected and the program copies the
 // whole line anyway": the answer may only be pasted over the line it was made from (docs/ai.md).
-bool select_and_copy_line(const std::wstring& line, bool tsf_selection) {
+bool select_and_copy_line(ITfContext* context, TfClientId client_id, const std::wstring& line,
+                          const char** how_out) {
+    static const char* const kHow[] = {"none", "home_tsf", "keys", "ctrl_l"};
+    if (how_out) *how_out = kHow[0];
     for (int attempt = 0; attempt < 3; ++attempt) {
-        if (attempt == 0 && !tsf_selection) {
-            continue;  // nothing was selected by the edit session: nothing to check
-        }
         const DWORD sequence = GetClipboardSequenceNumber();
-        if (attempt == 1) {
+        if (attempt == 0) {
+            // Home first — a plain key, which a program that ignores a synthesized Shift still
+            // answers to — and then TSF selecting the line from there: a real document selection,
+            // the same thing a readable document gets. Nothing is assumed: the copy below says
+            // whether it happened (docs/ai.md).
+            tap_key(VK_HOME);
+            select_length_at_caret(context, client_id, line.size());
+        } else if (attempt == 1) {
             select_line_with_keys();  // Home, Shift+End
-        } else if (attempt == 2) {
+        } else {
             select_line_with_ctrl_l();  // what these editors bind "select the line" to
         }
         ctrl_key_copy();  // the copy that says what is selected
@@ -332,6 +339,7 @@ bool select_and_copy_line(const std::wstring& line, bool tsf_selection) {
         }
         std::wstring copied;
         if (read_clipboard_text(&copied) && line_copy_is_selection(copied, line)) {
+            if (how_out) *how_out = kHow[attempt + 1];
             return true;
         }
     }
@@ -386,7 +394,6 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
     bool cut = false;
     _textProgramCopiedLine = false;  // decided again below, by what this read finds
     _textLineText.clear();
-    _textLineSelectionSetByTsf = false;
     const char* tier = "selection";
     TextBeforeCaret read = read_selection_text(context, _clientId, limit, &wanted, &cut);
     if (read == TextBeforeCaret::kRead && wanted.empty()) {
@@ -451,16 +458,6 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
             if (_textProgramCopiedLine) {
                 *selection = line;
                 _textLineText = line;
-                // The program's own copy told us how long the line is; now ask TSF to make it a real
-                // selection. A program that lets its selection be set — even though its text cannot
-                // be read — is then as exact as a readable one, and a program that ignores it costs
-                // nothing: the delivery copies the selection before anything is pasted
-                // (select_and_copy_line, docs/ai.md).
-                if (ITfContext* line_context = _current_edit_context_for_composition()) {
-                    _textLineSelectionSetByTsf =
-                        select_line_of_length(line_context, _clientId, line.size());
-                    line_context->Release();
-                }
             }
         }
         char detail[160] = {};
@@ -711,12 +708,23 @@ void TextService::_poll_translation() {
     // whatever the caret is on (docs/ai.md).
     const bool line_should_be_replaced =
         deliver && _textInsert == cxxime::AiActionInsert::kReplace && _textProgramCopiedLine;
-    const bool line_selected =
-        !line_should_be_replaced || select_and_copy_line(_textLineText, _textLineSelectionSetByTsf);
-    if (line_should_be_replaced && !line_selected) {
-        // Nothing to replace: the program would not select that line, so the answer is shown with
-        // the reason instead of being typed over whatever the caret is on (docs/ai.md).
-        note = L"没能选中光标这一行，未替换";
+    const char* line_how = nullptr;
+    bool line_selected = true;
+    if (line_should_be_replaced) {
+        ITfContext* line_context = _current_edit_context_for_composition();
+        line_selected = select_and_copy_line(line_context, _clientId, _textLineText, &line_how);
+        if (line_context) line_context->Release();
+        // Which of the three ways selected the line — the one thing the log needs to tell a program
+        // that honours TSF's own selection from one that only answers to keys (docs/ai.md).
+        char detail[128] = {};
+        snprintf(detail, sizeof(detail), "line_select how=%s selected=%d",
+                 line_how ? line_how : "none", line_selected ? 1 : 0);
+        _enqueue_event_trace("ai_ui", detail);
+        if (!line_selected) {
+            // Nothing to replace: the program would not select that line, so the answer is shown
+            // with the reason instead of being typed over whatever the caret is on (docs/ai.md).
+            note = L"没能选中光标这一行，未替换";
+        }
     }
 
     if (deliver && _textInsert == cxxime::AiActionInsert::kReplace && line_selected) {

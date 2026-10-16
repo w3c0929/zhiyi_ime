@@ -65,9 +65,9 @@ bool is_chromium_document(ITfContext* context) {
 class ReadSession : public ITfEditSession {
 public:
     // What to read: the text before the caret, the selection, or the line the caret is on (which
-    // is selected as well, so it can be copied). kSelectLineOfLength selects the line without
-    // reading it, `_max` being the length the caller already knows.
-    enum class Mode { kBeforeCaret, kSelection, kLineAtCaret, kSelectLineOfLength };
+    // is selected as well, so it can be copied). kSelectLengthAtCaret selects `_max` characters
+    // from the caret onwards without reading them.
+    enum class Mode { kBeforeCaret, kSelection, kLineAtCaret, kSelectLengthAtCaret };
 
     ReadSession(ITfContext* context, size_t max_chars, Mode mode)
         : _context(context), _max(max_chars), _mode(mode) {}
@@ -129,16 +129,18 @@ public:
         if (_mode == Mode::kLineAtCaret) {
             return read_line(ec, caret.Get());
         }
-        if (_mode == Mode::kSelectLineOfLength) {
-            // The line is not read here: the caller knows its length (docs/ai.md). Only the
-            // selection is set — and it is a real document selection, which is the whole point.
+        if (_mode == Mode::kSelectLengthAtCaret) {
+            // Not read here: the caller knows the length (docs/ai.md). Only the selection is set,
+            // from the caret to `_max` characters after it — with the caret put at the line's start
+            // beforehand (a plain Home, which a program that ignores synthesized Shift still
+            // answers to) that is exactly the line, as a real document selection.
             com_ptr<ITfRange> line;
             if (FAILED(caret->Clone(&line))) return E_FAIL;
             line->Collapse(ec, TF_ANCHOR_START);
             const LONG wanted = static_cast<LONG>(_max);
             LONG moved = 0;
-            if (FAILED(line->ShiftStart(ec, -wanted, &moved, nullptr))) return E_FAIL;
-            if (moved != -wanted) return E_FAIL;  // the line does not reach back that far here
+            if (FAILED(line->ShiftEnd(ec, wanted, &moved, nullptr))) return E_FAIL;
+            if (moved != wanted) return E_FAIL;  // not that much text after the caret here
             TF_SELECTION target = {};
             target.range = line.Get();
             target.style.ase = TF_AE_NONE;
@@ -275,11 +277,11 @@ TextBeforeCaret select_line_at_caret(ITfContext* context, TfClientId client_id, 
                      truncated);
 }
 
-bool select_line_of_length(ITfContext* context, TfClientId client_id, size_t length) {
+bool select_length_at_caret(ITfContext* context, TfClientId client_id, size_t length) {
     // Deliberately not through read_impl: its transitory-document guard is what this asks about.
     if (!context || client_id == TF_CLIENTID_NULL || length == 0) return false;
     ReadSession* session =
-        new (std::nothrow) ReadSession(context, length, ReadSession::Mode::kSelectLineOfLength);
+        new (std::nothrow) ReadSession(context, length, ReadSession::Mode::kSelectLengthAtCaret);
     if (!session) return false;
     HRESULT session_hr = E_FAIL;
     const HRESULT hr = context->RequestEditSession(
