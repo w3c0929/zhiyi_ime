@@ -258,6 +258,88 @@ void wait_for_program_copy(DWORD sequence = 0) {
     }
 }
 
+// A classic Windows edit control (Edit, RichEdit) answers its own messages: its text can be read and
+// a range replaced without a single key of ours, which is the same thing that makes Notepad exact
+// (docs/ai.md). Only for controls inside this process — the messages carry buffers and pointers, and
+// those cannot cross a process boundary.
+bool is_classic_edit_control(HWND control) {
+    if (!control || !IsWindow(control)) return false;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(control, &pid);
+    if (pid != GetCurrentProcessId()) return false;
+    wchar_t class_name[64] = {};
+    if (!GetClassNameW(control, class_name, ARRAYSIZE(class_name))) return false;
+    return _wcsicmp(class_name, L"Edit") == 0 || _wcsicmp(class_name, L"RICHEDIT50W") == 0 ||
+           _wcsnicmp(class_name, L"RichEdit", 8) == 0;
+}
+
+bool edit_control_text(HWND control, std::wstring* text) {
+    const LRESULT length = SendMessageW(control, WM_GETTEXTLENGTH, 0, 0);
+    if (length < 0) return false;
+    std::wstring buffer(static_cast<std::size_t>(length) + 1, L'\0');
+    const LRESULT copied = SendMessageW(control, WM_GETTEXT,
+                                        static_cast<WPARAM>(buffer.size()),
+                                        reinterpret_cast<LPARAM>(buffer.data()));
+    if (copied < 0) return false;
+    buffer.resize(static_cast<std::size_t>(copied));
+    *text = std::move(buffer);
+    return true;
+}
+
+void edit_control_selection(HWND control, LONG* start, LONG* end) {
+    DWORD from = 0;
+    DWORD to = 0;
+    SendMessageW(control, EM_GETSEL, reinterpret_cast<WPARAM>(&from),
+                 reinterpret_cast<LPARAM>(&to));
+    *start = static_cast<LONG>(from);
+    *end = static_cast<LONG>(to);
+}
+
+// What an action works on, by the same rule as the TSF read: the selection when there is one,
+// otherwise the part of the caret's line written before the caret (docs/ai.md).
+bool edit_control_range(HWND control, std::wstring* text, LONG* start, LONG* end) {
+    std::wstring all;
+    if (!edit_control_text(control, &all)) return false;
+    LONG from = 0;
+    LONG to = 0;
+    edit_control_selection(control, &from, &to);
+    if (from == to) {
+        const LRESULT line = SendMessageW(control, EM_LINEFROMCHAR, static_cast<WPARAM>(to), 0);
+        from = static_cast<LONG>(SendMessageW(control, EM_LINEINDEX, static_cast<WPARAM>(line), 0));
+    }
+    if (from < 0 || to < from || to > static_cast<LONG>(all.size())) return false;
+    *text = all.substr(static_cast<std::size_t>(from), static_cast<std::size_t>(to - from));
+    *start = from;
+    *end = to;
+    return !text->empty();
+}
+
+// Replaces that range with `answer` through the control's own messages: one ordinary edit, which the
+// control's undo (Ctrl+Z) takes back. Refused when the selection is no longer the range the answer
+// was made from — the answer must not be written where the user has moved on (docs/ai.md).
+bool edit_control_replace(HWND control, LONG start, LONG end, const std::wstring& answer) {
+    if (!is_classic_edit_control(control)) return false;
+    LONG from = 0;
+    LONG to = 0;
+    edit_control_selection(control, &from, &to);
+    if (from != start || to != end) return false;
+    SendMessageW(control, EM_SETSEL, static_cast<WPARAM>(start), static_cast<LPARAM>(end));
+    SendMessageW(control, EM_REPLACESEL, TRUE, reinterpret_cast<LPARAM>(answer.c_str()));
+    return true;
+}
+
+// The same, the answer written under the range on a line of its own (`insert: below`).
+bool edit_control_insert_below(HWND control, LONG start, LONG end, const std::wstring& block) {
+    if (!is_classic_edit_control(control)) return false;
+    LONG from = 0;
+    LONG to = 0;
+    edit_control_selection(control, &from, &to);
+    if (from != start || to != end) return false;
+    SendMessageW(control, EM_SETSEL, static_cast<WPARAM>(end), static_cast<LPARAM>(end));
+    SendMessageW(control, EM_REPLACESEL, TRUE, reinterpret_cast<LPARAM>(block.c_str()));
+    return true;
+}
+
 std::string selection_to_utf8(const std::wstring& text) {
     if (text.empty()) return {};
     const int length = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
@@ -426,6 +508,9 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
     bool cut = false;
     _textProgramCopiedLine = false;  // decided again below, by what this read finds
     _textLineText.clear();
+    _textEditControl = nullptr;
+    _textEditStart = 0;
+    _textEditEnd = 0;
     const char* tier = "selection";
     TextBeforeCaret read = read_selection_text(context, _clientId, limit, &wanted, &cut);
     if (read == TextBeforeCaret::kRead && wanted.empty()) {
@@ -444,6 +529,24 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
     const bool program_copy_first = read != TextBeforeCaret::kRead;
     _readNeededProgramCopy = program_copy_first;
     context->Release();
+
+    // A classic edit control hands its text over through its own messages — nothing of ours in the
+    // program's input stream, and no clipboard (the Notepad way, docs/ai.md). It comes first: it is
+    // exact, it costs no keys, and for those controls the reads above find nothing to read anyway.
+    if (program_copy_first) {
+        HWND control = GetFocus();
+        LONG edit_start = 0;
+        LONG edit_end = 0;
+        std::wstring edit_text;
+        if (is_classic_edit_control(control) &&
+            edit_control_range(control, &edit_text, &edit_start, &edit_end)) {
+            _textEditControl = control;
+            _textEditStart = edit_start;
+            _textEditEnd = edit_end;
+            wanted = std::move(edit_text);
+            tier = "edit_control";
+        }
+    }
 
     if (!wanted.empty()) {
         // Tiers 1-2 gave something. It goes on the clipboard as well — the key copies for the user,
@@ -755,7 +858,28 @@ void TextService::_poll_translation() {
         _enqueue_event_trace("ai_ui", detail);
     }
 
-    if (deliver && _textInsert == cxxime::AiActionInsert::kReplace) {
+    // A classic edit control (Edit, RichEdit) put its text on the clipboard for us through its own
+    // messages: the answer goes back the same way — the control's own edit, which its own undo takes
+    // back — and nothing of ours reaches the program's input at all (docs/ai.md).
+    bool edit_delivered = false;
+    if (deliver && _textEditControl) {
+        if (_textInsert == cxxime::AiActionInsert::kReplace) {
+            edit_delivered =
+                edit_control_replace(_textEditControl, _textEditStart, _textEditEnd, translation);
+        } else if (_textInsert == cxxime::AiActionInsert::kBelow) {
+            std::wstring block = L"\r\n" + translation;
+            if (!note.empty()) block += L"\r\n" + note;
+            edit_delivered = edit_control_insert_below(_textEditControl, _textEditStart,
+                                                       _textEditEnd, block);
+        }
+        char detail[128] = {};
+        snprintf(detail, sizeof(detail), "deliver edit_control=%d", edit_delivered ? 1 : 0);
+        _enqueue_event_trace("ai_ui", detail);
+    }
+
+    if (edit_delivered) {
+        _hide_translate_window();  // the answer is in: the window has done its job
+    } else if (deliver && _textInsert == cxxime::AiActionInsert::kReplace && !_textEditControl) {
         paste_text(translation);
         _hide_translate_window();  // the answer is in: the window has done its job (OnEndEdit
                                    // cannot be relied on for it — see the grace window)

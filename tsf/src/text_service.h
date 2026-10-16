@@ -639,6 +639,11 @@ private:
     // That line, break off: the copy the selection is checked against, so the answer is pasted over
     // it and not over whatever the caret happens to be on (docs/ai.md).
     std::wstring _textLineText;
+    // A classic edit control (Edit, RichEdit) the text came from through its own messages: the
+    // answer goes back the same way, and this range is what it replaces (docs/ai.md).
+    HWND _textEditControl = nullptr;
+    LONG _textEditStart = 0;
+    LONG _textEditEnd = 0;
     // The "正在润色…" window: what it says, and that it is the one on screen. Some editors take it
     // down behind our back while the answer is being fetched (their input context moves over the
     // copy that read the text), so it is put back on every poll (docs/ai.md).
