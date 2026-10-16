@@ -187,6 +187,18 @@ private:
                resources->kind() == PinyinSchemeKind::kShuangpin;
     }
     bool symbol_input_enabled(const OutputOptions& opts) const;
+    // The symbol table is loaded and usable at all (which mode uses it is a separate question).
+    bool has_symbol_table() const;
+    // English (ASCII) mode has the symbol prefix as a command prefix too: \fy, \bd and the rest are
+    // reachable while typing English, and \\ types one backslash (docs/ai.md).
+    bool english_symbol_input_enabled(const OutputOptions& opts) const;
+    // Whether `code` (without the prefix) is a whole code or the beginning of one — a symbol
+    // category's, or the \fy command's. What no code can continue is text in English mode.
+    bool symbol_code_continues(const std::string& code) const;
+    // The key that ends a symbol prefix as text instead of a command: the composition closes and
+    // commits what was typed, case and all (C:\Users types as it reads; \\ types one backslash).
+    // nullopt = the symbol input keeps the key.
+    std::optional<ProcessResult> english_symbol_text_fallback(const KeyEvent& event);
     TranslationResult translate_current_composition(const QueryDeadline& deadline);
     // The candidates of the \fy command (docs/ai.md): one page of the languages the translate
     // action offers, named for the interface language. Picking one is an AiLanguageAction — the

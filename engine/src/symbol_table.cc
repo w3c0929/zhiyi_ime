@@ -161,6 +161,19 @@ CandidatePage SymbolTable::translate_page(const std::string& code, int page_inde
     return page;
 }
 
+bool SymbolTable::has_code_prefix(const std::string& prefix) const {
+    if (prefix.empty()) {
+        return true;
+    }
+    for (const auto& category : categories_) {
+        if (category.first.size() >= prefix.size() &&
+            category.first.compare(0, prefix.size(), prefix) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 TranslationResult SymbolTable::translate(const TranslationRequest& request) const {
     CandidatePage page =
         translate_page(request.input, request.page_index, request.page_size, request.page_offset);

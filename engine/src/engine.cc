@@ -118,16 +118,114 @@ static bool is_ascii_symbol(char ch) {
     return ch >= 0x21 && ch <= 0x7e && !std::isalnum(static_cast<unsigned char>(ch));
 }
 
+// Codes are written in lower case; the letters an English user types are only folded for the
+// lookup, never for the text that ends up in the document.
+static std::string ascii_lower_copy(const std::string& text) {
+    std::string lowered = text;
+    for (char& ch : lowered) {
+        if (ch >= 'A' && ch <= 'Z') {
+            ch = static_cast<char>(ch - 'A' + 'a');
+        }
+    }
+    return lowered;
+}
+
 // Static member for global query ID generation
 std::atomic<uint64_t> Engine::next_query_id_{0};
 
-bool Engine::symbol_input_enabled(const OutputOptions& opts) const {
+bool Engine::has_symbol_table() const {
     const SymbolTable* symbol_table = runtime_ ? runtime_->symbol_table() : nullptr;
-    return symbol_table &&
-           !symbol_table->empty() &&
-           opts.chinese_mode &&
-           opts.chinese_punct &&
-           !opts.full_shape;
+    return symbol_table && !symbol_table->empty();
+}
+
+bool Engine::symbol_input_enabled(const OutputOptions& opts) const {
+    return has_symbol_table() && opts.chinese_mode && opts.chinese_punct && !opts.full_shape;
+}
+
+// English (ASCII) mode: the prefix is a command prefix there too (docs/ai.md). Chinese punctuation
+// is not asked for — in English mode the punctuation for a backslash is the plain backslash, so a
+// single \ is the command and \\ is that backslash. Only full-shape mode keeps the key literal.
+bool Engine::english_symbol_input_enabled(const OutputOptions& opts) const {
+    return has_symbol_table() && !opts.full_shape;
+}
+
+// A code is still possible while something in the table — or the \fy command — begins with it.
+bool Engine::symbol_code_continues(const std::string& code) const {
+    if (code.empty()) {
+        return true;
+    }
+    const std::string command = kAiLanguageCommand;
+    if (code == command) {
+        return true;
+    }
+    const SymbolTable* symbol_table = runtime_ ? runtime_->symbol_table() : nullptr;
+    if (symbol_table && symbol_table->has_code_prefix(code)) {
+        return true;
+    }
+    return command.compare(0, code.size(), code) == 0 && code.size() <= command.size();
+}
+
+// The key that ends a symbol prefix as text. In English (ASCII) mode the prefix is a command prefix
+// (docs/ai.md), and everything a code cannot continue is text: the composition closes and commits
+// exactly what was typed — the letters as typed, the space, the punctuation — so a path types as it
+// reads and a doubled \\ types one backslash. nullopt = the symbol input keeps the key.
+std::optional<ProcessResult> Engine::english_symbol_text_fallback(const KeyEvent& event) {
+    if (event.is_key_up || context_.composition_scheme() != CompositionScheme::kSymbol) {
+        return std::nullopt;
+    }
+    const std::string typed = context_.active_input();
+    const std::string code = ascii_lower_copy(typed.substr(typed.empty() ? 0 : 1));
+    const uint32_t vk = event.keycode;
+    // Editing and cancelling belong to the composition; application shortcuts are not ours.
+    switch (vk) {
+    case VK_BACK:
+    case VK_DELETE:
+    case VK_LEFT:
+    case VK_RIGHT:
+    case VK_HOME:
+    case VK_END:
+    case VK_ESCAPE:
+        return std::nullopt;
+    default:
+        break;
+    }
+    if (event.is_ctrl() || event.is_alt()) {
+        return std::nullopt;
+    }
+    // A code that has candidates is a code being used: the keys that walk a candidate page select
+    // one of them there (\bd then 1 types 、), and only a code with no candidates at all is text.
+    if (context_.candidate_count() > 0) {
+        const bool selection_key = vk == VK_SPACE || vk == VK_TAB || vk == VK_UP || vk == VK_DOWN ||
+                                   (vk >= '1' && vk <= '9' && !event.is_shift()) ||
+                                   page_key(event, context_) != PageKey::kNone;
+        if (selection_key) {
+            return std::nullopt;
+        }
+    } else if (vk == VK_TAB) {
+        return std::nullopt;  // the composition's own Tab (candidate cycling) stays its own
+    }
+    const bool letter = vk >= 'A' && vk <= 'Z';
+    const char lower = letter ? static_cast<char>(std::tolower(static_cast<int>(vk))) : '\0';
+    if (letter && symbol_code_continues(code + lower)) {
+        return std::nullopt;  // a code, or the beginning of one: the symbol input keeps it
+    }
+    if (SymbolProcessor::is_trigger(event)) {
+        // The second \ of a doubled prefix, with no code in between: the engine's own branch for
+        // that case runs before this one and commits the single backslash.
+        return std::nullopt;
+    }
+    std::string literal = typed;
+    if (letter) {
+        literal.push_back(event.is_shift() ? static_cast<char>(vk) : lower);
+    } else if (vk == VK_SPACE) {
+        literal.push_back(' ');
+    } else if (const std::optional<char> text = normalize_ascii_key(event)) {
+        literal.push_back(*text);
+    }
+    context_.reset();
+    context_.committed_text = literal;
+    context_.set_commit_source(CommitSource::kRawCodePretransformed);
+    return ProcessResult::COMMITTED;
 }
 
 // Self-contained: owns all resources (tests/tools).
@@ -640,10 +738,20 @@ ProcessResult Engine::process_key(const KeyEvent& event, const OutputOptions& op
         return ProcessResult::COMMITTED;
     }
 
+    // The symbol prefix is a command prefix in English (ASCII) mode too (docs/ai.md): \fy, \bd and
+    // the rest work while typing English, and \\ types one backslash. Decided here, before the
+    // literal-symbol modes below turn the key into text, so both the full-shape path and the ASCII
+    // branch leave it to the symbol input.
+    const bool english_state = ascii_composer_.is_ascii_mode();
+    const bool symbol_trigger_enabled =
+        symbol_input_enabled(opts) || (english_state && english_symbol_input_enabled(opts));
+    const bool symbol_trigger = symbol_trigger_enabled && !context_.is_composing() &&
+                                SymbolProcessor::is_trigger(event);
+
     // Full-shape mode is an explicit literal-symbol input mode. Handle idle main-keyboard
     // symbols before Chinese punctuation and the backslash Symbol trigger.
-    if (!event.is_key_up && !context_.is_composing() && opts.full_shape && normalized &&
-        is_ascii_symbol(*normalized) && !is_numpad_text_key(event.keycode) &&
+    if (!symbol_trigger && !event.is_key_up && !context_.is_composing() && opts.full_shape &&
+        normalized && is_ascii_symbol(*normalized) && !is_numpad_text_key(event.keycode) &&
         handle_full_shape(event, context_, opts)) {
         record_total_us(trace_, total_start, trace_enabled_);
         return ProcessResult::COMMITTED;
@@ -723,8 +831,8 @@ ProcessResult Engine::process_key(const KeyEvent& event, const OutputOptions& op
         return ProcessResult::COMMITTED;
     }
 
-    // If in ASCII mode, handle letters/space directly
-    if (ascii_composer_.is_ascii_mode() && !context_.is_composing() && !event.is_key_up) {
+    // If in ASCII mode, handle letters/space directly (the symbol prefix above excepted).
+    if (!symbol_trigger && english_state && !context_.is_composing() && !event.is_key_up) {
         uint32_t vk = event.keycode;
 
         // Letter keys (A-Z): commit as single ASCII char, respect Shift and CapsLock
@@ -796,9 +904,6 @@ ProcessResult Engine::process_key(const KeyEvent& event, const OutputOptions& op
     }
 
     bool wubi_continuation_commit = false;
-    const bool symbol_trigger_enabled = symbol_input_enabled(opts);
-    const bool symbol_trigger = symbol_trigger_enabled && !context_.is_composing() &&
-                                SymbolProcessor::is_trigger(event);
     const bool plain_main_zero = event.keycode == '0' && !event.is_shift();
     const bool processor_code_key = normalized && is_ascii_digit_or_symbol(*normalized) &&
                                     processor_ && processor_->accepts_code_key(event, context_);
@@ -871,14 +976,27 @@ ProcessResult Engine::process_key(const KeyEvent& event, const OutputOptions& op
     } else if (SymbolProcessor::is_active(context_) &&
                context_.active_input() == std::string(1, kSymbolPrefix) &&
                SymbolProcessor::is_trigger(event)) {
-        // A second \ right after the one that opened symbol input: the \ punctuation (、).
+        // A second \ right after the one that opened symbol input: the \ punctuation (、) while
+        // typing Chinese, one literal backslash while typing English (docs/ai.md).
         context_.reset();
-        if (!handle_punctuation(event, context_, opts)) {
-            commit_with_punctuation(context_, std::string(1, kSymbolPrefix));
+        if (english_state || !handle_punctuation(event, context_, opts)) {
+            context_.committed_text.assign(1, kSymbolPrefix);
+            context_.set_commit_source(CommitSource::kRawCodePretransformed);
         }
         result = ProcessResult::COMMITTED;
     } else if (SymbolProcessor::is_active(context_) || symbol_trigger) {
-        result = symbol_processor_.process_key(event, context_, symbol_trigger_enabled);
+        // English mode's prefix may be a command or plain text: what no code can continue closes
+        // the composition as the text that was typed.
+        std::optional<ProcessResult> english_text;
+        if (english_state && SymbolProcessor::is_active(context_)) {
+            english_text = english_symbol_text_fallback(event);
+        }
+        if (english_text) {
+            result = *english_text;
+        } else {
+            result = symbol_processor_.process_key(event, context_, symbol_trigger_enabled,
+                                                   english_state);
+        }
     } else {
         result = processor_->process_key(event, context_);
     }
@@ -1384,13 +1502,15 @@ TranslationResult Engine::translate_composition(const CompositionState& state,
         // translate action offers, and picking one sets a setting rather than typing text. The
         // keys that walk a candidate page — digits, arrows, Tab, the page keys, a mouse click —
         // are the ones a symbol code's candidates use, so the list needs nothing of its own.
-        if (state.active().input ==
+        if (ascii_lower_copy(state.active().input) ==
             std::string(1, kSymbolPrefix) + kAiLanguageCommand) {
             return ai_language_result(page_index, page_offset, page_size);
         }
         TranslationRequest request;
         request.scheme = CompositionScheme::kSymbol;
-        request.input = state.active().input.substr(1);
+        // Codes are written in lower case; English mode keeps the keys' case in what it types, so
+        // the lookup folds it (docs/ai.md).
+        request.input = ascii_lower_copy(state.active().input.substr(1));
         request.page_index = page_index;
         request.page_offset = page_offset;
         request.page_size = page_size;

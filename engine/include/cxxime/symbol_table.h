@@ -26,6 +26,10 @@ public:
     CandidatePage translate_page(const std::string& code, int page_index, int page_size,
                                  int candidate_offset = -1) const;
 
+    // Whether any code in the table begins with `prefix`. English (ASCII) mode needs it to tell a
+    // command being typed from a backslash that is just text (engine.cc, docs/ai.md).
+    bool has_code_prefix(const std::string& prefix) const;
+
 private:
     struct Category {
         std::string name;

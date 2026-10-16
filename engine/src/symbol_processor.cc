@@ -62,7 +62,7 @@ ProcessResult SymbolProcessor::select_candidate(Context& context, int index) {
 }
 
 ProcessResult SymbolProcessor::process_key(const KeyEvent& event, Context& context,
-                                           bool allow_trigger) const {
+                                           bool allow_trigger, bool preserve_case) const {
     if (event.is_key_up) {
         return ProcessResult::REJECTED;
     }
@@ -134,7 +134,13 @@ ProcessResult SymbolProcessor::process_key(const KeyEvent& event, Context& conte
     }
 
     if (event.keycode >= 'A' && event.keycode <= 'Z') {
-        context.insert_preedit(static_cast<char>(event.keycode - 'A' + 'a'));
+        // English (ASCII) mode keeps the case it was typed with: what a code cannot continue is
+        // text, and text keeps its capitals (C:\Users types as it reads — engine.cc, docs/ai.md).
+        // Codes are matched without case either way.
+        const char letter = preserve_case && event.is_shift()
+                                ? static_cast<char>(event.keycode)
+                                : static_cast<char>(event.keycode - 'A' + 'a');
+        context.insert_preedit(letter);
         // \fy is a command rather than a symbol name (docs/ai.md): its candidates are the
         // translation languages, which the translation step (Engine::translate_composition) puts
         // in place of the symbol table's. The composition stays as it is so that the keys that
