@@ -41,6 +41,11 @@ TextBeforeCaret read_selection_text(ITfContext* context, TfClientId client_id, s
 TextBeforeCaret select_line_at_caret(ITfContext* context, TfClientId client_id, size_t max_chars,
                                      std::wstring* text, bool* truncated = nullptr);
 
+// The same read, *without* selecting what it read: for asking what the caret's line holds (after the
+// answer was pasted, docs/ai.md) without leaving a selection behind that the user did not ask for.
+TextBeforeCaret read_line_at_caret(ITfContext* context, TfClientId client_id, size_t max_chars,
+                                   std::wstring* text, bool* truncated = nullptr);
+
 // Selects `length` characters *from the caret onwards*, without reading them, when the caller
 // already knows both (a program whose text cannot be read still hands its own copy of the line over,
 // docs/ai.md). With the caret moved to the line's start first — a plain Home, which these programs

@@ -454,6 +454,18 @@ bool try_line_route(int route, ITfContext* context, TfClientId client_id, const 
 // false for a program whose text cannot be read: there the keys are the only way and nothing can prove
 // they took, so their answer is trusted. True means the answer may be pasted; false means the caller
 // must write it through TSF instead (docs/ai.md).
+// A readable document whose own undo does *not* record a write through TSF: Win11's Notepad, whose
+// RichEditD2DPT empties the whole document on the Ctrl+Z after one (measured). For it — and only for
+// it — the answer is selected with the program's own keys and pasted; in every other readable document
+// it is written through TSF, which always replaces the range the read selected and which a Chromium
+// editor takes back with one Ctrl+Z (measured in VS Code, docs/ai.md).
+bool readable_document_wants_a_paste() {
+    HWND focus = GetFocus();
+    wchar_t class_name[64] = {};
+    if (!focus || !GetClassNameW(focus, class_name, ARRAYSIZE(class_name))) return false;
+    return wcscmp(class_name, L"RichEditD2DPT") == 0;
+}
+
 bool select_line_for_answer(ITfContext* context, TfClientId client_id, const std::wstring& line,
                             bool whole_line, bool readable, const char** how_out,
                             bool* remembered_out) {
@@ -683,11 +695,16 @@ int TextService::_line_starts_with(const std::wstring& expected) {
     std::wstring line;
     bool cut = false;
     const TextBeforeCaret read =
-        select_line_at_caret(context, _clientId, expected.size() + 32, &line, &cut);
+        read_line_at_caret(context, _clientId, expected.size() + 64, &line, &cut);
     context->Release();
     if (read != TextBeforeCaret::kRead || line.empty()) return -1;  // nothing to ask: take it on trust
+    // The answer is there *and* the text it replaced is not: a paste that landed beside the line
+    // instead of over it leaves that old text behind, which a check for the answer alone would miss
+    // (measured in VS Code, docs/ai.md).
     const std::size_t head = (std::min)(expected.size(), line.size());
-    return head > 0 && line.compare(0, head, expected, 0, head) == 0 ? 1 : 0;
+    const bool has_answer = head > 0 && line.compare(0, head, expected, 0, head) == 0;
+    const bool old_text_gone = _textLineText.empty() || line.find(_textLineText) == std::wstring::npos;
+    return has_answer && old_text_gone ? 1 : 0;
 }
 
 void TextService::_process_selection_translate() {
@@ -905,6 +922,13 @@ void TextService::_poll_translation() {
     const bool line_should_be_replaced =
         deliver && _textInsert == cxxime::AiActionInsert::kReplace &&
         (_textProgramCopiedLine || _textLineSelected);
+    // A readable document that records a write through TSF in its undo — anything but Win11's Notepad
+    // — gets the answer written over the range the read selected: it always replaces it, no key of
+    // ours goes near the program, and the editor's own Ctrl+Z takes it back (docs/ai.md). The rest is
+    // the keys-and-paste delivery below.
+    const bool write_through_tsf =
+        line_should_be_replaced && !program_owns_its_text && !readable_document_wants_a_paste();
+
     const char* line_how = nullptr;
     if (line_should_be_replaced) {
         bool line_remembered = false;
@@ -950,10 +974,19 @@ void TextService::_poll_translation() {
         _enqueue_event_trace("ai_ui", detail);
     }
 
-    if (edit_delivered) {
+    if (write_through_tsf) {
+        insert_text(translation, true, nullptr, false, false);
+        // A written range is left selected, like a paste is: the caret goes after it, the state
+        // typing would have left (docs/ai.md).
+        tap_key(VK_RIGHT);
+        _enqueue_event_trace("ai_ui", "deliver tsf_write=1");
+        _hide_translate_window();
+    } else if (edit_delivered) {
         _hide_translate_window();  // the answer is in: the window has done its job
     } else if (uia_delivered) {
         paste_text(translation);
+        pump_program_messages(200);
+        tap_key(VK_RIGHT);  // a paste leaves what it wrote selected: put the caret after it
         _hide_translate_window();
     } else if (deliver && _textInsert == cxxime::AiActionInsert::kReplace && !_textEditControl &&
                !_textUiaTarget) {
@@ -970,16 +1003,33 @@ void TextService::_poll_translation() {
             pump_program_messages(300);
             int verdict = _line_starts_with(translation);
             if (verdict == 0) {
-                select_line_with_keys(/*whole_line=*/false, /*copy_line=*/false);
-                paste_text(translation);
-                pump_program_messages(300);
+                // The paste went in *beside* the line instead of over it (the keys moved the caret
+                // but no selection came of it): that edit is taken back, and the answer is written
+                // through TSF over the range the read selected — which is what replaces it for good
+                // (docs/ai.md). The undo of that one write is still the user's single Ctrl+Z.
+                INPUT undo[4] = {};
+                fill_key(&undo[0], VK_CONTROL, false);
+                fill_key(&undo[1], 'Z', false);
+                fill_key(&undo[2], 'Z', true);
+                fill_key(&undo[3], VK_CONTROL, true);
+                SendInput(4, undo, sizeof(INPUT));
+                pump_program_messages(200);
+                insert_text(translation, true, nullptr, false, false);
+                pump_program_messages(200);
                 verdict = _line_starts_with(translation);
             }
             placed = verdict != 0;  // 0: the old text is still there; -1: nothing to ask, trust it
             char detail[128] = {};
             snprintf(detail, sizeof(detail), "deliver paste=%d", placed ? 1 : 0);
             _enqueue_event_trace("ai_ui", detail);
+        } else {
+            pump_program_messages(200);  // the paste lands asynchronously: let it (docs/ai.md)
         }
+        // A paste leaves what it wrote *selected* in every editor, and the answer is text that was put
+        // there rather than something to keep pointing at: the caret is put right after it, the state
+        // typing would have left. Not before the read above, though — sent too early it overtakes the
+        // paste (measured in VS Code: the answer was inserted instead of replacing the line).
+        tap_key(VK_RIGHT);
         if (placed) {
             _hide_translate_window();  // the answer is in: the window has done its job (OnEndEdit
                                        // cannot be relied on for it — see the grace window)

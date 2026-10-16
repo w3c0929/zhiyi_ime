@@ -66,8 +66,10 @@ class ReadSession : public ITfEditSession {
 public:
     // What to read: the text before the caret, the selection, or the line the caret is on (which
     // is selected as well, so it can be copied). kSelectLengthAtCaret selects `_max` characters
-    // from the caret onwards without reading them.
-    enum class Mode { kBeforeCaret, kSelection, kLineAtCaret, kSelectLengthAtCaret };
+    // from the caret onwards without reading them. kLineAtCaretReadOnly reads that same line and
+    // leaves the selection alone: an answer that was already delivered has been asked about, and
+    // selecting it afterwards is not the user's.
+    enum class Mode { kBeforeCaret, kSelection, kLineAtCaret, kSelectLengthAtCaret, kLineAtCaretReadOnly };
 
     ReadSession(ITfContext* context, size_t max_chars, Mode mode)
         : _context(context), _max(max_chars), _mode(mode) {}
@@ -126,8 +128,8 @@ public:
             result = TextBeforeCaret::kRead;
             return S_OK;
         }
-        if (_mode == Mode::kLineAtCaret) {
-            return read_line(ec, caret.Get());
+        if (_mode == Mode::kLineAtCaret || _mode == Mode::kLineAtCaretReadOnly) {
+            return read_line(ec, caret.Get(), _mode == Mode::kLineAtCaret);
         }
         if (_mode == Mode::kSelectLengthAtCaret) {
             // Not read here: the caller knows the length (docs/ai.md). Only the selection is set,
@@ -205,7 +207,7 @@ private:
     // than _max so a full window says the line began further back — the line's start is the last
     // newline in it, and that part becomes the selection. The answer replaces it or lands under it
     // like any other selection's.
-    HRESULT read_line(TfEditCookie ec, ITfRange* caret) {
+    HRESULT read_line(TfEditCookie ec, ITfRange* caret, bool select_it) {
         const LONG width = static_cast<LONG>(_max + 1);
         com_ptr<ITfRange> window;
         if (FAILED(caret->Clone(&window))) return E_FAIL;
@@ -234,11 +236,13 @@ private:
         line->Collapse(ec, TF_ANCHOR_START);
         LONG shifted = 0;
         if (FAILED(line->ShiftStart(ec, -line_back, &shifted, nullptr))) return E_FAIL;
-        TF_SELECTION selection = {};
-        selection.range = line.Get();
-        selection.style.ase = TF_AE_NONE;
-        selection.style.fInterimChar = FALSE;
-        if (FAILED(_context->SetSelection(ec, 1, &selection))) return E_FAIL;
+        if (select_it) {
+            TF_SELECTION selection = {};
+            selection.range = line.Get();
+            selection.style.ase = TF_AE_NONE;
+            selection.style.fInterimChar = FALSE;
+            if (FAILED(_context->SetSelection(ec, 1, &selection))) return E_FAIL;
+        }
 
         std::wstring out = buffer.substr(line_from);
         out.erase(std::remove_if(out.begin(), out.end(),
@@ -301,6 +305,14 @@ TextBeforeCaret read_selection_text(ITfContext* context, TfClientId client_id, s
 TextBeforeCaret select_line_at_caret(ITfContext* context, TfClientId client_id, size_t max_chars,
                                      std::wstring* text, bool* truncated) {
     return read_impl(context, client_id, max_chars, text, ReadSession::Mode::kLineAtCaret,
+                     truncated);
+}
+
+TextBeforeCaret read_line_at_caret(ITfContext* context, TfClientId client_id, size_t max_chars,
+                                   std::wstring* text, bool* truncated) {
+    // Reading it does not need the selection; setting it is what the caller above *asks* for. This one
+    // leaves it alone (docs/ai.md).
+    return read_impl(context, client_id, max_chars, text, ReadSession::Mode::kLineAtCaretReadOnly,
                      truncated);
 }
 
