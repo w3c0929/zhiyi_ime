@@ -213,21 +213,6 @@ void select_line_with_ctrl_l() {
     pump_program_messages(kKeyStepMs);
 }
 
-// Whether the copy that came back is a *selection* of the line rather than the program's own
-// "nothing was selected, so here is the whole line" copy. The difference is the line break: a
-// selection that ends at Shift+End stops before it, while the program's line copy hands it over
-// with the break on — which is what tells the two apart, and what keeps the answer from being
-// written over whatever the caret happens to be on (docs/ai.md).
-bool line_copy_is_selection(const std::wstring& copied, const std::wstring& line) {
-    if (copied.empty()) {
-        return false;
-    }
-    if (copied.back() == L'\n' || copied.back() == L'\r') {
-        return false;  // the program copied the line itself: nothing is selected
-    }
-    return copied == line;
-}
-
 // An answer delivered the way the user would put it there: on the clipboard, then Ctrl+V, which
 // the program applies to its own selection. Only a program whose text the input method cannot read
 // needs this — TSF sees no selection in a transitory document, so an ordinary insert would land at
@@ -314,6 +299,37 @@ bool read_clipboard_text(std::wstring* text) {
 // Selects the caret's line and copies it, and says whether the copy came back as that line — the
 // copy is what tells "the line is selected" from "nothing is selected and the program copies the
 // whole line anyway": the answer may only be pasted over the line it was made from (docs/ai.md).
+// Ctrl+C now, and what it put on the clipboard.
+bool copy_now(std::wstring* copied) {
+    const DWORD sequence = GetClipboardSequenceNumber();
+    ctrl_key_copy();
+    wait_for_program_copy(sequence);
+    if (GetClipboardSequenceNumber() == sequence) return false;
+    return read_clipboard_text(copied);
+}
+
+// Whether a selection of `line` is really there, asked by *shrinking* it by one character: told to
+// shift one to the left, a selection copies one character less, while a program that copies the whole
+// line merely because nothing is selected answers the same copy either way. The shift is undone
+// afterwards, so the line ends up selected exactly as it was. This is what the keys are judged by,
+// and not the copy alone: in these editors the copy of a line and the copy of a selection of that
+// line look the same — both carry the line break (measured in Sublime Text, docs/ai.md).
+bool selection_is_the_line(const std::wstring& line) {
+    std::wstring before;
+    if (!copy_now(&before) || without_trailing_line_break(before) != line) return false;
+    hold_key(VK_SHIFT, true);
+    tap_key(VK_LEFT);
+    hold_key(VK_SHIFT, false);
+    std::wstring shrunk;
+    const bool copied = copy_now(&shrunk);
+    hold_key(VK_SHIFT, true);
+    tap_key(VK_RIGHT);
+    hold_key(VK_SHIFT, false);
+    if (!copied || before.empty()) return false;
+    return shrunk.size() + 1 == before.size() &&
+           shrunk.compare(0, shrunk.size(), before, 0, shrunk.size()) == 0;
+}
+
 bool select_and_copy_line(ITfContext* context, TfClientId client_id, const std::wstring& line,
                           const char** how_out) {
     static const char* const kHow[] = {"none", "home_tsf", "keys", "ctrl_l"};
@@ -330,21 +346,15 @@ bool select_and_copy_line(ITfContext* context, TfClientId client_id, const std::
             return true;
         }
     }
-    // The keys, judged by the copy they leave behind.
+    // The keys, judged by shrinking what they selected (selection_is_the_line) — which is also what
+    // tells a selection from a program's own line copy.
     for (int attempt = 0; attempt < 2; ++attempt) {
-        const DWORD sequence = GetClipboardSequenceNumber();
         if (attempt == 0) {
             select_line_with_keys();  // Home, Shift+End
         } else {
             select_line_with_ctrl_l();  // what these editors bind "select the line" to
         }
-        ctrl_key_copy();  // the copy that says what is selected
-        wait_for_program_copy(sequence);
-        if (GetClipboardSequenceNumber() == sequence) {
-            continue;  // no copy came at all
-        }
-        std::wstring copied;
-        if (read_clipboard_text(&copied) && line_copy_is_selection(copied, line)) {
+        if (selection_is_the_line(line)) {
             if (how_out) *how_out = kHow[attempt + 2];
             return true;
         }
