@@ -13,12 +13,78 @@ point makensis at your own installer script over the produced folder, or ship th
 setup.exe exists, run scripts/make_release.py to build and sign latest.json.
 """
 import argparse
+import ctypes
 import json
 import os
+import re
 import shutil
 import sys
+from ctypes import wintypes
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+class VsFixedFileInfo(ctypes.Structure):
+    _fields_ = [
+        ("dwSignature", wintypes.DWORD),
+        ("dwStrucVersion", wintypes.DWORD),
+        ("dwFileVersionMS", wintypes.DWORD),
+        ("dwFileVersionLS", wintypes.DWORD),
+        ("dwProductVersionMS", wintypes.DWORD),
+        ("dwProductVersionLS", wintypes.DWORD),
+        ("dwFileFlagsMask", wintypes.DWORD),
+        ("dwFileFlags", wintypes.DWORD),
+        ("dwFileOS", wintypes.DWORD),
+        ("dwFileType", wintypes.DWORD),
+        ("dwFileSubtype", wintypes.DWORD),
+        ("dwFileDateMS", wintypes.DWORD),
+        ("dwFileDateLS", wintypes.DWORD),
+    ]
+
+
+def pe_file_version(path):
+    """The Windows version resource of a file, as (major, minor, patch, build), or None when it
+    has none."""
+    version = ctypes.windll.version
+    size = version.GetFileVersionInfoSizeW(str(path), None)
+    if not size:
+        return None
+    buffer = ctypes.create_string_buffer(size)
+    if not version.GetFileVersionInfoW(str(path), 0, size, buffer):
+        return None
+    value = ctypes.c_void_p()
+    length = wintypes.UINT()
+    if not version.VerQueryValueW(buffer, "\\", ctypes.byref(value), ctypes.byref(length)):
+        return None
+    if length.value < ctypes.sizeof(VsFixedFileInfo):
+        return None
+    info = ctypes.cast(value, ctypes.POINTER(VsFixedFileInfo)).contents
+    return (info.dwFileVersionMS >> 16, info.dwFileVersionMS & 0xFFFF,
+            info.dwFileVersionLS >> 16, info.dwFileVersionLS & 0xFFFF)
+
+
+def wrong_build_versions(out_dir, version):
+    """Every program of ours in `out_dir` whose version resource is not `version` — (name, found).
+
+    The version inside the programs is what Settings shows and what the update check compares
+    against latest.json, so a package whose programs still say the previous version is one that
+    offers to update to itself for ever. Measured: the first 1.7.56 package shipped 1.7.55.0
+    programs, because `cmake --build` never picked the new VERSION up and nothing but the file the
+    edit touched was rebuilt."""
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", version)
+    if not match:
+        return []
+    expected = tuple(int(part) for part in match.groups())
+    wrong = []
+    for name in sorted(os.listdir(out_dir)):
+        path = os.path.join(out_dir, name)
+        if not name.lower().startswith("zhiyu") or not os.path.isfile(path):
+            continue
+        found = pe_file_version(path)
+        if found is not None and found[:3] != expected:
+            wrong.append((name, ".".join(str(part) for part in found)))
+    return wrong
+
 
 # Built programs, relative to the build tree; both architectures where they exist.
 BUILT = {
@@ -128,6 +194,15 @@ def main():
     for name in overlay_repo_data(out_dir):
         print(f"  data\\{name}")
     print(f"writing {write_install_manifest(out_dir)}")
+
+    wrong = wrong_build_versions(out_dir, args.version)
+    if wrong:
+        for name, found in wrong:
+            print(f"error: {name} is stamped {found} inside, not {args.version}", file=sys.stderr)
+        print("error: the build did not pick VERSION up — configure again "
+              f"(cmake -S . -B {os.path.basename(args.build)}) and rebuild before packaging",
+              file=sys.stderr)
+        return 1
 
     archive = os.path.join(args.out, f"zhiyu-v{args.version}")
     shutil.make_archive(archive, "zip", args.out, f"zhiyu-v{args.version}")

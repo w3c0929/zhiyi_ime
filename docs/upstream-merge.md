@@ -143,6 +143,11 @@
 
 ## 六、发布/安装前必查的坑
 
+- **改了 `VERSION` 后一定要让配置跟上再编译**：`version.h` 与每个目标的 `*_version.rc` 是 `configure_file` 生成的，
+  构建系统**不保证**会自动重跑 configure（实测 1.7.56：`cmake --build` 只重编了被改动的那个文件，`version.h`
+  仍是 1.7.55，于是包里的 `zhiyu-server.exe`/`zhiyu-settings.exe`/… 内嵌版本全是 1.7.55.0，设置页与「检查更新」
+  会永远提示有新版本）。**先 `cmake -S . -B build-x64`（以及 `-B build-x86`）再 build**；`scripts/package_release.py`
+  现在会核对包里每个 `zhiyu*` 程序的内嵌版本，对不上直接 exit 1，兜住这条。
 - **NSIS 开始菜单位置**：elevated 安装器必须 `SetShellVarContext all`，否则菜单项落到「当前用户」
   （`%APPDATA%\…\Start Menu`）而不是「所有用户」（`%ProgramData%\…\Start Menu`）。
 - **升级前先停 `zhiyu-server`**：否则旧目录里的 DLL 被正在运行的 App 映射，卸载删不干净，
