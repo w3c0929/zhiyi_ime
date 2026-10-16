@@ -430,7 +430,7 @@ std::string focused_class_key() {
 // One of the two ways. True when it selected the line *without* any keys of ours (the TSF way, which
 // is checked as it is set); the key way is the fallback and is not checked.
 bool try_line_route(int route, ITfContext* context, TfClientId client_id, const std::wstring& line,
-                    bool whole_line) {
+                    bool whole_line, bool readable) {
     if (route == kLineRouteTsf) {
         // Home — a plain key, which a program that ignores a synthesized Shift still answers to —
         // then TSF selecting the line from there: the same thing the read does for a readable
@@ -440,18 +440,23 @@ bool try_line_route(int route, ITfContext* context, TfClientId client_id, const 
         return select_length_at_caret(context, client_id, line.size());
     }
     select_line_with_keys(whole_line);
-    return true;
+    if (!readable) {
+        return true;  // a program like these copies the line anyway: no copy can tell a selection
+    }
+    // The copy step 5 made is the proof: a readable program copies a *selection* and nothing else, so
+    // the line is selected exactly when that copy is the line. It is not — the keys did not take —
+    // and the caller writes the answer through TSF instead of pasting (docs/ai.md).
+    std::wstring copied;
+    if (!read_clipboard_text(&copied)) return false;
+    return without_trailing_line_break(copied) == line;
 }
 
-// Selects the line for this program: the way remembered for it first, then the other. Always leaves
-// the line selected one way or another — the answer has somewhere to land.
-//
-// `allow_tsf` is false for a document the input method *can* read: there the app's own keys are the
-// only way to make the program select the line — a selection set through TSF is not the program's own
-// (a Chromium editor pastes where its own caret is, not over it), which is why a readable editor took
-// the same keys as an unreadable one in the end (docs/ai.md).
-void select_line_for_answer(ITfContext* context, TfClientId client_id, const std::wstring& line,
-                            bool whole_line, bool allow_tsf, const char** how_out,
+// Selects the line for this program and says whether a route really left it selected. `readable` is
+// false for a program whose text cannot be read: there the keys are the only way and nothing can prove
+// they took, so their answer is trusted. True means the answer may be pasted; false means the caller
+// must write it through TSF instead (docs/ai.md).
+bool select_line_for_answer(ITfContext* context, TfClientId client_id, const std::wstring& line,
+                            bool whole_line, bool readable, const char** how_out,
                             bool* remembered_out) {
     static const char* const kHow[] = {"none", "tsf", "keys"};
     if (how_out) *how_out = kHow[kLineRouteNone];
@@ -467,19 +472,17 @@ void select_line_for_answer(ITfContext* context, TfClientId client_id, const std
         if (remembered_out) *remembered_out = true;
     }
     for (int route : order) {
-        if (route == kLineRouteTsf && !allow_tsf) {
-            continue;
+        if (route == kLineRouteTsf && readable) {
+            continue;  // a readable document: only its own keys make a selection it pastes over
         }
-        if (try_line_route(route, context, client_id, line, whole_line)) {
+        if (try_line_route(route, context, client_id, line, whole_line, readable)) {
             known = route;
             if (how_out) *how_out = kHow[route];
-            return;
+            return true;
         }
     }
-    // Neither: the keys are still the best chance of the answer landing on the line.
-    known = kLineRouteKeys;
-    select_line_with_keys(whole_line);
     if (how_out) *how_out = kHow[kLineRouteKeys];
+    return false;  // the keys did not take: the caller writes the answer through TSF
 }
 
 }  // namespace
@@ -886,18 +889,20 @@ void TextService::_poll_translation() {
         deliver && _textInsert == cxxime::AiActionInsert::kReplace &&
         (_textProgramCopiedLine || _textLineSelected);
     const char* line_how = nullptr;
+    bool line_selected = true;
     if (line_should_be_replaced) {
         bool line_remembered = false;
         ITfContext* line_context = _current_edit_context_for_composition();
-        select_line_for_answer(line_context, _clientId, _textLineText, _textProgramCopiedLine,
-                               program_owns_its_text, &line_how, &line_remembered);
+        line_selected = select_line_for_answer(line_context, _clientId, _textLineText,
+                                               _textProgramCopiedLine, !program_owns_its_text,
+                                               &line_how, &line_remembered);
         if (line_context) line_context->Release();
         // Which way selected the line, and whether that answer was already known — the one thing the
         // log needs to tell a program that honours TSF's own selection from one that only answers to
         // keys (docs/ai.md).
         char detail[160] = {};
-        snprintf(detail, sizeof(detail), "line_select how=%s remembered=%d",
-                 line_how ? line_how : "none", line_remembered ? 1 : 0);
+        snprintf(detail, sizeof(detail), "line_select how=%s remembered=%d selected=%d",
+                 line_how ? line_how : "none", line_remembered ? 1 : 0, line_selected ? 1 : 0);
         _enqueue_event_trace("ai_ui", detail);
     }
 
@@ -930,7 +935,14 @@ void TextService::_poll_translation() {
         _enqueue_event_trace("ai_ui", detail);
     }
 
-    if (edit_delivered) {
+    if (line_should_be_replaced && !line_selected) {
+        // The program's own keys did not leave the line selected (the copy step 5 made says so):
+        // rather than paste into whatever the caret is on, the answer is written through TSF over the
+        // range the read selected — an ordinary edit there as well, which the program's own Ctrl+Z
+        // takes back (docs/ai.md).
+        insert_text(translation, true, nullptr, false, false);
+        _hide_translate_window();
+    } else if (edit_delivered) {
         _hide_translate_window();  // the answer is in: the window has done its job
     } else if (uia_delivered) {
         paste_text(translation);
