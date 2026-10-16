@@ -639,11 +639,19 @@ private:
     // That line, break off: the copy the selection is checked against, so the answer is pasted over
     // it and not over whatever the caret happens to be on (docs/ai.md).
     std::wstring _textLineText;
+    // The read selected the caret's line itself (the tier-2 read: the part before the caret) in a
+    // document the input method *can* read: the answer replaces it, and the delivery selects it with
+    // the program's own keys, because a TSF selection is not the program's own (docs/ai.md).
+    bool _textLineSelected = false;
     // A classic edit control (Edit, RichEdit) the text came from through its own messages: the
     // answer goes back the same way, and this range is what it replaces (docs/ai.md).
     HWND _textEditControl = nullptr;
     LONG _textEditStart = 0;
     LONG _textEditEnd = 0;
+    // A program whose text came through UI Automation: the delivery selects the same target again and
+    // checks it is still that text before pasting over it (docs/ai.md).
+    bool _textUiaTarget = false;
+    std::wstring _textUiaText;
     // The "正在润色…" window: what it says, and that it is the one on screen. Some editors take it
     // down behind our back while the answer is being fetched (their input context moves over the
     // copy that read the text), so it is put back on every poll (docs/ai.md).

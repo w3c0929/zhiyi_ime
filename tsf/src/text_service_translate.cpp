@@ -20,6 +20,7 @@
 #include "config_coordinator.h"
 #include "edit_session.h"
 #include "text_before_caret.h"
+#include "uia_text.h"
 
 namespace {
 
@@ -206,13 +207,24 @@ void ctrl_key_copy() {
 // Shift held down while End is pressed, so the selection reaches the line's end; Shift released;
 // then Ctrl+C. A program that copies the whole line when nothing is selected hands the answer a
 // *line*, and without this the selection would not be the line at all (docs/ai.md).
-void select_line_with_keys() {
-    tap_key(VK_HOME);
-    hold_key(VK_SHIFT, true);
-    tap_key(VK_END);
-    hold_key(VK_SHIFT, false);
-    ctrl_key_copy();  // the table's fifth step: the line on the clipboard, then the answer replaces it
+void select_line_with_keys(bool whole_line) {
+    // The line the answer replaces, as the program's own keys. `whole_line`: the caret's whole line —
+    // a program that copied it for us says nothing about where the caret sits in it, so the answer
+    // covers all of it (the table: Home, Shift held, End, Shift released, Ctrl+C). Otherwise just the
+    // part written before the caret, which Shift+Home takes from the caret (docs/ai.md).
+    if (whole_line) {
+        tap_key(VK_HOME);
+        hold_key(VK_SHIFT, true);
+        tap_key(VK_END);
+        hold_key(VK_SHIFT, false);
+    } else {
+        hold_key(VK_SHIFT, true);
+        tap_key(VK_HOME);
+        hold_key(VK_SHIFT, false);
+    }
+    ctrl_key_copy();  // the last step: the line on the clipboard, then the answer replaces it
 }
+
 
 // An answer delivered the way the user would put it there: on the clipboard, then Ctrl+V, which
 // the program applies to its own selection. Only a program whose text the input method cannot read
@@ -417,23 +429,30 @@ std::string focused_class_key() {
 
 // One of the two ways. True when it selected the line *without* any keys of ours (the TSF way, which
 // is checked as it is set); the key way is the fallback and is not checked.
-bool try_line_route(int route, ITfContext* context, TfClientId client_id, const std::wstring& line) {
+bool try_line_route(int route, ITfContext* context, TfClientId client_id, const std::wstring& line,
+                    bool whole_line) {
     if (route == kLineRouteTsf) {
         // Home — a plain key, which a program that ignores a synthesized Shift still answers to —
-        // then TSF selecting the line from there: a real document selection, the same thing a
-        // readable document gets (docs/ai.md).
+        // then TSF selecting the line from there: the same thing the read does for a readable
+        // document (docs/ai.md).
         if (!context) return false;
         tap_key(VK_HOME);
         return select_length_at_caret(context, client_id, line.size());
     }
-    select_line_with_keys();  // the five steps
+    select_line_with_keys(whole_line);
     return true;
 }
 
 // Selects the line for this program: the way remembered for it first, then the other. Always leaves
 // the line selected one way or another — the answer has somewhere to land.
+//
+// `allow_tsf` is false for a document the input method *can* read: there the app's own keys are the
+// only way to make the program select the line — a selection set through TSF is not the program's own
+// (a Chromium editor pastes where its own caret is, not over it), which is why a readable editor took
+// the same keys as an unreadable one in the end (docs/ai.md).
 void select_line_for_answer(ITfContext* context, TfClientId client_id, const std::wstring& line,
-                            const char** how_out, bool* remembered_out) {
+                            bool whole_line, bool allow_tsf, const char** how_out,
+                            bool* remembered_out) {
     static const char* const kHow[] = {"none", "tsf", "keys"};
     if (how_out) *how_out = kHow[kLineRouteNone];
     if (remembered_out) *remembered_out = false;
@@ -448,7 +467,10 @@ void select_line_for_answer(ITfContext* context, TfClientId client_id, const std
         if (remembered_out) *remembered_out = true;
     }
     for (int route : order) {
-        if (try_line_route(route, context, client_id, line)) {
+        if (route == kLineRouteTsf && !allow_tsf) {
+            continue;
+        }
+        if (try_line_route(route, context, client_id, line, whole_line)) {
             known = route;
             if (how_out) *how_out = kHow[route];
             return;
@@ -456,7 +478,7 @@ void select_line_for_answer(ITfContext* context, TfClientId client_id, const std
     }
     // Neither: the keys are still the best chance of the answer landing on the line.
     known = kLineRouteKeys;
-    select_line_with_keys();
+    select_line_with_keys(whole_line);
     if (how_out) *how_out = kHow[kLineRouteKeys];
 }
 
@@ -508,14 +530,19 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
     bool cut = false;
     _textProgramCopiedLine = false;  // decided again below, by what this read finds
     _textLineText.clear();
+    _textLineSelected = false;
     _textEditControl = nullptr;
     _textEditStart = 0;
     _textEditEnd = 0;
+    _textUiaTarget = false;
+    _textUiaText.clear();
     const char* tier = "selection";
     TextBeforeCaret read = read_selection_text(context, _clientId, limit, &wanted, &cut);
+    bool line_tier = false;
     if (read == TextBeforeCaret::kRead && wanted.empty()) {
         // Tier 2: the caret's line, from its start to the caret.
         tier = "line";
+        line_tier = true;
         read = select_line_at_caret(context, _clientId, limit, &wanted, &cut);
     }
     if (read == TextBeforeCaret::kPrivate) {
@@ -545,6 +572,14 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
             _textEditEnd = edit_end;
             wanted = std::move(edit_text);
             tier = "edit_control";
+        } else if (uia_read_target(&edit_text)) {
+            // A program with a text pattern but no readable document (WinUI, WPF, and the like):
+            // UI Automation reads the text and selects it, so the answer is pasted over exactly that
+            // (docs/ai.md). Nothing is assumed — the delivery asks again and compares the text.
+            _textUiaTarget = true;
+            _textUiaText = edit_text;
+            wanted = std::move(edit_text);
+            tier = "uia";
         }
     }
 
@@ -555,6 +590,12 @@ bool TextService::_read_selected_text(std::wstring* selection, bool* shortened,
         *selection = wanted;
         put_clipboard_text(*selection);
         _trace_ai_source(tier, *selection);
+        if (line_tier) {
+            // The read selected the caret's line itself: the answer replaces it, and the delivery
+            // selects it again with the program's own keys before pasting (docs/ai.md).
+            _textLineSelected = true;
+            _textLineText = *selection;
+        }
     } else if (program_copy_first) {
         // The program has the text and its own copy is the only way to it: asked by message first (a
         // classic edit box honours WM_COPY and keeps the selection it has), and by keys only when
@@ -842,12 +883,14 @@ void TextService::_poll_translation() {
     // the whole line simply because nothing is selected — the answer is *shown*, not written over
     // whatever the caret is on (docs/ai.md).
     const bool line_should_be_replaced =
-        deliver && _textInsert == cxxime::AiActionInsert::kReplace && _textProgramCopiedLine;
+        deliver && _textInsert == cxxime::AiActionInsert::kReplace &&
+        (_textProgramCopiedLine || _textLineSelected);
     const char* line_how = nullptr;
     if (line_should_be_replaced) {
         bool line_remembered = false;
         ITfContext* line_context = _current_edit_context_for_composition();
-        select_line_for_answer(line_context, _clientId, _textLineText, &line_how, &line_remembered);
+        select_line_for_answer(line_context, _clientId, _textLineText, _textProgramCopiedLine,
+                               program_owns_its_text, &line_how, &line_remembered);
         if (line_context) line_context->Release();
         // Which way selected the line, and whether that answer was already known — the one thing the
         // log needs to tell a program that honours TSF's own selection from one that only answers to
@@ -877,9 +920,23 @@ void TextService::_poll_translation() {
         _enqueue_event_trace("ai_ui", detail);
     }
 
+    // The same for a program read through UI Automation: the target is selected again and its text
+    // compared, and only then is the answer pasted over it (docs/ai.md).
+    bool uia_delivered = false;
+    if (deliver && _textUiaTarget && _textInsert == cxxime::AiActionInsert::kReplace) {
+        uia_delivered = uia_select_if_unchanged(_textUiaText);
+        char detail[128] = {};
+        snprintf(detail, sizeof(detail), "deliver uia=%d", uia_delivered ? 1 : 0);
+        _enqueue_event_trace("ai_ui", detail);
+    }
+
     if (edit_delivered) {
         _hide_translate_window();  // the answer is in: the window has done its job
-    } else if (deliver && _textInsert == cxxime::AiActionInsert::kReplace && !_textEditControl) {
+    } else if (uia_delivered) {
+        paste_text(translation);
+        _hide_translate_window();
+    } else if (deliver && _textInsert == cxxime::AiActionInsert::kReplace && !_textEditControl &&
+               !_textUiaTarget) {
         paste_text(translation);
         _hide_translate_window();  // the answer is in: the window has done its job (OnEndEdit
                                    // cannot be relied on for it — see the grace window)

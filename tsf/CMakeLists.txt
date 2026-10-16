@@ -51,6 +51,7 @@ add_library(cxxime-tsf SHARED
     src/text_service_config.cpp
     src/text_service_activation.cpp
     src/text_before_caret.cpp
+    src/uia_text.cpp
     src/text_service_trace.cpp
     src/ui_presentation_batch.cpp
     src/ui_presentation_bridge.cpp
@@ -89,6 +90,7 @@ target_link_libraries(cxxime-tsf PRIVATE
     uuid
     advapi32
     imm32
+    uiautomationcore
 )
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
