@@ -318,16 +318,22 @@ bool select_and_copy_line(ITfContext* context, TfClientId client_id, const std::
                           const char** how_out) {
     static const char* const kHow[] = {"none", "home_tsf", "keys", "ctrl_l"};
     if (how_out) *how_out = kHow[0];
-    for (int attempt = 0; attempt < 3; ++attempt) {
+    // Home first — a plain key, which a program that ignores a synthesized Shift still answers to —
+    // and then TSF selecting the line from there: a real document selection, the same thing a
+    // readable document gets. Nothing is taken on trust: select_length_at_caret reads the selection
+    // back and compares positions, so a program that ignored the write is caught before anything is
+    // pasted (docs/ai.md).
+    if (context) {
+        tap_key(VK_HOME);
+        if (select_length_at_caret(context, client_id, line.size())) {
+            if (how_out) *how_out = kHow[1];
+            return true;
+        }
+    }
+    // The keys, judged by the copy they leave behind.
+    for (int attempt = 0; attempt < 2; ++attempt) {
         const DWORD sequence = GetClipboardSequenceNumber();
         if (attempt == 0) {
-            // Home first — a plain key, which a program that ignores a synthesized Shift still
-            // answers to — and then TSF selecting the line from there: a real document selection,
-            // the same thing a readable document gets. Nothing is assumed: the copy below says
-            // whether it happened (docs/ai.md).
-            tap_key(VK_HOME);
-            select_length_at_caret(context, client_id, line.size());
-        } else if (attempt == 1) {
             select_line_with_keys();  // Home, Shift+End
         } else {
             select_line_with_ctrl_l();  // what these editors bind "select the line" to
@@ -339,7 +345,7 @@ bool select_and_copy_line(ITfContext* context, TfClientId client_id, const std::
         }
         std::wstring copied;
         if (read_clipboard_text(&copied) && line_copy_is_selection(copied, line)) {
-            if (how_out) *how_out = kHow[attempt + 1];
+            if (how_out) *how_out = kHow[attempt + 2];
             return true;
         }
     }

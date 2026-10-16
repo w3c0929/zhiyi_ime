@@ -146,6 +146,33 @@ public:
             target.style.ase = TF_AE_NONE;
             target.style.fInterimChar = FALSE;
             if (FAILED(_context->SetSelection(ec, 1, &target))) return E_FAIL;
+            // Read it back and compare *positions*: an app that quietly ignored the write still has
+            // its old (collapsed) selection, which is what this catches. Positional on purpose — no
+            // text has to be readable for it, and "did a copy come back with a line break in it" is
+            // no use here: in these editors the copy of a line *and* the copy of a selection of that
+            // line look the same (measured in Sublime Text, docs/ai.md).
+            TF_SELECTION read_back = {};
+            ULONG fetched = 0;
+            if (FAILED(_context->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &read_back, &fetched)) ||
+                fetched == 0 || !read_back.range) {
+                return E_FAIL;
+            }
+            com_ptr<ITfRange> expected;
+            const bool cloned = SUCCEEDED(read_back.range->Clone(&expected));
+            LONG moved_end = 0;
+            const bool measured =
+                cloned && SUCCEEDED(expected->Collapse(ec, TF_ANCHOR_START)) &&
+                SUCCEEDED(expected->ShiftEnd(ec, wanted, &moved_end, nullptr)) &&
+                moved_end == wanted;
+            BOOL same_start = FALSE;
+            BOOL same_end = FALSE;
+            const bool accepted =
+                measured &&
+                SUCCEEDED(expected->IsEqualStart(ec, read_back.range, TF_ANCHOR_START, &same_start)) &&
+                SUCCEEDED(expected->IsEqualEnd(ec, read_back.range, TF_ANCHOR_END, &same_end)) &&
+                same_start && same_end;
+            read_back.range->Release();
+            if (!accepted) return E_FAIL;
             result = TextBeforeCaret::kRead;
             return S_OK;
         }
