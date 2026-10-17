@@ -152,6 +152,12 @@
   （`%APPDATA%\…\Start Menu`）而不是「所有用户」（`%ProgramData%\…\Start Menu`）。
 - **升级前先停 `zhiyu-server`**：否则旧目录里的 DLL 被正在运行的 App 映射，卸载删不干净，
   留下 `D:\scoop\persist\zhiyuime\zhiyuime.busy-*` 残留（关掉这些 App 或重启系统后才能删）。
+  **另一条更隐蔽的后果**（2026-10-17 实测）：升级会**退休**旧版本目录（连它的 `data\` 一起删），
+  而还在跑的旧 server 以自己那个目录为家 → 读不到包内 `default.json` → **拒绝一切保存**
+  （设置页报 "后台服务没有采用这份配置…The data is invalid. (13)"，手输配置也写不进去）。
+  1.7.60 起服务端会自愈：读不到自己的包内配置时改用注册表 `InstallLocation` 指向的那份
+  （`server/src/config_store.cc` 的 `relocate_package_paths`，并在 `problems.log` 里留一行）；
+  **但升级/测试时仍应先停 server**，别指望自愈兜住一切。
 - `package_release.py` **只覆盖文本配置**（`DATA_OVERLAY`），二进制数据来自参考目录；
   参考目录里上游命名的 `zhiyi-*` 会被 `File /r *.*` 打进包，务必删除。
 - 产物名以 `package_release.py` 的 `BUILT` 表为准（如 `zhiyu_tsf_x64.dll`）；
