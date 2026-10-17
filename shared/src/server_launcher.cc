@@ -2,6 +2,7 @@
 
 #include <cxxime/server_launcher.h>
 
+#include <cstddef>
 #include <string>
 
 #include <windows.h>
@@ -56,7 +57,9 @@ bool process_may_start_server() {
     return allowed;
 }
 
-std::wstring registered_server_path() {
+// The installed version directory, as the registry holds it (the installer keeps it on the active
+// version; no trailing slash). Empty when there is no install or the key cannot be read.
+std::wstring read_install_location() {
     HKEY key = nullptr;
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, kInstallRegistryKey, 0, KEY_QUERY_VALUE | KEY_WOW64_64KEY,
                       &key) != ERROR_SUCCESS) {
@@ -68,9 +71,19 @@ std::wstring registered_server_path() {
     const LONG result = RegQueryValueExW(key, L"InstallLocation", nullptr, &value_type,
                                          reinterpret_cast<BYTE*>(install_path), &value_bytes);
     RegCloseKey(key);
+    if (result != ERROR_SUCCESS || value_type != REG_SZ || value_bytes > sizeof(install_path)) {
+        return {};
+    }
+    return install_path;  // the buffer is zero-filled, so it is NUL-terminated
+}
+
+std::wstring registered_server_path() {
+    const std::wstring install_location = read_install_location();
     std::wstring settings_path;
-    if (result != ERROR_SUCCESS || value_type != REG_SZ || value_bytes > sizeof(install_path) ||
-        !build_registered_settings_path(install_path, value_bytes, &settings_path)) {
+    if (install_location.empty() ||
+        !build_registered_settings_path(install_location.c_str(),
+                                        (install_location.size() + 1) * sizeof(wchar_t),
+                                        &settings_path)) {
         return {};
     }
     // The programs are installed side by side.
@@ -110,6 +123,20 @@ bool start_server_on_demand() {
     CloseHandle(process_info.hThread);
     CXXIME_LOG(L"%s", L"server_launch result=1");
     return true;
+}
+
+std::string active_install_location() {
+    const std::wstring install_location = read_install_location();
+    if (install_location.empty()) return {};
+    const int size = WideCharToMultiByte(CP_UTF8, 0, install_location.data(),
+                                         static_cast<int>(install_location.size()), nullptr, 0,
+                                         nullptr, nullptr);
+    if (size <= 0) return {};
+    std::string result(static_cast<std::size_t>(size), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, install_location.data(),
+                        static_cast<int>(install_location.size()), result.data(), size, nullptr,
+                        nullptr);
+    return result;
 }
 
 } // namespace cxxime

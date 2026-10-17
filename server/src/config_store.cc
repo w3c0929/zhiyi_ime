@@ -3,7 +3,9 @@
 #include "config_store.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <string>
+#include <system_error>
 #include <utility>
 
 #include <windows.h>
@@ -11,6 +13,7 @@
 #include <json.hpp>
 
 #include <cxxime/problem_log.h>
+#include <cxxime/server_launcher.h>
 
 namespace {
 
@@ -113,8 +116,10 @@ bool atomic_write_file(const std::wstring& path, const std::string& contents,
 bool ConfigStore::initialize(const std::string& base_config_path,
                              const std::string& user_config_path, const std::string& themes_path,
                              std::shared_ptr<const cxxime::Config>* config,
-                             unsigned long* error_code, ConfigStoreFailure* failure) {
+                             unsigned long* error_code, ConfigStoreFailure* failure,
+                             bool may_relocate_package) {
     set_failure(failure, ConfigStoreFailure::kNone);
+    may_relocate_package_ = may_relocate_package;
     if (!config || base_config_path.empty() || user_config_path.empty() || themes_path.empty()) {
         if (error_code) {
             *error_code = ERROR_INVALID_PARAMETER;
@@ -275,30 +280,72 @@ bool ConfigStore::commit_update(const PreparedConfigUpdate& update, unsigned lon
 bool ConfigStore::build_effective_config(const std::string& user_config_json,
                                          std::shared_ptr<const cxxime::Config>* config,
                                          unsigned long* error_code,
-                                         ConfigStoreFailure* failure) const {
-    auto candidate = std::make_shared<cxxime::Config>();
-    if (!candidate->load(base_config_path_)) {
-        set_failure(failure, ConfigStoreFailure::kBaseConfig);
-        if (error_code) {
-            *error_code = ERROR_INVALID_DATA;
+                                         ConfigStoreFailure* failure) {
+    const auto try_load = [&](std::shared_ptr<const cxxime::Config>* loaded,
+                              ConfigStoreFailure* why) {
+        auto candidate = std::make_shared<cxxime::Config>();
+        if (!candidate->load(base_config_path_)) {
+            set_failure(why, ConfigStoreFailure::kBaseConfig);
+            return false;
         }
+        if (!candidate->load_user_json(user_config_json)) {
+            set_failure(why, ConfigStoreFailure::kUserConfig);
+            return false;
+        }
+        if (!candidate->load_themes(themes_path_)) {
+            set_failure(why, ConfigStoreFailure::kThemes);
+            return false;
+        }
+        set_failure(why, ConfigStoreFailure::kNone);
+        *loaded = std::move(candidate);
+        return true;
+    };
+    ConfigStoreFailure why = ConfigStoreFailure::kNone;
+    if (try_load(config, &why)) {
+        set_failure(failure, ConfigStoreFailure::kNone);
+        if (error_code) {
+            *error_code = ERROR_SUCCESS;
+        }
+        return true;
+    }
+    // The package settings this server was started with may be gone: an update retires the version
+    // directory it came from while the old server keeps serving, and then *every* save was rejected
+    // with ERROR_INVALID_DATA (measured 2026-10-17). Take them from the installed version instead.
+    if (may_relocate_package_ &&
+        (why == ConfigStoreFailure::kBaseConfig || why == ConfigStoreFailure::kThemes) &&
+        relocate_package_paths() && try_load(config, &why)) {
+        set_failure(failure, ConfigStoreFailure::kNone);
+        if (error_code) {
+            *error_code = ERROR_SUCCESS;
+        }
+        return true;
+    }
+    set_failure(failure, why);
+    if (error_code) {
+        *error_code = ERROR_INVALID_DATA;
+    }
+    return false;
+}
+
+bool ConfigStore::relocate_package_paths() {
+    const std::string install = cxxime::active_install_location();
+    if (install.empty()) return false;
+    const auto file_name = [](const std::string& path) {
+        const std::size_t slash = path.find_last_of("\\/");
+        return slash == std::string::npos ? path : path.substr(slash + 1);
+    };
+    const std::string data = install + "\\data\\";
+    const std::string base = data + file_name(base_config_path_);
+    const std::string themes = data + file_name(themes_path_);
+    std::error_code ec;
+    // Both files have to be there: half a package is worse than a clear failure.
+    if (base == base_config_path_ || !std::filesystem::exists(base, ec) ||
+        !std::filesystem::exists(themes, ec)) {
         return false;
     }
-    if (!candidate->load_user_json(user_config_json)) {
-        set_failure(failure, ConfigStoreFailure::kUserConfig);
-        if (error_code) {
-            *error_code = ERROR_INVALID_DATA;
-        }
-        return false;
-    }
-    if (!candidate->load_themes(themes_path_)) {
-        set_failure(failure, ConfigStoreFailure::kThemes);
-        if (error_code) {
-            *error_code = ERROR_INVALID_DATA;
-        }
-        return false;
-    }
-    set_failure(failure, ConfigStoreFailure::kNone);
-    *config = std::move(candidate);
+    cxxime::log_problem("config", "the version this server was started from is gone; using the "
+                                  "package settings of the installed version: " + base);
+    base_config_path_ = base;
+    themes_path_ = themes;
     return true;
 }

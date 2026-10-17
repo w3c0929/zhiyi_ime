@@ -85,7 +85,8 @@ constexpr std::size_t kMaxTextUploadBytes = 2u << 20;
 
 } // namespace
 
-bool ServerApp::initialize(const std::string& dict_path, const std::string& config_path) {
+bool ServerApp::initialize(const std::string& dict_path, const std::string& config_path,
+                           bool may_relocate_package) {
     std::string resolved_dict = dict_path.empty() ? cxxime::data_path("pinyin.dict.bin") : dict_path;
     std::string cfg = config_path.empty() ? cxxime::data_path("default.json") : config_path;
     std::string user_config = cxxime::user_data_path("default.json");
@@ -99,7 +100,7 @@ bool ServerApp::initialize(const std::string& dict_path, const std::string& conf
     unsigned long config_error = ERROR_SUCCESS;
     ConfigStoreFailure config_failure = ConfigStoreFailure::kNone;
     if (!config_store_.initialize(config_path_, user_config, themes, &initial_config, &config_error,
-                                  &config_failure)) {
+                                  &config_failure, may_relocate_package)) {
         CXXIME_LOG(L"ServerApp: configuration initialization failed source=%d error=%lu",
                    static_cast<int>(config_failure), config_error);
         std::wstring msg = config_failure_message(config_failure);

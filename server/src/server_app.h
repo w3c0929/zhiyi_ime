@@ -29,7 +29,10 @@
 
 class ServerApp {
 public:
-    bool initialize(const std::string& dict_path = "", const std::string& config_path = "");
+    // `may_relocate_package`: see ConfigStore::initialize — false when dict_path/config_path came
+    // from --data / --config (a development tree), true for the installed layout.
+    bool initialize(const std::string& dict_path = "", const std::string& config_path = "",
+                    bool may_relocate_package = true);
     void run();
     void finalize();
 

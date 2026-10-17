@@ -176,6 +176,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     std::string dict_path;
     std::string config_path;
     bool autostart = false;
+    // --data / --config point at someone else's layout (a source build, a test bundle): the
+    // package settings then stay where they were named, and are never taken from the installed
+    // version (ConfigStore::initialize).
+    bool explicit_data_paths = false;
     if (argv) {
         // --data sets base data directory (overrides compile-time/default path)
         std::string data_dir = get_arg(argc, argv, L"--data");
@@ -184,6 +188,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
 
         dict_path = get_arg(argc, argv, L"--dict");
         config_path = get_arg(argc, argv, L"--config");
+        explicit_data_paths = !data_dir.empty() || !config_path.empty();
         autostart = has_flag(argc, argv, L"--autostart");
         if (has_flag(argc, argv, L"--ai-test")) {
             const int test = run_ai_test(argc, argv);
@@ -220,7 +225,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     }
 
     ServerApp app;
-    if (!app.initialize(dict_path, config_path)) {
+    if (!app.initialize(dict_path, config_path, !explicit_data_paths)) {
         CloseHandle(instance);
         CoUninitialize();
         return 1;
