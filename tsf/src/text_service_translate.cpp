@@ -1255,15 +1255,18 @@ void TextService::_process_ai_action_selection() {
     _pendingAiActionId.clear();
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
     if (actions.empty()) return;  // no data file, or nothing usable in it
+    if (action_id.empty()) {
+        // The menu key only *asks* which action to run: the text is read when a row is picked
+        // (_run_ai_action), so pressing the key does not put the selection on the clipboard
+        // (docs/ai.md).
+        _open_ai_menu();
+        return;
+    }
     std::wstring selection;
     bool shortened = false;
     const wchar_t* reason = nullptr;
     if (!_read_selected_text(&selection, &shortened, &reason)) {
         _present_failure(reason, std::wstring());
-        return;
-    }
-    if (action_id.empty()) {
-        _open_ai_menu(selection, shortened);
         return;
     }
     // An action's own key: straight to it, no menu.
@@ -1274,7 +1277,7 @@ void TextService::_process_ai_action_selection() {
     }
 }
 
-void TextService::_open_ai_menu(const std::wstring& source, bool shortened) {
+void TextService::_open_ai_menu() {
     _close_ai_menu();
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
     for (std::size_t i = 0; i < actions.size(); ++i) {
@@ -1283,8 +1286,6 @@ void TextService::_open_ai_menu(const std::wstring& source, bool shortened) {
         _aiMenuRows.push_back(i);
     }
     if (_aiMenuRows.empty()) return;
-    _aiMenuSource = source;
-    _aiMenuShortened = shortened;
     if (!_show_menu_window()) _close_ai_menu();
 }
 
@@ -1350,8 +1351,6 @@ void TextService::_close_ai_menu() {
     _aiMenuOpen = false;
     _aiMenuRows.clear();
     _aiMenuHighlight = 0;
-    _aiMenuSource.clear();
-    _aiMenuShortened = false;
     if (_aiMenuWindow) _aiMenuWindow->hide();
 }
 
@@ -1395,10 +1394,18 @@ bool TextService::_handle_ai_menu_key(WPARAM key, BOOL* pfEaten) {
 void TextService::_run_ai_action(std::size_t row) {
     if (row >= _aiMenuRows.size()) return;
     const std::size_t index = _aiMenuRows[row];
-    const std::wstring source = _aiMenuSource;
-    const bool shortened = _aiMenuShortened;
     _close_ai_menu();
-    _start_ai_action(index, source, shortened);
+    // The text is read *here*, now that the user has said which action to run: opening the menu alone
+    // has no business putting the selection on the clipboard (docs/ai.md). It is read from where the
+    // caret and selection stand at this moment.
+    std::wstring selection;
+    bool shortened = false;
+    const wchar_t* reason = nullptr;
+    if (!_read_selected_text(&selection, &shortened, &reason)) {
+        _present_failure(reason, std::wstring());
+        return;
+    }
+    _start_ai_action(index, selection, shortened);
 }
 
 void TextService::_start_ai_action(std::size_t index, const std::wstring& source,

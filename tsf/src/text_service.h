@@ -476,7 +476,8 @@ private:
     void _fire_ai_action_key(bool language, const std::string& action_id);
     // A key while the menu is open: true when the menu took it (pfEaten is set then).
     bool _handle_ai_menu_key(WPARAM key, BOOL* pfEaten);
-    void _open_ai_menu(const std::wstring& source, bool shortened);
+    // Only opens the menu: the text an action works on is read when a row is picked (docs/ai.md).
+    void _open_ai_menu();
     bool _show_menu_window();
     void _close_ai_menu();
     void _render_ai_menu();  // redraw the rows (the highlight moved)
@@ -615,8 +616,6 @@ private:
     // has to take keys), the rows it shows (indices into cxxime::ai_actions()) and what it is for.
     bool _aiMenuOpen = false;
     std::size_t _aiMenuHighlight = 0;
-    std::wstring _aiMenuSource;               // the selection the menu was opened for
-    bool _aiMenuShortened = false;            // only its beginning was read
     std::vector<std::size_t> _aiMenuRows;
     std::string _pendingAiActionId;  // an action's own key was pressed: run it, no menu
     bool _pendingLanguageMenu = false;  // the language key was pressed: open \fy's list
