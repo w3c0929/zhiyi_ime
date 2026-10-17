@@ -2,7 +2,8 @@
 //
 // Key capture box for the switch keys: left click, then press the key (a modifier tapped alone,
 // F1-F11, or a combination such as Ctrl+Shift+E); right click clears it. A tapped modifier is
-// taken as either side; the arrow at the right end of the box (or Alt+Down) picks one side.
+// taken as either side; the arrow at the right end of the box (or Alt+Down) picks one side — and
+// on the Chinese/English box (key_capture_set_tap_sides) what each side does.
 // Sends WM_COMMAND with kKeyCaptureChanged to its parent when the key changes.
 #ifndef CXXIME_SETTINGS_KEY_CAPTURE_H_
 #define CXXIME_SETTINGS_KEY_CAPTURE_H_
@@ -25,6 +26,9 @@ constexpr WORD kKeyCaptureChanged = 0x4B43;  // WM_COMMAND notification code
 // `allow_tap`: a modifier tapped alone (Shift, Ctrl) is accepted; otherwise only combinations.
 HWND create_key_capture(int id, int x, int y, int width, int height, HWND parent, bool allow_tap);
 void key_capture_set(HWND control, const KeyChoice& choice);
+// The Chinese/English switch's box: the arrow menu offers what each side of the tapped modifier
+// does (switch_tap_choices) instead of only which side counts.
+void key_capture_set_tap_sides(HWND control, bool tap_sides);
 KeyChoice key_capture_get(HWND control);
 // Checked before a pressed key (or a side picked from the arrow) is taken: a non-empty message
 // (the key is used by another box) keeps the previous key and shows the message for a moment.

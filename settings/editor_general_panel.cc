@@ -289,6 +289,9 @@ void EditorApp::create_keys_panel(HWND panel) {
             y += S(8);
         }
     }
+    // The Chinese/English box asks more of its arrow: what each side of the tapped modifier does,
+    // not only which side counts (key_capture_set_tap_sides, switch_tap_choices).
+    key_capture_set_tap_sides(hSwitchKey_, true);
     // Selection translation: a shortcut (Ctrl+C by default, pressed twice — press it twice in the
     // box and it is stored as "Ctrl+C+C") and the direct-insert option.
     {

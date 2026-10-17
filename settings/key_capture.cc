@@ -31,6 +31,9 @@ struct State {
     bool allow_tap = false;
     bool allow_double = false;      // a second press of the same key doubles it
     bool allow_common = false;      // a common application shortcut (Ctrl+C) is allowed
+    // The Chinese/English switch: the arrow menu offers what each side of the tapped modifier does
+    // (switch_tap_choices) instead of only which side counts.
+    bool tap_sides = false;
     bool waiting_double = false;    // the first press is in, waiting for a second one
     KeyChoice pending_double;       // that first press
     bool capturing = false;
@@ -315,7 +318,18 @@ void on_key_up(HWND window, State* state, UINT vk) {
     // hand Alt keys to input methods, so a tapped Alt would never switch anything.
     if (!state->other_key_seen && state->modifiers_seen == bit) {
         if (state->allow_tap && (bit == kKeyModifierShift || bit == kKeyModifierControl)) {
-            accept(window, state, KeyChoice::tap(generic_modifier_vk(bit)));
+            KeyChoice choice = KeyChoice::tap(generic_modifier_vk(bit));
+            if (state->tap_sides) {
+                // The Chinese/English switch: the tapped key is only the modifier, and the sides
+                // keep whatever the arrow menu last said (both switch the mode to begin with).
+                choice.tap_left = state->choice.tap_left;
+                choice.tap_right = state->choice.tap_right;
+                if (choice.tap_left == TapAction::kNone && choice.tap_right == TapAction::kNone) {
+                    choice.tap_left = TapAction::kToggle;
+                    choice.tap_right = TapAction::kToggle;
+                }
+            }
+            accept(window, state, choice);
             return;
         }
         reject(window, state, state->allow_tap ? tr("keys.tap_only") : tr("keys.need_combo"));
@@ -326,10 +340,43 @@ void on_key_up(HWND window, State* state, UINT vk) {
     }
 }
 
+// The Chinese/English box's menu: what each side of the tapped modifier does (the nine choices).
+void show_tap_sides_menu(HWND window, State* state, uint32_t family) {
+    const TapChoice* choices = switch_tap_choices();
+    HMENU menu = CreatePopupMenu();
+    for (int i = 0; i < kSwitchTapChoiceCount; ++i) {
+        AppendMenuW(menu, MF_STRING, static_cast<UINT_PTR>(i) + 1, tr(choices[i].label));
+    }
+    // A hand-written pair the menu does not offer (say both sides going to English) is kept as it
+    // is: nothing is checked, and any pick replaces it.
+    const int current = switch_tap_choice_index(state->choice.tap_left, state->choice.tap_right);
+    if (current >= 0) {
+        CheckMenuRadioItem(menu, 1, kSwitchTapChoiceCount, static_cast<UINT>(current) + 1,
+                           MF_BYCOMMAND);
+    }
+    RECT box;
+    GetWindowRect(window, &box);
+    const UINT command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTALIGN | TPM_TOPALIGN |
+                                                  TPM_NONOTIFY | TPM_LEFTBUTTON,
+                                        box.right, box.bottom, 0, window, nullptr);
+    DestroyMenu(menu);
+    if (command < 1 || command > kSwitchTapChoiceCount) return;
+    const TapChoice& picked = choices[command - 1];
+    if (picked.left == state->choice.tap_left && picked.right == state->choice.tap_right) return;
+    KeyChoice choice = KeyChoice::tap(family);  // either side: the two actions say which
+    choice.tap_left = picked.left;
+    choice.tap_right = picked.right;
+    accept(window, state, choice);
+}
+
 // The arrow's menu: either side, only the left one, only the right one.
 void show_side_menu(HWND window, State* state) {
     const uint32_t family = tap_family(state->choice.tap_key);
     if (family == 0) return;
+    if (state->tap_sides) {
+        show_tap_sides_menu(window, state, family);
+        return;
+    }
     auto only = [](uint32_t vk) {
         std::wstring text = tr("keys.side_only");
         const size_t at = text.find(L"{0}");
@@ -632,6 +679,10 @@ void key_capture_set_allow_common(HWND control, bool allow_common) {
     if (State* state = state_of(control)) state->allow_common = allow_common;
 }
 
+void key_capture_set_tap_sides(HWND control, bool tap_sides) {
+    if (State* state = state_of(control)) state->tap_sides = tap_sides;
+}
+
 void key_capture_set_note(HWND control, KeyNote kind, const std::wstring& text) {
     if (State* state = state_of(control)) {
         state->note_kind = text.empty() ? KeyNote::kNone : kind;
@@ -650,7 +701,7 @@ bool same_key_choice(const KeyChoice& left, const KeyChoice& right) {
     if (left.kind != right.kind) return false;
     switch (left.kind) {
     case KeyChoice::Kind::kTap:
-        return tap_keys_overlap(left.tap_key, right.tap_key);
+        return tap_choices_overlap(left, right);
     case KeyChoice::Kind::kCombo:
         return left.combo == right.combo;
     case KeyChoice::Kind::kNone:
@@ -666,8 +717,18 @@ KeyChoice key_capture_get(HWND control) {
 
 std::wstring key_choice_text(const KeyChoice& choice, const wchar_t* none) {
     switch (choice.kind) {
-    case KeyChoice::Kind::kTap:
-        return tapped_modifier_text(choice.tap_key);
+    case KeyChoice::Kind::kTap: {
+        std::wstring text = tapped_modifier_text(choice.tap_key);
+        // The Chinese/English switch says what its two sides do after the key ("Shift · 左英文，
+        // 右中文"). A pair the menu cannot describe (hand-written) leaves it at the key alone.
+        const int index =
+            switch_tap_choice_index(choice.tap_left, choice.tap_right);
+        if (index >= 0) {
+            text += L" · ";
+            text += tr(switch_tap_choices()[index].label);
+        }
+        return text;
+    }
     case KeyChoice::Kind::kCombo: {
         const std::string text = keyboard_shortcut_string(choice.combo);
         std::wstring out;

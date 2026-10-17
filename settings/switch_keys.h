@@ -15,6 +15,11 @@
 namespace cxxime {
 namespace settings {
 
+// What one side of the Chinese/English switch's tapped modifier does (the values
+// ascii_composer.switch_key holds): switch the mode either way, go to English, go to Chinese, or
+// nothing at all.
+enum class TapAction { kNone, kToggle, kEnglish, kChinese };
+
 struct KeyChoice {
     enum class Kind { kNone, kTap, kCombo };
     Kind kind = Kind::kNone;
@@ -22,6 +27,11 @@ struct KeyChoice {
     // VK_LSHIFT / VK_RSHIFT / VK_LCONTROL / VK_RCONTROL for one side.
     uint32_t tap_key = 0;
     KeyboardShortcut combo;   // kCombo
+    // The Chinese/English switch only: what the tapped modifier's left and right side each do,
+    // chosen from switch_tap_choices(). tap_key is then only the family (VK_SHIFT / VK_CONTROL) —
+    // which sides are in use is what these two say (kNone: that side does nothing).
+    TapAction tap_left = TapAction::kNone;
+    TapAction tap_right = TapAction::kNone;
 
     static KeyChoice none() { return {}; }
     static KeyChoice tap(uint32_t key) { return {Kind::kTap, key, {}}; }
@@ -30,6 +40,23 @@ struct KeyChoice {
     }
 };
 
+// The nine things the arrow menu of the Chinese/English box offers, in menu order: the left and the
+// right side of the tapped modifier each do one of them. A pair a hand-written config holds that is
+// not one of the nine is left as it is (the menu shows nothing checked for it).
+struct TapChoice {
+    TapAction left;
+    TapAction right;
+    const char* label;   // a message key
+};
+constexpr int kSwitchTapChoiceCount = 9;
+const TapChoice* switch_tap_choices();
+// The menu entry of a pair, or -1 when the menu does not offer it.
+int switch_tap_choice_index(TapAction left, TapAction right);
+
+// Whether two choices take a side of the same modifier: the Chinese/English box takes the sides its
+// two actions stand on, the other switches the side their tapped key stands for.
+bool tap_choices_overlap(const KeyChoice& left, const KeyChoice& right);
+
 // A tapped modifier: which one (the generic VK_SHIFT / VK_CONTROL, 0 for any other key)
 // and which side it stands for.
 enum class TapSide { kEither, kLeft, kRight };
@@ -37,14 +64,13 @@ uint32_t tap_family(uint32_t vk);
 TapSide tap_side(uint32_t vk);
 // The tap key of a family on a side: (VK_CONTROL, kRight) -> VK_RCONTROL; 0 for no family.
 uint32_t tap_key_on_side(uint32_t family, TapSide side);
-// One modifier is for one switch, whichever side: Ctrl and right Ctrl clash, and so do left Ctrl
-// and right Ctrl.
-bool tap_keys_overlap(uint32_t left, uint32_t right);
 
 constexpr int kSwitchKeyCount = 5;
 // The key of a switch (box order) as the config stores it: its combination, else a tapped
 // modifier (one side when only that side has the switch's action), else none. Each side is read
 // on its own, so a hand-written config with the two sides on two switches shows (and keeps) both.
+// For the Chinese/English switch (slot 0) the two sides are also read for what they do: switch the
+// mode, go to English, go to Chinese, or nothing.
 KeyChoice switch_key_choice(const Config& config, int slot);
 // The five boxes (box order) into the config.
 void apply_switch_key_choices(Config& config, const KeyChoice (&choices)[kSwitchKeyCount]);

@@ -153,7 +153,7 @@ preedit 为空时视为空闲状态，并将默认状态恢复为 `kIme`。`Cont
     "ascii_composer": {
         "switch_key": {
             "Shift_L": "code",
-            "Shift_R": "set_ascii_mode",
+            "Shift_R": "code",
             "Control_L": "noop",
             "Control_R": "noop",
             "Caps_Lock": "clear"
@@ -162,8 +162,8 @@ preedit 为空时视为空闲状态，并将默认状态恢复为 `kIme`。`Cont
 }
 ```
 
-单独轻按修饰键的动作在配置文件 `ascii_composer.switch_key` 中设置（设置程序的“按键”页只提供“轻按 Shift / Ctrl
-切换中英文”）：
+单独轻按修饰键的动作在配置文件 `ascii_composer.switch_key` 中设置（设置程序的“按键”页里，中英切换一行的箭头给出九种玩法：
+两侧都切换、只一侧切换、左/右各固定成英文或中文；其余四项只选“左右都算 / 只认左 / 只认右”）：
 
 | 配置值 | 行为 |
 |--------|------|
@@ -174,6 +174,10 @@ preedit 为空时视为空闲状态，并将默认状态恢复为 `kIme`。`Cont
 | `set_ascii_mode` | 单向切换到英文 |
 | `unset_ascii_mode` | 单向切换到中文 |
 | `noop` | 不处理 |
+
+中英切换（`Shift_L` / `Shift_R` 这些槽位）的两侧可以写**不同的动作**：`code`、`set_ascii_mode`、`unset_ascii_mode`、`noop`
+任意组合——`Shift_L`: `set_ascii_mode` 配 `Shift_R`: `unset_ascii_mode` 就是设置页的“左英文，右中文”；两侧都写 `code`
+就是默认的两边都能切换。其余四项两侧写同一个动作（那两个值不同等于两侧分给了两个切换键，设置页就是这么读的）。
 
 CapsLock 支持 `code`、`candidate`、`clear`、`append`、`noop`。`append` 保留 CapsLock 大小写输入，不单独切换组合；不适用于 CapsLock 的动作会按实现降级为 `clear`。
 

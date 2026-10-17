@@ -70,11 +70,16 @@
 
 - **左键**点击按键框后按下新的按键（Esc 取消），**右键**点击清空（不使用这个切换键）。
 - 录入时按键先交给按键框，其他程序的全局热键、知语的“打开/关闭输入法”热键和输入法都不会先拿走它，所以被其他程序占用的组合也能录到（录到后提示“已被其他程序占用”），录入时也不会触发那个程序。Win 组合键、Alt+Tab、Alt+Esc、Ctrl+Esc 照常切换窗口，录入随之取消。
-- 每个切换键都可以是单独轻按 Shift 或 Ctrl（同一个键只能给一项），或者组合键：Ctrl / Alt 组合、Shift + Space 或 F1–F11。
-  轻按修饰键默认不分左右（任意一侧都算）。点按键框右侧的箭头（或按 Alt + ↓），可以选“只认左 Ctrl”“只认右 Ctrl”这样只认一侧，
-  同一个修饰键只能给一项：某一项用了右 Ctrl，左 Ctrl 也不能再给别的切换键。
+- 每个切换键都可以是单独轻按 Shift 或 Ctrl（同一个键的同一侧只能给一项），或者组合键：Ctrl / Alt 组合、Shift + Space 或 F1–F11。
+  轻按修饰键默认不分左右（任意一侧都算）。点按键框右侧的箭头（或按 Alt + ↓），可以选“只认左 Ctrl”“只认右 Ctrl”这样只认一侧。
+  **中英切换**这一行的箭头给的是九种左右分工，框里显示成“Shift · 左英文，右中文”这样：
+  左右都可中英切换、左仅中英切换、右仅中英切换、左英文，右中文、左中文，右英文、左仅英文、左仅中文、右仅英文、右仅中文。
+  同一个修饰键的同一侧只能给一项：中英切换只要用了左 Shift（不管那侧是切换、英文还是中文），别的切换键就不能再用左 Shift，但可以用右 Shift。
   很多新笔记本没有右 Ctrl（换成了 Copilot 键）。按住一个修饰键时再按另一个（如 Ctrl + Shift 切换键盘布局）不算轻按。
-  配置文件里是 `ascii_composer.switch_key` 的 `Shift_L` `Shift_R` `Control_L` `Control_R`：中英切换为 `code`，另外四项为 `toggle_style` `toggle_punct` `toggle_shape` `toggle_voice`；左右两侧同值表示不区分，只写一侧表示只认该侧。
+  配置文件里是 `ascii_composer.switch_key` 的 `Shift_L` `Shift_R` `Control_L` `Control_R`：中英切换的三个动作是 `code`（切换）、
+  `set_ascii_mode`（只切到英文）、`unset_ascii_mode`（只切到中文），`noop` 表示那一侧不做事——两侧各写一个就是上面九种选项的存法
+  （例如 `Shift_L`: `set_ascii_mode`、`Shift_R`: `unset_ascii_mode` 就是“左英文，右中文”）；另外四项为 `toggle_style` `toggle_punct`
+  `toggle_shape` `toggle_voice`，两侧同值表示不区分左右，只写一侧表示只认该侧。
   不能设成单独轻按 Alt：Windows 不把 Alt 键交给输入法，设了也不会触发。
 - 不能和其他切换键重复，也不能用复制、粘贴等常用快捷键；重复时保留原来的设置。
 - 按键框下方的提示：灰色“已接管系统的××热键”表示和 Windows 输入法热键相同，由知语输入法处理；
