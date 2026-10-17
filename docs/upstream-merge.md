@@ -206,7 +206,11 @@
 - 正确做法：下载上游资产 → **丢弃上游的 `*.json.sig`** → 用本仓库私钥重签
   （`python scripts/update_signing.py sign update-signing-key.pem <清单>`）→ 在本仓库建同名 Release 上传。
 - **必须 `--latest=false`**（`gh release create … --latest=false`）：否则会抢走 `/releases/latest`，
-  更新检查就会指向模型 Release。
+  更新检查就会指向模型 Release。**忘了带的话**：`--latest=false` 在**已发布**的 release 上不生效
+  （2026-10-17 实测：`gh release edit <tag> --latest=false` 与 `PATCH … make_latest=false` 都不动它），
+  要用 `gh release edit <tag> --prerelease` 才能把它从 `/releases/latest` 上摘下来；摘完用
+  `gh api repos/w3c0929/zhiyi_ime/releases/latest --jq .tag_name` 确认回到了版本 tag，并确认
+  `https://github.com/w3c0929/zhiyi_ime/releases/latest/download/latest.json` 能取到（HTTP 200）。
 - 清单里**没有 URL**（`parse_*_manifest` 用 `download_prefix` 自己拼），所以上游清单内容可原样复用，只重签。
 - 现有内容：`glossary`（28 个 `.gloss` + `glossary.json`）、`translator`（`zhiyi-mt-v2-Q4_K_M.gguf` 396 MB 与
   v3 的 gguf 322 MB，用户可在「学习」页选；`llama-b11480-vulkan-x64.zip` 32 MB）、`voice`（`model.int8.onnx`
