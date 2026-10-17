@@ -53,6 +53,10 @@ build_laya.bat                        :: Ninja Release 构建，产物在 build\
   发布（`scripts/fetch_model.py` 从那里取；内容与上游同名的 release 逐字节相同）（1.5.4–1.5.8 的解码器模型：
   上游 [model-zhen-unified-dec](https://github.com/dd1000001000/zhiyi_ime/releases/tag/model-zhen-unified-dec)）；
   训练代码与训练、评测数据涉及第三方语料版权，不公开。
+- 想确认**本机现在用的是哪一版**：`pwsh -File scripts\show_recommendation_model.ps1`——看安装目录里
+  `laya.int8g.onnx` 的 sha256/大小（新模型 96,155,512 字节、`4aa1e0a3…b714`，且没有 `laya_decoder*.onnx`），
+  以及 `%LOCALAPPDATA%\zhiyu\laya-cache\` 里是否新出现一个键目录（键含模型文件的大小与时间，说明引擎
+  确实打开了刚装的这份）。
 - 上文：开始输入时，TSF 模块读取输入框里光标前（有选中文字时为选区之前）最多 256 个字（`SET_CONTEXT`），
   模型取其中最后 128 个字 / 192 个英文字符。程序不允许读取时，改用之前上屏的文字，换到另一个输入框时清空；
   密码框和标为私密的输入框不读取。实现见 `tsf/src/text_before_caret.cpp`。
