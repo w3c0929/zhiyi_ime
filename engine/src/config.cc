@@ -298,6 +298,7 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         auto& initial = j["initial_state"];
         load_bool(initial, "full_shape", config.initial_full_shape);
         load_bool(initial, "chinese_punct", config.initial_chinese_punct);
+        load_bool(initial, "chinese_mode", config.initial_chinese_mode);
     }
 
     if (j.contains("laya") && j["laya"].is_object()) {
@@ -818,6 +819,7 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
 
     j["initial_state"]["full_shape"] = config.initial_full_shape;
     j["initial_state"]["chinese_punct"] = config.initial_chinese_punct;
+    j["initial_state"]["chinese_mode"] = config.initial_chinese_mode;
 
     j["laya"]["enable"] = config.laya.enable;
     j["laya"]["model_dir"] = config.laya.model_dir;

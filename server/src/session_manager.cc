@@ -782,6 +782,9 @@ uint32_t SessionManager::create_session(uint64_t client_capabilities) {
     entry->resources = std::move(resources);
     entry->full_shape = entry->resources.runtime->config().initial_full_shape;
     entry->chinese_punct = entry->resources.runtime->config().initial_chinese_punct;
+    // The language a newly opened program starts in (settings: 默认输入法); from then on the session
+    // keeps whatever the user switches it to.
+    entry->base_chinese_mode = entry->resources.runtime->config().initial_chinese_mode;
     entry->client_capabilities =
         client_capabilities & (cxxime::kClientCapabilitySegmentedSelection |
                                cxxime::kClientCapabilitySegmentedPreeditPresentation |

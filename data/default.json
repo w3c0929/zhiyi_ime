@@ -19,7 +19,8 @@
     },
     "initial_state": {
         "full_shape": false,
-        "chinese_punct": true
+        "chinese_punct": true,
+        "chinese_mode": true
     },
     "style": {
         "font_face": "Microsoft YaHei UI",
