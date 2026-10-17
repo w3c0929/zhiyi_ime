@@ -208,9 +208,14 @@
 - **必须 `--latest=false`**（`gh release create … --latest=false`）：否则会抢走 `/releases/latest`，
   更新检查就会指向模型 Release。
 - 清单里**没有 URL**（`parse_*_manifest` 用 `download_prefix` 自己拼），所以上游清单内容可原样复用，只重签。
-- 现有内容：`glossary`（28 个 `.gloss` + `glossary.json`）、`translator`（`zhiyi-mt-v2-Q4_K_M.gguf` 396 MB +
-  `llama-b11480-vulkan-x64.zip` 32 MB）、`voice`（`model.int8.onnx` 239 MB + `tokens.txt` + `silero_vad.onnx`
-  + 两个 LICENSE 文件）。
+- 现有内容：`glossary`（28 个 `.gloss` + `glossary.json`）、`translator`（`zhiyi-mt-v2-Q4_K_M.gguf` 396 MB 与
+  v3 的 gguf 322 MB，用户可在「学习」页选；`llama-b11480-vulkan-x64.zip` 32 MB）、`voice`（`model.int8.onnx`
+  239 MB + `tokens.txt` + `silero_vad.onnx` + 两个 LICENSE 文件）。
+- **Laya 推荐模型是例外**：它不走上面那套签名清单，而是**随安装包发**（打包时模型文件来自参考安装目录），
+  `scripts/fetch_model.py` 另外把它下到 `models/laya/` 供源码构建用——那个脚本指向**本仓库**的
+  `model-zhen-long-l18` Release（上游 1.5.9 起的默认模型，文件逐字节相同）。换模型 = 转存上游资产到本仓库
+  同名 Release → 改 `fetch_model.py` 的 ASSET/URL/SHA 与 `FILES`/`OLD_FILES` → 换掉参考目录里的模型文件
+  再打包（**不需要**重签清单、也不用重新生成词典包）。
 
 ## 八、发布前必须等用户亲自测试
 
