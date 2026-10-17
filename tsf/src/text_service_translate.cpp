@@ -1345,6 +1345,13 @@ void TextService::_render_ai_menu() {
         page.items.push_back(std::move(item));
     }
     _aiMenuWindow->update(page);
+    {
+        char detail[128] = {};
+        snprintf(detail, sizeof(detail), "menu_draw rows=%zu highlighted=%d visible=%d",
+                 _aiMenuRows.size(), page.highlighted,
+                 _aiMenuWindow->is_visible() ? 1 : 0);
+        _enqueue_event_trace("ai_ui", detail);
+    }
 }
 
 void TextService::_close_ai_menu() {
@@ -1363,30 +1370,49 @@ bool TextService::_handle_ai_menu_key(WPARAM key, BOOL* pfEaten) {
         if (pfEaten) *pfEaten = TRUE;
         return true;
     };
+    const auto trace_key = [&](const char* what) {
+        // Which key the menu got and where the highlight ended up: the log is what tells "the key
+        // never arrived" from "the window did not draw it" (docs/ai.md).
+        char detail[128] = {};
+        snprintf(detail, sizeof(detail), "menu_key key=0x%04x what=%s rows=%zu highlight=%zu",
+                 static_cast<unsigned>(key), what, rows, _aiMenuHighlight);
+        _enqueue_event_trace("ai_ui", detail);
+    };
     if (key >= '1' && key <= '9') {
+        trace_key("digit");
         const std::size_t row = key - '1';
         if (row < rows) _run_ai_action(row);
         return taken();
     }
-    if (key == VK_DOWN || key == VK_TAB) {
+    // Down, Right and Tab move the highlight on; Up and Left back: either hand reaches for either,
+    // so the menu answers to all four arrows (docs/ai.md).
+    if (key == VK_DOWN || key == VK_RIGHT || key == VK_TAB) {
         if (rows > 0) _aiMenuHighlight = (_aiMenuHighlight + 1) % rows;
         _render_ai_menu();
+        trace_key("next");
         return taken();
     }
-    if (key == VK_UP) {
+    if (key == VK_UP || key == VK_LEFT) {
         if (rows > 0) _aiMenuHighlight = (_aiMenuHighlight + rows - 1) % rows;
         _render_ai_menu();
+        trace_key("prev");
         return taken();
     }
     if (key == VK_RETURN) {
+        trace_key("enter");
         _run_ai_action(_aiMenuHighlight);
         return taken();
     }
     if (key == VK_ESCAPE) {
+        trace_key("escape");
         _close_ai_menu();
         return taken();
     }
-    if (is_bare_modifier(key)) return false;  // the chord being held: the menu stays
+    if (is_bare_modifier(key)) {
+        trace_key("modifier");
+        return false;  // the chord being held: the menu stays
+    }
+    trace_key("other");
     _close_ai_menu();
     return false;
 }
@@ -1413,6 +1439,14 @@ void TextService::_start_ai_action(std::size_t index, const std::wstring& source
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
     if (index >= actions.size()) return;
     const cxxime::AiAction action = actions[index];
+    {
+        // Which row of the menu ran, and on how much text: the log is what tells "the highlight
+        // landed where I meant" from "the wrong action ran" (docs/ai.md).
+        char detail[128] = {};
+        snprintf(detail, sizeof(detail), "action id=%s index=%zu chars=%zu",
+                 action.id.c_str(), index, source.size());
+        _enqueue_event_trace("ai_action", detail);
+    }
     std::wstring text = source;
     bool cut = shortened;
     // Cut to what this action accepts and say so. A cut selection is never typed back: the answer
