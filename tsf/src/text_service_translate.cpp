@@ -1398,8 +1398,10 @@ bool TextService::_handle_ai_menu_key(WPARAM key, BOOL* pfEaten) {
         trace_key("prev");
         return taken();
     }
-    if (key == VK_RETURN) {
-        trace_key("enter");
+    if (key == VK_RETURN || key == VK_SPACE) {
+        // Return and Space both take the row: picking a candidate with either is the habit this
+        // menu is shaped like, and nothing is being composed while it is open (docs/ai.md).
+        trace_key(key == VK_SPACE ? "space" : "enter");
         _run_ai_action(_aiMenuHighlight);
         return taken();
     }
