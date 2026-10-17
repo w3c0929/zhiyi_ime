@@ -323,6 +323,11 @@ private:
 
     // Updates
     HWND hUpdateNotify_ = nullptr;
+    // update.mirror_enable / update.mirror_url (the General page): a mirror for the GitHub
+    // downloads, and the address typed in when the list is on 自定义.
+    HWND hMirrorEnable_ = nullptr;
+    HWND hMirror_ = nullptr;
+    HWND hMirrorUrl_ = nullptr;
     HWND hCheckUpdate_ = nullptr;
     HWND hUpdateStatus_ = nullptr;
     HWND hNewVersion_ = nullptr;

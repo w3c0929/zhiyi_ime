@@ -140,6 +140,8 @@ constexpr int kAiModelsId = 6013;  // "Get models"
 constexpr int kAiLanguageKeyId = 6014;  // the key that opens the translate language list
 HWND make_web_link(int id, const wchar_t* text, int x, int y, int width, HWND parent);
 HWND make_button(int id, const wchar_t* text, int x, int y, int width, HWND parent);
+// A plain text box: make_edit (editor_controls.cc) is a number box (ES_NUMBER).
+HWND make_text_edit(int id, int x, int y, int width, HWND parent);
 HWND make_radio(int id, const wchar_t* text, int x, int y, int width, HWND parent, bool group);
 void combo_add(HWND combo, const wchar_t* text);
 void combo_sel(HWND combo, const wchar_t* text);

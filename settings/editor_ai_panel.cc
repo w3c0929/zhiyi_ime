@@ -102,18 +102,6 @@ std::wstring with_number(const wchar_t* text, std::size_t number) {
     return std::wstring(text) + L" " + std::to_wstring(number);
 }
 
-// A plain text box: make_edit (editor_controls.cc) is a number box (ES_NUMBER), which refuses an
-// address or a key with "you can only type digits here".
-HWND make_text_edit(int id, int x, int y, int width, HWND parent) {
-    HWND edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, x, y, width,
-                                kCtrlH, parent,
-                                reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
-                                GetModuleHandle(nullptr), nullptr);
-    SendMessageW(edit, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
-    return edit;
-}
-
 // A drop-down made like make_combo but without its wheel-to-the-page redirect, so the open list
 // scrolls with the wheel (thirty-odd services do not fit at once).
 HWND make_list_combo(int id, int x, int y, int width, int drop_rows, HWND parent) {

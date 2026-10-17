@@ -354,6 +354,8 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(experience_program);
     KEEP_PAGE_EDIT(collect_input);
     KEEP_PAGE_EDIT(update_notify);
+    KEEP_PAGE_EDIT(update_mirror_enable);
+    KEEP_PAGE_EDIT(update_mirror_url);
     KEEP_PAGE_EDIT(autostart);
     KEEP_PAGE_EDIT(laya.enable);
     KEEP_PAGE_EDIT(laya.device);

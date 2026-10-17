@@ -35,6 +35,14 @@ inline constexpr wchar_t kReleasesPage[] =
 // http allowed on 127.0.0.1 / localhost). The signature is still checked with the built-in key.
 inline constexpr wchar_t kTestBaseVariable[] = L"ZHIYI_UPDATE_TEST_BASE";
 
+// 设置 > 常规 > 镜像下载（Config::update_mirror_url, update_mirror_enable）: GitHub is often
+// slow to reach; a mirror is a proxy that serves the same files, and every request to
+// github.com goes through it as "<mirror>/https://github.com/…" (the gh-proxy convention). The
+// manifests' URLs and the signature check are untouched — the mirror only changes where the bytes
+// come from, so a mirror cannot serve anything the built-in key does not sign.
+void set_mirror(const std::string& mirror);  // "" = direct; must be http(s)://
+std::string mirror();
+
 struct Manifest {
     std::string version;
     std::string file;  // installer file name, e.g. zhiyu-v0.6.3-setup.exe

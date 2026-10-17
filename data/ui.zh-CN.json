@@ -142,6 +142,11 @@
     "general.data_left": "数据已移动，但原位置有 {0} 个文件正在被使用，没能删除。重启电脑后可以手动删除。",
     "general.english_correction_hint": "打错时在候选里给出正确拼写，第一个候选仍是原文，不会自动替换",
 
+    "general.mirror_card": "镜像下载",
+    "general.mirror": "启用镜像下载和更新",
+    "general.mirror_custom": "自定义",
+    "general.mirror_hint": "GitHub 在国内常常连不上或很慢。勾选后，检查更新、下载安装包，以及下载语言包、翻译模型、语音模型都改走右边所选的镜像（一个代理服务器，它能看到你的 IP 和你请求的文件名；文件本身仍按发布时的签名和 SHA-256 校验，镜像换不了内容）。列表里没有合适的就选“自定义”，在下面填一个 https:// 开头的镜像前缀——实际请求的地址是「你的前缀 + /https://github.com/…」。不勾选就是直连 GitHub。",
+
     "fuzzy.enable": "启用模糊音",
     "fuzzy.hint": "开启后，读音相近的词也会出现在候选里，并在词后用括号标出正确拼音，例如 中国(zhong guo)",
     "fuzzy.initials": "声母",

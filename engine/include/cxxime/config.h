@@ -83,6 +83,13 @@ struct Config {
     // update.notify: the settings program checks GitHub for a new version when it opens and
     // offers to install it (settings/update_page; the Update page can always check by hand).
     bool update_notify = true;
+    // update.mirror_enable / update.mirror_url (设置 > 常规 > 镜像下载): send the GitHub requests
+    // — the update check, the installer, the language packs, the translation and voice models —
+    // through a mirror, a proxy serving the same files (update.h's set_mirror). Only the address
+    // decides where the bytes come from; the manifests and their signatures are the release's own,
+    // so a mirror cannot pass off other files. https only; empty = no mirror.
+    bool update_mirror_enable = false;
+    std::string update_mirror_url;
     // startup.autostart: zhiyu-server starts when the user signs in (the installer's Run entry
     // passes --autostart and the server exits at once when this is off); otherwise the input
     // method starts it the first time it is switched to.

@@ -142,6 +142,11 @@
     "general.data_left": "The data was moved, but {0} files in the old location are in use and could not be deleted. You can delete them after a restart.",
     "general.english_correction_hint": "Misspelled words get their correct spelling as a candidate; the first candidate stays what you typed",
 
+    "general.mirror_card": "Download mirror",
+    "general.mirror": "Use a mirror for downloads and updates",
+    "general.mirror_custom": "Custom",
+    "general.mirror_hint": "GitHub is often slow to reach or unreachable here. With this ticked, the update check, the installer, and the language packs, translation model and voice model all go through the mirror on the right — a proxy that sees your IP and which file you asked for; the files themselves are still checked against the release's signature and SHA-256, so a mirror cannot pass off other content. If no listed mirror fits, pick Custom and type an https:// mirror prefix below: the address that is fetched is \"your prefix + /https://github.com/…\". Unticked goes to GitHub directly.",
+
     "fuzzy.enable": "Enable fuzzy pinyin",
     "fuzzy.hint": "Words with a similar sound are offered too, with their correct pinyin in parentheses, e.g. 中国(zhong guo)",
     "fuzzy.initials": "Initials",

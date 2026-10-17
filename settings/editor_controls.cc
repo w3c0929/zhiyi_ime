@@ -372,6 +372,16 @@ HWND make_edit(int id, int x, int y, int width, HWND parent) {
     return edit;
 }
 
+HWND make_text_edit(int id, int x, int y, int width, HWND parent) {
+    HWND edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, x, y, width,
+                                kCtrlH, parent,
+                                reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+                                GetModuleHandle(nullptr), nullptr);
+    SendMessageW(edit, WM_SETFONT, reinterpret_cast<WPARAM>(get_font()), TRUE);
+    return edit;
+}
+
 namespace {
 
 LRESULT CALLBACK ComboWheelProc(HWND combo, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR id,

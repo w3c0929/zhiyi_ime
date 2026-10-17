@@ -423,6 +423,13 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
     if (!config.experience_program) config.collect_input = false;  // needs the first tier
     if (j.contains("update") && j["update"].is_object()) {
         load_bool(j["update"], "notify", config.update_notify);
+        load_bool(j["update"], "mirror_enable", config.update_mirror_enable);
+        load_string(j["update"], "mirror_url", config.update_mirror_url);
+        // Only an https address can be a mirror (update.h's set_mirror drops anything else, and a
+        // hand-written value must not stop the settings program from loading the rest).
+        if (config.update_mirror_url.compare(0, 8, "https://") != 0) {
+            config.update_mirror_url.clear();
+        }
     }
     if (j.contains("startup") && j["startup"].is_object()) {
         load_bool(j["startup"], "autostart", config.autostart);
@@ -931,6 +938,8 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["privacy"]["experience_program"] = config.experience_program;
     j["privacy"]["collect_input"] = config.collect_input && config.experience_program;
     j["update"]["notify"] = config.update_notify;
+    j["update"]["mirror_enable"] = config.update_mirror_enable;
+    j["update"]["mirror_url"] = config.update_mirror_url;
     j["startup"]["autostart"] = config.autostart;
     j["learning"]["gloss_targets"] = nlohmann::json::object();
     for (const auto& [source, target] : config.gloss_targets) {

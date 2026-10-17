@@ -122,6 +122,17 @@ downloaded when Settings opens (with the reminder above on) and on "Check" or "C
 file on "Download" or "Update to vN", and both are used only after their signature and SHA-256
 are verified. Translations are looked up on this computer; nothing you type is sent.
 
+## Download mirror (not part of this program)
+
+With **Download mirror** turned on in Settings > General (`update.mirror_enable` /
+`update.mirror_url`, **off by default**), those GitHub requests — the update check, the installer,
+language packs, the translation model, the voice model — go to the **third-party mirror** you pick
+instead. That server therefore sees your IP address and which file you asked for, and nothing else:
+the files are still verified against the release's signature and SHA-256, so a mirror cannot replace
+or forge content, and no keys, settings or typed text pass through it (`set_mirror` in
+`update/src/update_http.cc` only rewrites the request address; the manifests' URLs and the signature
+check are untouched). Turning the setting off goes back to GitHub directly.
+
 ## Online AI (optional, off by default)
 
 Settings has an "AI" page (see [docs/ai.md](ai.md)): **off by default**, and with it off this

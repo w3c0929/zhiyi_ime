@@ -10,6 +10,7 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <mutex>
 #include <vector>
 
 #include <cxxime/version.h>
@@ -54,6 +55,19 @@ std::string release_base(bool* test) {
     return base;
 }
 
+// 设置 > 常规 > 镜像下载 (update.h's set_mirror): the proxy every github.com request goes
+// through. The mirror only decides where the bytes come from — the manifests' URLs and the
+// signature check are the ones the release shipped, so a mirror cannot pass off other bytes.
+std::mutex g_mirror_mutex;
+std::string g_mirror;  // "" = go to GitHub directly
+
+std::string mirrored_url(const std::string& url) {
+    std::lock_guard<std::mutex> lock(g_mirror_mutex);
+    constexpr char kGithub[] = "https://github.com/";
+    if (g_mirror.empty() || url.compare(0, sizeof(kGithub) - 1, kGithub) != 0) return url;
+    return g_mirror + "/" + url;
+}
+
 struct Internet {
     HINTERNET handle = nullptr;
     Internet() = default;
@@ -70,7 +84,7 @@ class Get {
 public:
     // Sends the request (from byte `offset`) and reads the response headers.
     Status open(const std::string& url, std::uint64_t offset = 0) {
-        const std::wstring wide_url = to_wide(url);
+        const std::wstring wide_url = to_wide(mirrored_url(url));
         URL_COMPONENTS parts = {sizeof(parts)};
         parts.dwHostNameLength = static_cast<DWORD>(-1);
         parts.dwUrlPathLength = static_cast<DWORD>(-1);
@@ -439,6 +453,24 @@ bool launch_installer(const std::wstring& path, const std::string& sha256, HWND 
     if (!started) *error = GetLastError();
     CloseHandle(file);
     return started;
+}
+
+void set_mirror(const std::string& mirror) {
+    std::string base;
+    for (const char c : mirror) {  // the config may hold spaces around what was typed
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n') base.push_back(c);
+    }
+    while (!base.empty() && base.back() == '/') base.pop_back();
+    // https only: an http mirror would let anyone on the path watch which files this computer
+    // fetches (the files themselves are signed and SHA-256 checked either way).
+    if (base.compare(0, 8, "https://") != 0 || base.size() <= 8) base.clear();
+    std::lock_guard<std::mutex> lock(g_mirror_mutex);
+    g_mirror = base;
+}
+
+std::string mirror() {
+    std::lock_guard<std::mutex> lock(g_mirror_mutex);
+    return g_mirror;
 }
 
 }  // namespace update

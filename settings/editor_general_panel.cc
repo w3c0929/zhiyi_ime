@@ -19,6 +19,7 @@
 #include <cxxime/keyboard_shortcut.h>
 #include <cxxime/lexicon_control.h>
 #include <cxxime/pinyin_scheme.h>
+#include <cxxime/update.h>
 #include <cxxime/user_dict.h>
 
 #include "editor_app_internal.h"
@@ -51,6 +52,9 @@ enum ControlId {
     kDefaultChineseId,
     kDefaultEnglishId,
     kDefaultAutoId,
+    kMirrorEnableId,
+    kMirrorId,
+    kMirrorUrlId,
     kSwitchKeyId = 1101,
     kStyleKeyId,
     kPunctKeyId,
@@ -101,6 +105,24 @@ const char* const kShuangpinSchemeLabels[] = {
 
 constexpr char kLightTheme[] = "moon_light";
 constexpr char kDarkTheme[] = "moon_dark";
+// 设置 > 常规 > 镜像下载: the GitHub proxies offered in the list, in the order shown; the combo's
+// last item is "自定义", where the address is typed in instead (update.h's set_mirror).
+const char* const kMirrorList[] = {
+    "https://hk.gh-proxy.org",       "https://cdn.gh-proxy.com",
+    "https://git.yylx.win",          "https://gh.monlor.com",
+    "https://gh.my-website.ccwu.cc", "https://tvv.tw",
+    "https://ghfast.top",            "https://gh.acmsz.top",
+    "https://github.ednovas.xyz",    "https://gh.sixyin.com",
+    "https://ghproxy.imciel.com",    "https://cdn.akaere.online",
+    "https://gh-proxy.org",          "https://gh-proxy.com",
+    "https://free.cn.eu.org",        "https://fastgit.cc",
+    "https://github.mxw.qzz.io",     "https://xsadwsd.kdns.fr",
+    "https://ghproxy.felicity.land", "https://down.mxw.qzz.io",
+    "https://gh.07150721.xyz",       "https://github.tbap.top",
+    "https://gh.noki.icu",           "https://ghproxy.net",
+};
+constexpr int kMirrorCount = static_cast<int>(std::size(kMirrorList));
+constexpr int kMirrorCustomIndex = kMirrorCount;  // the last combo item: type the address in
 constexpr int kFontSmall = 12;
 constexpr int kFontMedium = 14;
 constexpr int kFontLarge = 17;
@@ -234,6 +256,21 @@ void EditorApp::create_general_panel(HWND panel) {
     }
     y += kRowH;
     y = card_end(panel, y - S(6));
+
+    // 镜像下载（update.h 的 set_mirror）：GitHub 在这里常常连不上或很慢，勾选后所有 GitHub 下载
+    // 都改走所选的镜像；文件仍按发布时的签名与 SHA-256 校验，镜像换不了内容。
+    y = card_begin(panel, y, tr("general.mirror_card"));
+    hMirrorEnable_ = make_check(kMirrorEnableId, tr("general.mirror"), x0, y, S(250), panel);
+    hMirror_ = make_combo(kMirrorId, x0 + S(260), y, S(400), panel);
+    for (const char* address : kMirrorList) {
+        combo_add(hMirror_, utf8_to_wstr(address).c_str());
+    }
+    combo_add(hMirror_, tr("general.mirror_custom"));
+    y += kRowH;
+    hMirrorUrl_ = make_text_edit(kMirrorUrlId, x0, y, S(660), panel);
+    y += kRowH + S(4);
+    make_hint(tr("general.mirror_hint"), x0, y - S(4), S(660), panel, 3);
+    y = card_end(panel, y + S(56));
     create_data_card(panel, y);
 }
 
@@ -478,6 +515,23 @@ void EditorApp::populate_controls() {
     set_check(hDefaultChinese_, config_.initial_language == "chinese");
     set_check(hDefaultEnglish_, config_.initial_language == "english");
     set_check(hDefaultAuto_, config_.initial_language == "auto");
+    // 镜像下载: the checkbox, which address the list is on (a hand-written address that is not in
+    // the list shows as 自定义), and the mirror the update module uses from here on.
+    set_check(hMirrorEnable_, config_.update_mirror_enable);
+    {
+        const std::wstring url = utf8_to_wstr(config_.update_mirror_url);
+        int index = kMirrorCustomIndex;
+        for (int i = 0; i < kMirrorCount; ++i) {
+            if (url == utf8_to_wstr(kMirrorList[i])) {
+                index = i;
+                break;
+            }
+        }
+        combo_set_index(hMirror_, index);
+        SetWindowTextW(hMirrorUrl_, url.c_str());
+    }
+    cxxime::update::set_mirror(config_.update_mirror_enable ? config_.update_mirror_url
+                                                            : std::string());
     set_switch_key_boxes(config_);
     key_capture_set(hTranslateKey_, KeyChoice::of(config_.translate_selection_shortcut));
     set_check(hTranslateDirect_, config_.translate_direct_insert);
@@ -522,6 +576,17 @@ bool EditorApp::read_controls(bool report_errors) {
     c.initial_language = get_check(hDefaultEnglish_) ? "english"
                          : get_check(hDefaultAuto_)  ? "auto"
                                                      : "chinese";
+    {
+        // 镜像下载: the list's address, or what was typed under 自定义. Anything that is not an
+        // https address means "no mirror" (update.h's set_mirror drops it as well) — the hint says
+        // so, and a mirror is only a redirect: the files are still the release's own.
+        const int index = combo_index(hMirror_);
+        c.update_mirror_enable = get_check(hMirrorEnable_);
+        c.update_mirror_url = index >= 0 && index < kMirrorCount ? std::string(kMirrorList[index])
+                                                                 : edit_text_utf8(hMirrorUrl_);
+        if (c.update_mirror_url.compare(0, 8, "https://") != 0) c.update_mirror_url.clear();
+        cxxime::update::set_mirror(c.update_mirror_enable ? c.update_mirror_url : std::string());
+    }
     c.autostart = get_check(hAutostart_);
     c.laya.enable = get_check(hLaya_);
     c.laya.device = selected_device();
@@ -638,6 +703,14 @@ void EditorApp::update_enabled_controls() {
     if (hDevice_) {
         EnableWindow(hDevice_, get_check(hLaya_) && !gpu_testing_ && !gpu_choices_.empty());
     }
+    // 镜像下载: the address only matters with the box ticked, and the typed-in one only with 自定义.
+    const bool mirror = get_check(hMirrorEnable_);
+    if (hMirror_) {
+        EnableWindow(hMirror_, mirror);
+    }
+    if (hMirrorUrl_) {
+        EnableWindow(hMirrorUrl_, mirror && combo_index(hMirror_) == kMirrorCustomIndex);
+    }
 }
 
 bool EditorApp::handle_command(int control_id, int notification) {
@@ -654,6 +727,14 @@ bool EditorApp::handle_command(int control_id, int notification) {
     case kFuzzyEnabledId:
     case kLayaId:
         if (notification == BN_CLICKED) {
+            update_enabled_controls();
+        }
+        return true;
+    case kMirrorEnableId:
+    case kMirrorId:
+        // Ticking the box, or picking 自定义 / a listed address: grey out what the choice makes
+        // meaningless (the address of a mirror that is not used).
+        if (notification == BN_CLICKED || notification == CBN_SELCHANGE) {
             update_enabled_controls();
         }
         return true;
