@@ -225,7 +225,8 @@ private:
     HWND hFuzzyGroups_[7] = {};
 
     // Keys
-    HWND hDefaultChinese_ = nullptr, hDefaultEnglish_ = nullptr;  // initial_state.chinese_mode
+    // initial_state.language (the Keys page, above the switch keys)
+    HWND hDefaultChinese_ = nullptr, hDefaultEnglish_ = nullptr, hDefaultAuto_ = nullptr;
     HWND hSwitchKey_ = nullptr;  // key capture boxes (key_capture.h)
     HWND hStyleKey_ = nullptr;
     HWND hPunctKey_ = nullptr;

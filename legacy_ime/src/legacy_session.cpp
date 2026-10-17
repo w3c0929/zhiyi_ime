@@ -18,6 +18,18 @@ namespace {
 std::mutex g_sessions_mutex;
 std::map<HIMC, std::shared_ptr<LegacyImeSession>> g_sessions;
 
+// The host program's file name ("notepad.exe"): what the server starts the session in when 默认输入法
+// is 自动 (docs/settings-guide.md). The same thing the TSF reports.
+std::string host_program_name() {
+    wchar_t path[MAX_PATH] = {};
+    if (!GetModuleFileNameW(nullptr, path, ARRAYSIZE(path))) return {};
+    const wchar_t* base = wcsrchr(path, L'\\');
+    base = base ? base + 1 : path;
+    char text[128] = {};
+    WideCharToMultiByte(CP_UTF8, 0, base, -1, text, sizeof(text), nullptr, nullptr);
+    return text;
+}
+
 DWORD conversion_mode_from_status(const cxxime::ImeStatus& status) {
     DWORD conversion = 0;
     if (status.chinese_mode() && !status.caps_lock()) {
@@ -243,7 +255,7 @@ bool LegacyImeSession::ensure_session() {
         }
     }
 
-    if (!client_.start_session(session_id_)) {
+    if (!client_.start_session(session_id_, 0, host_program_name())) {
         client_.disconnect();
         session_id_ = 0;
         return false;

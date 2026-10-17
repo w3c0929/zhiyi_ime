@@ -703,6 +703,7 @@ bool SessionManager::initialize(const std::string& dict_path,
     cxxime::QueryTrace::set_enabled(config->diagnostics.trace_mode !=
                                     cxxime::DiagnosticTraceMode::kOff);
     cxxime::ExperienceLog::instance().configure(*config);
+    program_languages_.load();  // what language each program was left in
     reset_global_state(shared_.snapshot());
     return true;
 }
@@ -762,9 +763,18 @@ void SessionManager::align_session_to_global(SessionEntry& entry) {
         state.input_mode = entry.ime_status.input_mode;
         commit_global_state(state);
     }
+
+    // 默认输入法 = 自动: what this program is in now is what it should be opened with next time.
+    // Only that setting keeps the list, and only a change writes the file (program_languages.h).
+    if (entry.resources.runtime &&
+        entry.resources.runtime->config().initial_language == "auto") {
+        program_languages_.remember(entry.program,
+                                    entry.base_chinese_mode ? "chinese" : "english");
+    }
 }
 
-uint32_t SessionManager::create_session(uint64_t client_capabilities) {
+uint32_t SessionManager::create_session(uint64_t client_capabilities,
+                                        const std::string& program) {
     std::lock_guard<std::mutex> reload_lock(reload_mutex_);
     auto engine = std::make_unique<cxxime::Engine>();
     auto resources = shared_.snapshot();
@@ -780,11 +790,17 @@ uint32_t SessionManager::create_session(uint64_t client_capabilities) {
     entry->engine = std::move(engine);
     entry->last_activity = std::chrono::steady_clock::now();
     entry->resources = std::move(resources);
+    entry->program = program;
     entry->full_shape = entry->resources.runtime->config().initial_full_shape;
     entry->chinese_punct = entry->resources.runtime->config().initial_chinese_punct;
-    // The language a newly opened program starts in (settings: 默认输入法); from then on the session
-    // keeps whatever the user switches it to.
-    entry->base_chinese_mode = entry->resources.runtime->config().initial_chinese_mode;
+    // The language a newly opened program starts in (settings: 默认输入法): Chinese, English, or —
+    // for "auto" — the language this program was left in last time (unknown programs: Chinese).
+    // From then on the session keeps whatever the user switches it to.
+    const std::string& initial = entry->resources.runtime->config().initial_language;
+    entry->base_chinese_mode =
+        initial == "english" ? false
+        : initial == "auto"  ? program_languages_.lookup(program) != "english"
+                             : true;
     entry->client_capabilities =
         client_capabilities & (cxxime::kClientCapabilitySegmentedSelection |
                                cxxime::kClientCapabilitySegmentedPreeditPresentation |

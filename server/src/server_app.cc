@@ -456,7 +456,8 @@ cxxime::IPCResponse ServerApp::handle_request(const cxxime::IPCRequest& request)
     }
 
     case cxxime::IPCCommand::START_SESSION: {
-        const uint32_t id = session_mgr_.create_session(request.client_capabilities);
+        const uint32_t id = session_mgr_.create_session(request.client_capabilities,
+                                                        request.program_name);
         if (id == 0) {
             response.status = cxxime::IPCStatus::ERR_ENGINE_NOT_INITIALIZED;
             response.highlighted = 0;

@@ -144,10 +144,11 @@ struct Config {
     // Initial state for each newly created input session.
     bool initial_full_shape = false;
     bool initial_chinese_punct = true;
-    // Settings > Keys > 默认输入法: whether a newly opened program starts in Chinese. A session
-    // keeps the mode it was left in for as long as the program lives, so this is what a program
-    // starts with, not what it is forced to.
-    bool initial_chinese_mode = true;
+    // Settings > Keys > 默认输入法: the language a newly opened program starts in — "chinese",
+    // "english", or "auto" (the language that program was left in last time, remembered on this
+    // computer: docs/settings-guide.md). A session keeps the language it is switched to for as long
+    // as the program lives, so this is what a program *starts* with, never what it is forced to.
+    std::string initial_language = "chinese";
 
     // style
     std::string font_name = "Microsoft YaHei UI";

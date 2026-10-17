@@ -298,7 +298,11 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         auto& initial = j["initial_state"];
         load_bool(initial, "full_shape", config.initial_full_shape);
         load_bool(initial, "chinese_punct", config.initial_chinese_punct);
-        load_bool(initial, "chinese_mode", config.initial_chinese_mode);
+        load_string(initial, "language", config.initial_language);
+        // Anything else is the default (Chinese): a hand-written value is never a reason to fail.
+        if (config.initial_language != "english" && config.initial_language != "auto") {
+            config.initial_language = "chinese";
+        }
     }
 
     if (j.contains("laya") && j["laya"].is_object()) {
@@ -819,7 +823,7 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
 
     j["initial_state"]["full_shape"] = config.initial_full_shape;
     j["initial_state"]["chinese_punct"] = config.initial_chinese_punct;
-    j["initial_state"]["chinese_mode"] = config.initial_chinese_mode;
+    j["initial_state"]["language"] = config.initial_language;
 
     j["laya"]["enable"] = config.laya.enable;
     j["laya"]["model_dir"] = config.laya.model_dir;

@@ -140,6 +140,18 @@ learning records, so it holds words you typed; it is written only to the folder 
 never uploaded. The two privacy choices are not in it: importing a backup from another computer
 does not change this computer's choices.
 
+## What "Automatic" default input language remembers (not part of this program)
+
+With **Default input language** set to *Automatic* on Settings > Keys, the IME remembers whether each
+program was last in Chinese or English so it can start that way again. To do that, the first time it
+starts in a program it hands that program's **file name** (e.g. `Code.exe` — no paths, no window
+title) to the background service `zhiyu-server.exe` on this computer, which is not reached over the
+network and writes no log. Only while *Automatic* is selected does the service keep
+`%USERPROFILE%\zhiyu\program-languages.json`: those program file names with the language each was
+left in. With Chinese or English that file is neither read nor written
+(`server/src/program_languages.cc`). Choosing Chinese or English again, or deleting the file, only
+makes programs start Chinese again.
+
 ## Problem log (not part of this program)
 
 A failure such as settings that could not be saved adds one line to `problems.log` in the `logs`

@@ -351,6 +351,10 @@ struct IPCRequest {
     uint64_t candidate_revision = 0;
     // Selection translation (TRANSLATE_SELECTION): the selected text, UTF-8.
     char translate_text[kTranslateTextCapacity] = {};
+    // START_SESSION: the program the session belongs to, its file name only (UTF-8, e.g.
+    // "Code.exe"), so the server knows which program's language to start with when 默认输入法 is
+    // 自动. Empty when the client sends none (older clients, the legacy IME), which starts Chinese.
+    char program_name[64] = {};
 };
 
 static_assert(std::is_standard_layout<IPCRequest>::value,
@@ -371,6 +375,8 @@ static_assert(offsetof(IPCRequest, client_capabilities) == IPC_REQUEST_BASELINE_
               "IPCRequest 0.5 extension moved into the 0.4 baseline");
 static_assert(offsetof(IPCRequest, translate_text) >= IPC_REQUEST_BASELINE_SIZE,
               "IPCRequest translate fields must be appended after the baseline");
+static_assert(offsetof(IPCRequest, program_name) >= IPC_REQUEST_BASELINE_SIZE,
+              "IPCRequest::program_name must be appended after the baseline");
 
 struct IPCResponse {
     IPCStatus status = IPCStatus::OK;

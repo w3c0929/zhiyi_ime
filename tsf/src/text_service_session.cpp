@@ -27,6 +27,19 @@ bool same_visible_status(const cxxime::ImeStatus& a, const cxxime::ImeStatus& b)
     return a.flags == b.flags && a.input_mode == b.input_mode;
 }
 
+// The host program's file name ("Code.exe") — the session identity the server starts in the
+// language that program was left in (settings: 默认输入法 = 自动). Never the path, never the window
+// title: that one goes with the input collection tier instead.
+std::string host_program_name() {
+    wchar_t path[MAX_PATH] = {};
+    if (!GetModuleFileNameW(nullptr, path, ARRAYSIZE(path))) return {};
+    const wchar_t* base = wcsrchr(path, L'\\');
+    base = base ? base + 1 : path;
+    char text[128] = {};
+    WideCharToMultiByte(CP_UTF8, 0, base, -1, text, sizeof(text), nullptr, nullptr);
+    return text;
+}
+
 }  // namespace
 
 void TextService::_sync_ime_status(const cxxime::ImeStatus& status) {
@@ -86,7 +99,12 @@ bool TextService::_ensure_ipc_session() {
         cxxime::kClientCapabilitySegmentedPreeditPresentation |
         cxxime::kClientCapabilityCandidateRefresh |
         cxxime::kClientCapabilityVoiceInput;
-    if (!_client.start_session(session_id, kClientCapabilities) ||
+    // Which program this session belongs to: the server starts it in the language that program was
+    // left in when 默认输入法 is 自动 (docs/settings-guide.md). Always reported, because the session
+    // is created before the first config snapshot arrives (_config is not loaded yet then); the
+    // server only ever uses it for that, and only 自动 keeps a record. Its file name only.
+    const std::string program = host_program_name();
+    if (!_client.start_session(session_id, kClientCapabilities, program) ||
         session_id == 0) {
         CXXIME_LOG(L"Failed to start IPC session");
         if (_ipcHealthy)

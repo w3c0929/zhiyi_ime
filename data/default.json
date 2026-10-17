@@ -20,7 +20,7 @@
     "initial_state": {
         "full_shape": false,
         "chinese_punct": true,
-        "chinese_mode": true
+        "language": "chinese"
     },
     "style": {
         "font_face": "Microsoft YaHei UI",

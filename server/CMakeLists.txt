@@ -10,6 +10,7 @@ add_executable(cxxime-server WIN32
     src/input_method_hotkey.cc
     src/ipc_response_builder.cc
     src/main.cc
+    src/program_languages.cc
     src/server_app.cc
     src/session_manager.cc
     src/system_lifecycle_monitor.cc

@@ -58,9 +58,17 @@
 
 ## 按键
 
-最上面一行是**默认输入法**（中文 / 英文）：新打开的窗口、程序用哪一种输入状态。中/英状态是**每个窗口各自记着**的
-——已经用过的窗口保留它当前的状态，切到别的窗口再切回来不会变——所以这一项管的是"以后新开的窗口从哪种状态开始"，
-默认是中文。（配置文件里是 `initial_state.chinese_mode`。）
+最上面一行是**默认输入法**（中文 / 英文 / 自动）：新打开的窗口、程序用哪一种输入状态。中/英状态是**每个窗口各自
+记着**的——已经用过的窗口保留它当前的状态，切到别的窗口再切回来不会变——所以这一项管的是"以后新开的窗口从哪种状态
+开始"，默认是中文。
+
+- **中文 / 英文**：新程序一律从这一种开始。
+- **自动**：记住每个程序上次用的是哪种，下次打开照旧（终端里一直英文、聊天窗口一直中文）。没记过的程序用中文开始。
+  为此输入法会在本机记一份程序名清单 `%USERPROFILE%\zhiyu\program-languages.json`（只有 exe 文件名和它上次的语言，
+  不含窗口标题、不含输入内容，也不上传；见 [隐私说明](privacy.md#自动默认输入法记住的程序与本计划无关)）。选“中文/英文”时
+  这份文件不会被读、也不会更新。
+
+配置文件里是 `initial_state.language`（`chinese` / `english` / `auto`）。
 
 五个切换键：
 
@@ -232,7 +240,7 @@
 | `engine.fuzzy_pinyin` / `engine.fuzzy_groups` | true / `["en_eng","in_ing"]` | 模糊音开关与组合（`z_zh`、`c_ch`、`s_sh`、`n_l`、`an_ang`、`en_eng`、`in_ing`） |
 | `engine.wubi_code_hint` | false | 五笔候选后显示剩余编码 |
 | `initial_state.full_shape` / `chinese_punct` | false / true | 启动时的全角与中文标点状态 |
-| `initial_state.chinese_mode` | true | 新打开的窗口默认是中文（true）还是英文（false），设置页「按键」页最上面那一行 |
+| `initial_state.language` | `chinese` | 新打开的窗口默认是中文（`chinese`）、英文（`english`），还是记住它上次用的那种（`auto`）：设置页「按键」页最上面那一行 |
 | `style.font_point` | 14 | 候选字号 |
 | `style.layout` | vertical | 候选竖排（vertical）或横排（horizontal） |
 | `learning.gloss_targets` | `{}` | 「学习」页每种源语言译成什么：`{"zh":"ja","en":"zh",...}`（键与值都是 `zh` `en` `ja` `ko` `fr` `de` `es` `ru`），缺哪个语言就是关。中文、英文两行是候选窗里的译文，八行全都是划词翻译（Ctrl+C+C）译成的语言 |

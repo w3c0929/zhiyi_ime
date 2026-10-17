@@ -31,7 +31,10 @@ public:
     bool send_request(const IPCRequest& request, IPCResponse& response);
 
     // High-level methods
-    bool start_session(uint32_t& session_id, uint64_t client_capabilities = 0);
+    // `program` is the program's file name ("Code.exe"), which the server uses to start the session
+    // in the language that program was left in (settings: 默认输入法 = 自动); empty is fine.
+    bool start_session(uint32_t& session_id, uint64_t client_capabilities = 0,
+                       const std::string& program = std::string());
     bool end_session(uint32_t session_id);
     bool process_key(uint32_t session_id, uint32_t key_code, uint32_t modifiers,
                      IPCResponse& response, bool is_key_up = false,

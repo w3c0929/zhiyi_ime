@@ -214,10 +214,20 @@ bool IpcClient::send_request(const IPCRequest& request, IPCResponse& response) {
 // ============================================================
 // High-level commands
 // ============================================================
-bool IpcClient::start_session(uint32_t& session_id, uint64_t client_capabilities) {
+bool IpcClient::start_session(uint32_t& session_id, uint64_t client_capabilities,
+                              const std::string& program) {
     IPCRequest req = {};
     req.command = IPCCommand::START_SESSION;
     req.client_capabilities = client_capabilities;
+    if (!program.empty()) {
+        // Truncated at a UTF-8 character boundary, NUL-terminated.
+        size_t n = (std::min)(program.size(), sizeof(req.program_name) - 1);
+        while (n > 0 && n < program.size() &&
+               (static_cast<unsigned char>(program[n]) & 0xC0) == 0x80) {
+            --n;
+        }
+        std::memcpy(req.program_name, program.data(), n);
+    }
 
     IPCResponse resp = {};
     if (!send_request(req, resp))

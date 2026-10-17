@@ -50,6 +50,7 @@ enum ControlId {
     kDeviceId,
     kDefaultChineseId,
     kDefaultEnglishId,
+    kDefaultAutoId,
     kSwitchKeyId = 1101,
     kStyleKeyId,
     kPunctKeyId,
@@ -266,8 +267,8 @@ void EditorApp::create_keys_panel(HWND panel) {
     const int labels = label_width({"keys.default_mode", "keys.switch", "keys.style", "keys.punct",
                                     "keys.shape", "keys.voice", "keys.page_up", "keys.page_down"});
     const int box_width = S(340);
-    // The mode a program starts in, above the switch keys: a program that has been used keeps the
-    // mode it was left in, so this is about programs opened from now on.
+    // The language a program starts in, above the switch keys: a program that has been used keeps
+    // the language it was left in, so this is about programs opened from now on.
     {
         const int x = make_aligned_label(tr("keys.default_mode"), x0, labels, y, panel);
         const int option_width = S(110);
@@ -275,6 +276,8 @@ void EditorApp::create_keys_panel(HWND panel) {
                                       option_width - S(6), panel, true);
         hDefaultEnglish_ = make_radio(kDefaultEnglishId, tr("keys.mode_english"),
                                       x + option_width, y, option_width - S(6), panel, false);
+        hDefaultAuto_ = make_radio(kDefaultAutoId, tr("keys.mode_auto"), x + option_width * 2, y,
+                                   option_width - S(6), panel, false);
         y += kRowH;
         make_hint(tr("keys.default_mode_hint"), x, y - S(6), S(430), panel);
         y += kRowH;
@@ -472,8 +475,9 @@ void EditorApp::populate_controls() {
     set_check(hLaya_, config_.laya.enable);
     populate_device();
 
-    set_check(hDefaultChinese_, config_.initial_chinese_mode);
-    set_check(hDefaultEnglish_, !config_.initial_chinese_mode);
+    set_check(hDefaultChinese_, config_.initial_language == "chinese");
+    set_check(hDefaultEnglish_, config_.initial_language == "english");
+    set_check(hDefaultAuto_, config_.initial_language == "auto");
     set_switch_key_boxes(config_);
     key_capture_set(hTranslateKey_, KeyChoice::of(config_.translate_selection_shortcut));
     set_check(hTranslateDirect_, config_.translate_direct_insert);
@@ -515,7 +519,9 @@ bool EditorApp::read_controls(bool report_errors) {
                         ? languages_[language_index - 1].code
                         : kAutoUiLanguage;
     c.english.correction = get_check(hEnglishCorrection_);
-    c.initial_chinese_mode = get_check(hDefaultChinese_);
+    c.initial_language = get_check(hDefaultEnglish_) ? "english"
+                         : get_check(hDefaultAuto_)  ? "auto"
+                                                     : "chinese";
     c.autostart = get_check(hAutostart_);
     c.laya.enable = get_check(hLaya_);
     c.laya.device = selected_device();

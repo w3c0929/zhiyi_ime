@@ -27,6 +27,8 @@
 #include <cxxime/symbol_table.h>
 #include <cxxime/user_dict.h>
 
+#include "program_languages.h"
+
 struct SharedResourceSnapshot {
     std::shared_ptr<const cxxime::EngineRuntimeState> runtime;
     std::shared_ptr<const cxxime::PunctMapping> punct_mapping;
@@ -124,6 +126,8 @@ struct SessionEntry {
     std::string continuation_ready;
     SharedResourceSnapshot resources;
     std::mutex mutex;  // per-session concurrency protection
+    // The program this session belongs to ("Code.exe"), reported when the session is created.
+    std::string program;
     // Input collection (second tier of the experience program): the input target reported by
     // the client and the input being typed.
     std::string input_app;
@@ -168,7 +172,10 @@ public:
     bool initialize(const std::string& dict_path,
                     const std::shared_ptr<const cxxime::Config>& config =
                     std::make_shared<const cxxime::Config>());
-    uint32_t create_session(uint64_t client_capabilities = 0);
+    // `program`: the program's file name ("Code.exe"), for the language its session starts in
+    // (settings: 默认输入法 = 自动); empty means "not known", which starts Chinese.
+    uint32_t create_session(uint64_t client_capabilities = 0,
+                            const std::string& program = std::string());
     void destroy_session(uint32_t id);
 
     size_t cleanup_idle_sessions(uint32_t timeout_ms);
@@ -322,6 +329,8 @@ private:
     SharedResources shared_;
     std::unordered_map<uint32_t, std::shared_ptr<SessionEntry>> sessions_;
     GlobalVisibleState global_state_;
+    // What language each program was left in (settings: 默认输入法 = 自动).
+    cxxime::server::ProgramLanguages program_languages_;
     uint32_t next_id_ = 1;
     std::mutex mutex_;
     std::mutex state_mutex_;
