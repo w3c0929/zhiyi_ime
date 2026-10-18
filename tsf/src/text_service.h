@@ -527,9 +527,10 @@ private:
     void _trace_ai_source(const char* tier, const std::wstring& text);
 
     void _hide_translate_window();
-    // The key that opens the voice post-processing list (纠错 / 提问), and that list itself.
+    // The key that opens the voice post-processing list (纠错 / 提问 / 不使用), and that list itself.
     bool _is_voice_action_key(WPARAM key) const;
     void _open_voice_mode_menu();
+    std::string _voice_off_label() const;  // the list's "不使用" row (the TSF has no ui strings)
     // The host program's file name, lowercased ("reaper.exe"), and whether it is on the
     // pass-through list (设置 > 常规 > 不接管按键的程序).
     std::string _host_program_name() const;

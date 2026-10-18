@@ -1315,8 +1315,9 @@ void TextService::_open_ai_menu() {
     if (!_show_menu_window()) _close_ai_menu();
 }
 
-// 语音识别后处理的方式列表（纠错 / 提问）：同一个窗口，两行，选中即写进配置——不执行动作
-// （docs/ai.md）。哪一项 = data/ai_actions.json 里的 proofread / ask，名字也取自那张表。
+// 语音识别后处理的方式列表（纠错 / 提问 / 不使用）：同一个窗口，选中即写进配置——不执行动作
+// （docs/ai.md）。前两行 = data/ai_actions.json 里的 proofread / ask，名字也取自那张表；最后一行
+// 是"不做这一层"，它不是一个动作，用 actions.size() 当记号（渲染与执行都认得）。
 void TextService::_open_voice_mode_menu() {
     _close_ai_menu();
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
@@ -1328,9 +1329,15 @@ void TextService::_open_voice_mode_menu() {
             }
         }
     }
-    if (_aiMenuRows.empty()) return;
+    if (_aiMenuRows.empty()) return;  // no data file: the off row alone is no use
+    _aiMenuRows.push_back(actions.size());  // 不使用
     _aiMenuPurpose = AiMenuPurpose::kSetVoiceMode;
     if (!_show_menu_window()) _close_ai_menu();
+}
+
+// 那个"不使用"行的名字（TSF 没有界面串表，就照「正在…」那样写死中英两份）。
+std::string TextService::_voice_off_label() const {
+    return _config.ui_language.compare(0, 2, "en") == 0 ? "Not used" : "不使用";
 }
 
 // The menu window: created (or reused), placed at the caret, filled with the current rows, shown.
@@ -1385,6 +1392,8 @@ void TextService::_render_ai_menu() {
         cxxime::CandidatePresentationItem item;
         if (row < actions.size()) {
             item.text = cxxime::ai_action_label(actions[row], _config.ui_language);
+        } else if (_aiMenuPurpose == AiMenuPurpose::kSetVoiceMode) {
+            item.text = _voice_off_label();  // the "不使用" row
         }
         page.items.push_back(std::move(item));
     }
@@ -1470,10 +1479,14 @@ void TextService::_run_ai_action(std::size_t row) {
     const AiMenuPurpose purpose = _aiMenuPurpose;
     _close_ai_menu();
     if (purpose == AiMenuPurpose::kSetVoiceMode) {
-        // 选中的是语音识别后处理的方式（纠错 / 提问）：写进配置，顺手把这一用途打开（否则选了不
-        // 生效会让人困惑），不执行任何动作（docs/ai.md）。
+        // 选中的是语音识别后处理的方式（纠错 / 提问 / 不使用）：写进配置——选动作就顺手把这一用途
+        // 打开（否则选了不生效会让人困惑），选「不使用」就关掉它，手上的动作留着。都不执行动作。
         const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
-        if (index >= actions.size()) return;
+        if (index >= actions.size()) {  // 不使用
+            cxxime_tsf::patch_user_config("{\"ai\":{\"use_for\":{\"voice\":false}}}");
+            _enqueue_event_trace("ai_ui", "voice_mode off");
+            return;
+        }
         std::string id;
         for (const char c : actions[index].id) {  // the id goes into JSON: escape the two characters
             if (c == '"' || c == '\\') id.push_back('\\');
