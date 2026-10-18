@@ -23,6 +23,7 @@
 | `ai.action_key` | `""` | 动作菜单键：**按一下就弹出菜单**（见下节）。可以是 `"F6"`、`"Ctrl+K"`，或轻按修饰键 `"RShift"` / `"Shift"`（任一侧）/ `"Ctrl"`。空 = 关闭 |
 | `ai.action_keys` | `{}` | 某个动作自己的键：`{"proofread": "F7"}`，按它直跑该动作、不弹菜单（写法同上） |
 | `ai.language_key` | `""` | **语言列表键**：按一下就弹出 `\fy` 那张 12 种语言的列表（写法同 `ai.action_key`，含轻按修饰键）。空 = 关闭 |
+| `ai.voice_action_key` | `""` | **语音处理键**：按一下就弹出语音识别后处理的列表（纠错 / 提问），选中即写进 `ai.voice_polish_action` 并把 `ai.use_for.voice` 打开（写法同上）。空 = 关闭 |
 | `ai.translate_language` | `en` | 「翻译」动作译成哪种语言（12 种代码；默认与 `translate` 动作的 `languages` 首项一致）。设置页有下拉可选 |
 | `ai.action_disabled` | `{}` | 不在菜单里列出的动作：`{"summarize": true}`。没写的都列出 |
 | `ai.voice_polish_action` | `proofread` | 语音识别后处理用哪个动作（`data/ai_actions.json` 的 id）；**空 = 不做这一层** |
@@ -80,8 +81,16 @@
 （就是这次请求的时间，受 `ai.timeout_ms` 限制），然后上屏的是处理后的文字。
 
 - **哪个动作**：`ai.voice_polish_action`（`%USERPROFILE%\zhiyu\default.json` 的 `ai` 段），值是
-  `data/ai_actions.json` 里某个动作的 id，**默认 `proofread`**；**留空 = 这一层不做**（识别文字原样上屏，
-  用途开关留着）。想让语音过去「润色」就把这一项改成 `polish`。设置页没有这个下拉，改配置文件即可。
+  `data/ai_actions.json` 里某个动作的 id，**默认 `proofread`（纠错）**；**留空 = 这一层不做**（识别文字原样
+  上屏，用途开关留着）。想让语音过去「润色」就把这一项改成 `polish`。
+  **设置页只给两项**（「AI」页那一行的右侧）：**纠错 / 提问**——`proofread` 与 `ask`。
+- **「提问」（`ai.voice_polish_action = "ask"`）**：识别出来的那句话**当成问题**发给 AI，**上屏的是 AI 的回答**
+  （识别原文不上屏）。它用的就是「选中文字的 AI 动作」里那一项 `ask`（提示词、上限 8000 字都一样），所以回答
+  跟着问题的语言走。失败时照旧退回识别原文（也就是问题本身）。
+- **顺手切换**：按一下「AI」页的**「语音处理键」**（`ai.voice_action_key`，写法同动作菜单键 / 语言列表键），
+  光标处会弹出**「纠错 / 提问」两行**的小列表——数字键、方向键、空格或回车执行，Esc 取消，也可以鼠标点；
+  **选中即写进配置**（`ai.voice_polish_action`），并**顺手把「语音识别后处理」勾上**（否则选了不生效）。
+  它就是动作菜单那套窗口，不用先进设置页；列表里的名字取自 `data/ai_actions.json`。
 - **插在哪儿**：`server/src/voice_service.cc` 的 `finish_recording()` 里，`tidy()` 之后、把文字存进
   `text_` 之前（那是语音自己的工作线程，占线也不影响录音与按键）。
 - **任何一步不顺都退回识别原文**：总开关没开 / 没勾这个用途 / `ai.voice_polish_action` 空着或写了不存在的

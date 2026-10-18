@@ -283,6 +283,10 @@ private:
     HWND hAiKeyRemove_ = nullptr;
     HWND hAiUseTranslate_ = nullptr, hAiUseSelection_ = nullptr;
     HWND hAiUseVoice_ = nullptr;
+    // 语音识别后处理的动作（纠错 / 提问）与弹出这个列表的键（editor_ai_panel.cc）
+    HWND hAiVoiceProofread_ = nullptr;
+    HWND hAiVoiceAsk_ = nullptr;
+    HWND hAiVoiceActionKey_ = nullptr;
     HWND hAiTest_ = nullptr, hAiTestResult_ = nullptr, hAiKeyHint_ = nullptr;
     HWND hAiActionKey_ = nullptr;  // AI actions on the selection: the menu key
     HWND hAiLanguageKey_ = nullptr;  // the key that opens the translate language list

@@ -121,6 +121,7 @@
         "action_keys": {},
         "action_disabled": {},
         "language_key": "",
+        "voice_action_key": "",
         "translate_language": "en",
         "voice_polish_action": "proofread"
     },

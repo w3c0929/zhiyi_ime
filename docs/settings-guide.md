@@ -270,6 +270,9 @@
 | `translate.max_selection_chars` | 32000 | 一次最多读多少字：划词翻译与 AI 动作共用的上限。超过就只处理前面这一段并提示，且**不替换**（免得把没处理的部分丢掉） |
 | `ai.action_key` | `""` | AI 动作的菜单键：选中文字后**按一下**就弹出动作菜单（选中内容由输入法读取，不必先按 Ctrl+C）。可写 `"F6"`、`"Ctrl+K"` 或轻按修饰键 `"RShift"`；空 = 关闭（见 [在线 AI](ai.md)） |
 | `ai.action_keys` | `{}` | 给某个动作配的独立键：`{"proofread": "F7"}`，按它就直跑该动作 |
+| `ai.language_key` | `""` | 语言列表键：按一下就弹出 `\fy` 那张 12 种语言的列表，选中即写进 `ai.translate_language`（见 [在线 AI](ai.md)） |
+| `ai.voice_action_key` | `""` | 语音处理键：按一下就弹出「纠错 / 提问」两行，选中即写进 `ai.voice_polish_action` 并顺手打开 `ai.use_for.voice` |
+| `ai.voice_polish_action` | `proofread` | 语音识别后处理用哪个动作（`data/ai_actions.json` 的 id）：`proofread`（纠错）或 `ask`（提问：识别文字当问题，上屏 AI 的回答）；**空 = 不做这一层**。设置页「AI」页那一行右侧只有「纠错 / 提问」两个单选 |
 | `ascii_composer.switch_key` | Shift 切换 | 单独轻按 Shift / Ctrl 的行为（`code`、`clear`、`set_ascii_mode`、`noop` 等，见 [组合输入](ascii-composer.md)）；`..._L` / `..._R` 两侧同值表示不区分左右，只写一侧表示只认该侧 |
 | `english.word_mode` | true | 英文模式默认单词联想 |
 | `english.correction` | true | 英文拼写纠错 |

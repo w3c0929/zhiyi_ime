@@ -465,6 +465,11 @@ private:
     // A tapped modifier's own key state, watched on a timer: some programs never hand the text
     // service the modifier's key-up, so waiting for that event would never fire (docs/ai.md).
     void _watch_ai_action_tap();
+    // Which key was tapped, and what its tap opens (docs/ai.md): an action (or the menu when its id
+    // is empty), the translate language list, or the voice post-processing list.
+    enum class AiKeyPurpose { kAction, kLanguage, kVoiceMode };
+    // Whether the open menu runs an action, or sets 语音识别后处理's action (docs/ai.md).
+    enum class AiMenuPurpose { kRunAction, kSetVoiceMode };
     // The menu key was taken: read the selection and open the menu (on the config window's thread,
     // like _process_selection_translate).
     void _process_ai_action_selection();
@@ -472,8 +477,9 @@ private:
     // typed for the user so the engine recognizes the command (docs/ai.md).
     bool _is_language_key(WPARAM key) const;
     void _open_language_list();
-    // A key that decided to fire: the language list, or an action (the menu when the id is empty).
-    void _fire_ai_action_key(bool language, const std::string& action_id);
+    // A key that decided to fire: the language list, the voice post-processing list, or an action
+    // (the menu when the id is empty).
+    void _fire_ai_action_key(AiKeyPurpose purpose, const std::string& action_id);
     // A key while the menu is open: true when the menu took it (pfEaten is set then).
     bool _handle_ai_menu_key(WPARAM key, BOOL* pfEaten);
     // Only opens the menu: the text an action works on is read when a row is picked (docs/ai.md).
@@ -521,6 +527,9 @@ private:
     void _trace_ai_source(const char* tier, const std::wstring& text);
 
     void _hide_translate_window();
+    // The key that opens the voice post-processing list (纠错 / 提问), and that list itself.
+    bool _is_voice_action_key(WPARAM key) const;
+    void _open_voice_mode_menu();
     // The host program's file name, lowercased ("reaper.exe"), and whether it is on the
     // pass-through list (设置 > 常规 > 不接管按键的程序).
     std::string _host_program_name() const;
@@ -627,8 +636,10 @@ private:
     std::size_t _aiMenuHighlight = 0;
     std::vector<std::size_t> _aiMenuRows;
     std::string _pendingAiActionId;  // an action's own key was pressed: run it, no menu
-    bool _pendingLanguageMenu = false;  // the language key was pressed: open \fy's list
-    bool _aiActionKeyLanguage = false;  // the key being tapped is that one, not an action's
+    bool _pendingLanguageMenu = false;   // the language key was pressed: open \fy's list
+    bool _pendingVoiceModeMenu = false;  // the voice key was pressed: open the 纠错 / 提问 list
+    AiKeyPurpose _aiActionKeyPurpose = AiKeyPurpose::kAction;
+    AiMenuPurpose _aiMenuPurpose = AiMenuPurpose::kRunAction;
     std::unique_ptr<cxxime::CandidateWindow> _aiMenuWindow;
     ULONGLONG _aiUiGraceUntil = 0;  // see _arm_ai_ui_grace
     // Long text over IPC (TEXT_UPLOAD_*): what the request in flight is for, whether it went

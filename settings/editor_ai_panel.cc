@@ -245,7 +245,22 @@ void EditorApp::create_ai_panel(HWND panel) {
     hAiUseSelection_ =
         make_check(kAiUseSelectionId, tr("ai.use_selection"), use_x, y, hint_w, panel);
     y += kRowH;
-    hAiUseVoice_ = make_check(kAiUseVoiceId, tr("ai.use_voice"), use_x, y, hint_w, panel);
+    hAiUseVoice_ = make_check(kAiUseVoiceId, tr("ai.use_voice"), use_x, y, S(190), panel);
+    {
+        // What the recognized text goes through (docs/ai.md): 纠错 keeps it as dictated but correct,
+        // 提问 sends it as a question and types the answer. Named by the action table itself, so the
+        // labels follow data/ai_actions.json.
+        const auto voice_label = [&](const char* id, const wchar_t* fallback) {
+            const cxxime::AiAction* action = cxxime::find_ai_action(id);
+            return action ? utf8_to_wstr(cxxime::ai_action_label(*action, ui_language_))
+                          : std::wstring(fallback);
+        };
+        const int voice_x = use_x + S(200);
+        hAiVoiceProofread_ = make_radio(kAiVoiceProofreadId, voice_label("proofread", L"纠错").c_str(),
+                                        voice_x, y, S(110), panel, true);
+        hAiVoiceAsk_ = make_radio(kAiVoiceAskId, voice_label("ask", L"提问").c_str(),
+                                  voice_x + S(110), y, S(110), panel, false);
+    }
     y += kRowH;
     y = card_end(panel, y);
 
@@ -273,6 +288,19 @@ void EditorApp::create_ai_panel(HWND panel) {
                                                         : KeyChoice::none());
     });
     y += kRowH;
+
+    // The key that opens the voice post-processing list (纠错 / 提问) — the same idea as the language
+    // key above, for what the recognized text goes through (docs/ai.md).
+    const int voice_key_x = make_aligned_label(tr("ai.voice_action_key"), x0, labels, y, panel);
+    hAiVoiceActionKey_ =
+        create_key_capture(kAiVoiceActionKeyId, voice_key_x, y, S(160), kCtrlH, panel, true);
+    key_capture_set_allow_common(hAiVoiceActionKey_, false);
+    key_capture_set_check(hAiVoiceActionKey_, [this](const KeyChoice& choice) -> std::wstring {
+        return action_key_notice(choice, hTranslateKey_ ? key_capture_get(hTranslateKey_)
+                                                        : KeyChoice::none());
+    });
+    y += kRowH;
+    make_hint(tr("ai.voice_action_key_hint"), voice_key_x, y - S(8), hint_w, panel, 1);
 
     hAiActionRows_.clear();
     hAiActionKeys_.clear();
@@ -380,9 +408,14 @@ void EditorApp::populate_ai() {
     set_check(hAiUseTranslate_, config_.ai.use_for.translate);
     set_check(hAiUseSelection_, config_.ai.use_for.selection);
     set_check(hAiUseVoice_, config_.ai.use_for.voice);
+    set_check(hAiVoiceAsk_, config_.ai.voice_polish_action == "ask");
+    set_check(hAiVoiceProofread_, config_.ai.voice_polish_action != "ask");
 
     key_capture_set(hAiActionKey_, action_key_choice(config_.ai.action_key));
     key_capture_set(hAiLanguageKey_, action_key_choice(config_.ai.language_key));
+    key_capture_set(hAiVoiceActionKey_, action_key_choice(config_.ai.voice_action_key));
+    EnableWindow(hAiVoiceProofread_, config_.ai.use_for.voice ? TRUE : FALSE);
+    EnableWindow(hAiVoiceAsk_, config_.ai.use_for.voice ? TRUE : FALSE);
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
     for (std::size_t i = 0; i < hAiActionRows_.size() && i < actions.size(); ++i) {
         const std::string& id = actions[i].id;
@@ -430,8 +463,11 @@ void EditorApp::read_ai(cxxime::Config& config) {
     config.ai.use_for.translate = get_check(hAiUseTranslate_);
     config.ai.use_for.selection = get_check(hAiUseSelection_);
     config.ai.use_for.voice = get_check(hAiUseVoice_);
+    // 语音识别后处理的两项（docs/ai.md）：提问 = ask，其余一律回到默认的纠错 proofread。
+    config.ai.voice_polish_action = get_check(hAiVoiceAsk_) ? "ask" : "proofread";
     config.ai.action_key = action_key_shortcut(key_capture_get(hAiActionKey_));
     config.ai.language_key = action_key_shortcut(key_capture_get(hAiLanguageKey_));
+    config.ai.voice_action_key = action_key_shortcut(key_capture_get(hAiVoiceActionKey_));
 
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
     config.ai.action_keys.clear();
@@ -656,6 +692,14 @@ bool EditorApp::handle_ai_command(int control_id, int notification) {
     case kAiThinkingId:
         // The level is meaningless without it: grey it out.
         if (notification == BN_CLICKED) EnableWindow(hAiEffort_, get_check(hAiThinking_) ? TRUE : FALSE);
+        return true;
+    case kAiUseVoiceId:
+        // 纠错 / 提问 only mean something while the post-processing itself is on.
+        if (notification == BN_CLICKED) {
+            const BOOL on = get_check(hAiUseVoice_) ? TRUE : FALSE;
+            EnableWindow(hAiVoiceProofread_, on);
+            EnableWindow(hAiVoiceAsk_, on);
+        }
         return true;
     case kAiRevealId: {
         // The eye: show what is being typed, put it back to dots on the next press.

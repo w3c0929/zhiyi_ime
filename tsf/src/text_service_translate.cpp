@@ -1110,24 +1110,31 @@ void TextService::_watch_ai_action_tap() {
     // not a tap. Released: it was one — unless another key came first, which the key callbacks say.
     if (still_held && GetTickCount64() - _aiActionKeyDownTick < kAiTapMaxHoldMs) return;
     const std::string action_id = _aiActionKeyId;
-    const bool language = _aiActionKeyLanguage;
+    const AiKeyPurpose purpose = _aiActionKeyPurpose;
     const bool moved = _aiActionKeyMoved;
     _aiActionKeyDown = 0;
     _aiActionKeyId.clear();
-    _aiActionKeyLanguage = false;
+    _aiActionKeyPurpose = AiKeyPurpose::kAction;
     _aiActionKeyMoved = false;
     if (_configWindow) KillTimer(_configWindow, cxxime_tsf::TIMER_CXXIME_AI_TAP_WATCH);
     if (moved || still_held) return;
-    _fire_ai_action_key(language, action_id);
+    _fire_ai_action_key(purpose, action_id);
 }
 
-// What a key that has decided to fire does: the language list, or the action (the menu, when the
-// id is empty).
-void TextService::_fire_ai_action_key(bool language, const std::string& action_id) {
-    if (language) {
+// What a key that has decided to fire does: the language list, the voice post-processing list, or
+// the action (the menu, when the id is empty).
+void TextService::_fire_ai_action_key(AiKeyPurpose purpose, const std::string& action_id) {
+    switch (purpose) {
+    case AiKeyPurpose::kLanguage:
         _pendingLanguageMenu = true;
-    } else {
+        break;
+    case AiKeyPurpose::kVoiceMode:
+        _pendingVoiceModeMenu = true;
+        break;
+    case AiKeyPurpose::kAction:
+    default:
         _pendingAiActionId = action_id;
+        break;
     }
     PostMessageW(_configWindow, cxxime_tsf::WM_CXXIME_AI_ACTION_SELECTION, 0, 0);
 }
@@ -1137,15 +1144,21 @@ bool TextService::_handle_ai_action_key(WPARAM key) {
     // pair and no Ctrl+C of their own to press. The key is the menu key, or one action's own key,
     // which runs it without the menu.
     std::string action_id;
-    const bool language_key = _is_language_key(key);
-    if (!language_key && !_ai_action_key_for(key, &action_id)) return false;
+    AiKeyPurpose purpose = AiKeyPurpose::kAction;
+    if (_is_language_key(key)) {
+        purpose = AiKeyPurpose::kLanguage;
+    } else if (_is_voice_action_key(key)) {
+        purpose = AiKeyPurpose::kVoiceMode;
+    } else if (!_ai_action_key_for(key, &action_id)) {
+        return false;
+    }
     if (is_tap_key(key)) {
         // A tapped modifier: a Shift that begins a chord (Shift+A) is not a tap, so the decision
         // waits for the key-up, and the application keeps the key meanwhile. Not every program
         // hands the key-up over, so the key's own state is watched as well.
         _aiActionKeyDown = static_cast<UINT>(key);
         _aiActionKeyId = action_id;
-        _aiActionKeyLanguage = language_key;
+        _aiActionKeyPurpose = purpose;
         _aiActionKeyMoved = false;
         _aiActionKeyDownTick = GetTickCount64();
         if (_configWindow) {
@@ -1154,16 +1167,11 @@ bool TextService::_handle_ai_action_key(WPARAM key) {
         return false;
     }
     _aiActionKeyDown = static_cast<UINT>(key);
-    _aiActionKeyLanguage = language_key;
-    if (language_key) {
-        _pendingLanguageMenu = true;
-    } else {
-        _pendingAiActionId = action_id;
-    }
+    _aiActionKeyPurpose = purpose;
     // Reading the selection and placing the menu need an edit session and the caret, which cannot
     // be done inside a key callback: the message goes to the config window, as the translation's
     // does.
-    PostMessageW(_configWindow, cxxime_tsf::WM_CXXIME_AI_ACTION_SELECTION, 0, 0);
+    _fire_ai_action_key(purpose, action_id);
     return true;
 }
 
@@ -1198,15 +1206,15 @@ bool TextService::_finish_ai_action_key(WPARAM key, BOOL* pfEaten) {
     if (_aiActionKeyDown == 0 || key != _aiActionKeyDown) return false;
     const UINT pressed = _aiActionKeyDown;
     const std::string action_id = _aiActionKeyId;
-    const bool language = _aiActionKeyLanguage;
+    const AiKeyPurpose purpose = _aiActionKeyPurpose;
     const bool moved = _aiActionKeyMoved;
     _aiActionKeyDown = 0;
     _aiActionKeyId.clear();
-    _aiActionKeyLanguage = false;
+    _aiActionKeyPurpose = AiKeyPurpose::kAction;
     _aiActionKeyMoved = false;
     if (_configWindow) KillTimer(_configWindow, cxxime_tsf::TIMER_CXXIME_AI_TAP_WATCH);
     if (is_tap_key(pressed)) {
-        if (!moved) _fire_ai_action_key(language, action_id);
+        if (!moved) _fire_ai_action_key(purpose, action_id);
         return false;  // a modifier is the application's: eating its key-up would leave it stuck
     }
     if (pfEaten) *pfEaten = TRUE;  // a combination we took: its key-up goes with it
@@ -1219,6 +1227,17 @@ bool TextService::_is_language_key(WPARAM key) const {
     if (!shortcut.enabled() || key != shortcut.virtual_key) return false;
     std::uint32_t modifiers = _get_modifiers() & cxxime::kShortcutModifierMask;
     // A tapped modifier arrives with its own bit already set: that bit does not count.
+    if (shortcut.modifiers == 0 && is_tap_key(shortcut.virtual_key)) {
+        modifiers &= ~modifier_family_bit(shortcut.virtual_key);
+    }
+    return modifiers == shortcut.modifiers;
+}
+
+// The key that opens the voice post-processing list (纠错 / 提问), if this is it — the same shape.
+bool TextService::_is_voice_action_key(WPARAM key) const {
+    const cxxime::KeyboardShortcut& shortcut = _config.ai.voice_action_key;
+    if (!shortcut.enabled() || key != shortcut.virtual_key) return false;
+    std::uint32_t modifiers = _get_modifiers() & cxxime::kShortcutModifierMask;
     if (shortcut.modifiers == 0 && is_tap_key(shortcut.virtual_key)) {
         modifiers &= ~modifier_family_bit(shortcut.virtual_key);
     }
@@ -1249,6 +1268,12 @@ void TextService::_process_ai_action_selection() {
         // The language list needs no text to work on, so it opens wherever the key is pressed.
         _pendingLanguageMenu = false;
         _open_language_list();
+        return;
+    }
+    if (_pendingVoiceModeMenu) {
+        // 语音识别后处理的方式（纠错 / 提问）也一样：不用先选文字。
+        _pendingVoiceModeMenu = false;
+        _open_voice_mode_menu();
         return;
     }
     const std::string action_id = _pendingAiActionId;
@@ -1286,6 +1311,25 @@ void TextService::_open_ai_menu() {
         _aiMenuRows.push_back(i);
     }
     if (_aiMenuRows.empty()) return;
+    _aiMenuPurpose = AiMenuPurpose::kRunAction;
+    if (!_show_menu_window()) _close_ai_menu();
+}
+
+// 语音识别后处理的方式列表（纠错 / 提问）：同一个窗口，两行，选中即写进配置——不执行动作
+// （docs/ai.md）。哪一项 = data/ai_actions.json 里的 proofread / ask，名字也取自那张表。
+void TextService::_open_voice_mode_menu() {
+    _close_ai_menu();
+    const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
+    for (const char* id : {"proofread", "ask"}) {
+        for (std::size_t i = 0; i < actions.size(); ++i) {
+            if (actions[i].id == id) {
+                _aiMenuRows.push_back(i);
+                break;
+            }
+        }
+    }
+    if (_aiMenuRows.empty()) return;
+    _aiMenuPurpose = AiMenuPurpose::kSetVoiceMode;
     if (!_show_menu_window()) _close_ai_menu();
 }
 
@@ -1358,6 +1402,7 @@ void TextService::_close_ai_menu() {
     _aiMenuOpen = false;
     _aiMenuRows.clear();
     _aiMenuHighlight = 0;
+    _aiMenuPurpose = AiMenuPurpose::kRunAction;
     if (_aiMenuWindow) _aiMenuWindow->hide();
 }
 
@@ -1422,7 +1467,24 @@ bool TextService::_handle_ai_menu_key(WPARAM key, BOOL* pfEaten) {
 void TextService::_run_ai_action(std::size_t row) {
     if (row >= _aiMenuRows.size()) return;
     const std::size_t index = _aiMenuRows[row];
+    const AiMenuPurpose purpose = _aiMenuPurpose;
     _close_ai_menu();
+    if (purpose == AiMenuPurpose::kSetVoiceMode) {
+        // 选中的是语音识别后处理的方式（纠错 / 提问）：写进配置，顺手把这一用途打开（否则选了不
+        // 生效会让人困惑），不执行任何动作（docs/ai.md）。
+        const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
+        if (index >= actions.size()) return;
+        std::string id;
+        for (const char c : actions[index].id) {  // the id goes into JSON: escape the two characters
+            if (c == '"' || c == '\\') id.push_back('\\');
+            id.push_back(c);
+        }
+        const std::string patch =
+            "{\"ai\":{\"use_for\":{\"voice\":true},\"voice_polish_action\":\"" + id + "\"}}";
+        cxxime_tsf::patch_user_config(patch);
+        _enqueue_event_trace("ai_ui", ("voice_mode " + actions[index].id).c_str());
+        return;
+    }
     // The text is read *here*, now that the user has said which action to run: opening the menu alone
     // has no business putting the selection on the clipboard (docs/ai.md). It is read from where the
     // caret and selection stand at this moment.

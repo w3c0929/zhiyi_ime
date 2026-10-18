@@ -44,6 +44,10 @@ ConfigSnapshot subscribe_config_updates(HWND window, std::uint32_t subscription_
 void unsubscribe_config_updates(HWND window, std::uint32_t subscription_id);
 void shutdown_tsf_log_writer_if_no_config_subscribers();
 ConfigSnapshot current_config_snapshot();
+// A merge patch (RFC 7386) into the user's settings, the server writes the file: the same path the
+// settings program and the taskbar menu take. Used by the voice post-processing list, which sets
+// ai.use_for.voice and ai.voice_polish_action when a row is picked.
+void patch_user_config(const std::string& merge_patch_json);
 
 } // namespace cxxime_tsf
 

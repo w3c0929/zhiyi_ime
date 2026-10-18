@@ -137,6 +137,9 @@ constexpr int kAiUseVoiceId = 6010;
 constexpr int kAiTestId = 6012;
 constexpr int kAiModelsId = 6013;  // "Get models"
 constexpr int kAiLanguageKeyId = 6014;  // the key that opens the translate language list
+constexpr int kAiVoiceProofreadId = 6015;  // voice post-processing: 纠错
+constexpr int kAiVoiceAskId = 6016;        // voice post-processing: 提问
+constexpr int kAiVoiceActionKeyId = 6017;  // the key that opens the voice post-processing list
 HWND make_web_link(int id, const wchar_t* text, int x, int y, int width, HWND parent);
 HWND make_button(int id, const wchar_t* text, int x, int y, int width, HWND parent);
 // A plain text box: make_edit (editor_controls.cc) is a number box (ES_NUMBER).

@@ -567,6 +567,11 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         std::string language_key;
         load_string(ai, "language_key", language_key);
         if (!language_key.empty()) parse_ai_action_key(language_key, &config.ai.language_key);
+        std::string voice_action_key;
+        load_string(ai, "voice_action_key", voice_action_key);
+        if (!voice_action_key.empty()) {
+            parse_ai_action_key(voice_action_key, &config.ai.voice_action_key);
+        }
         config.ai.action_keys.clear();
         if (ai.contains("action_keys") && ai["action_keys"].is_object()) {
             for (const auto& [id, value] : ai["action_keys"].items()) {
@@ -619,6 +624,7 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         };
         note_tap_shortcut(config.ai.action_key);
         note_tap_shortcut(config.ai.language_key);
+        note_tap_shortcut(config.ai.voice_action_key);
         for (const auto& [id, text] : config.ai.action_keys) note_tap_name(text);
         for (const std::string& slot : switch_slots) config.ascii_switch_key[slot] = "noop";
     }
@@ -997,6 +1003,7 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["ai"]["use_for"]["voice"] = config.ai.use_for.voice;
     j["ai"]["action_key"] = ai_action_key_string(config.ai.action_key);
     j["ai"]["language_key"] = ai_action_key_string(config.ai.language_key);
+    j["ai"]["voice_action_key"] = ai_action_key_string(config.ai.voice_action_key);
     j["ai"]["action_keys"] = config.ai.action_keys;
     j["ai"]["action_disabled"] = config.ai.action_disabled;
     j["ai"]["translate_language"] = config.ai.translate_language;

@@ -59,7 +59,10 @@
   `thinking_levels()` 与 `apply_thinking()` 按服务商映射「关思考」字段）。
   `server/src/translate_service.cc` 让划词翻译优先走线上、失败回退本地；语音识别后处理在
   `server/src/voice_service.cc` 的 `finish_recording()` 里插一步（`ai.use_for.voice` 开时把识别文字交给
-  `proofread` 动作过一遍再上屏，失败/超限一律退回识别原文，录音与按键流程不动）。
+  `ai.voice_polish_action` 指定的动作过一遍再上屏；**默认 `proofread`（纠错），也可以是 `ask`（提问：这句话当
+  问题、上屏 AI 的回答）**；失败/超限一律退回识别原文，录音与按键流程不动）。设置页那一行右侧给「纠错 /
+  提问」两个单选，另有 `ai.voice_action_key`（「语音处理键」）按一下弹出同一组选项的列表
+  （`TextService::_open_voice_mode_menu`，用动作菜单那套窗口，选中走 `patch_user_config`）。
   数据文件 `data/ai_thinking_levels.json`。**默认关，关着时行为与从前完全一致**——合并时别把它改成默认开。
   用途开关是 `ai.use_for.*`（translate / selection / voice），**没有 english**（1.7.36 删掉）、**也没有 glossary**
   （那个「语言包兜底」勾选是个从未实现的占位，1.7.62 删掉了；语言包查不到时本来就有「学习 → 离线翻译」用本机模型兜底）。

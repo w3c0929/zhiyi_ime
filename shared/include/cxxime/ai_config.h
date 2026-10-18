@@ -56,6 +56,10 @@ struct AiConfig {
     // can be had without typing the command. Written like action_key (a tapped modifier, an F key,
     // or Ctrl/Alt and a key); empty = off.
     KeyboardShortcut language_key;
+    // The key that opens the voice post-processing list (纠错 / 提问) — the same kind of list the
+    // language key opens, for what the recognized text goes through (voice_polish_action) without
+    // going into the settings. Written like action_key; empty = off.
+    KeyboardShortcut voice_action_key;
     // What the "translate" action translates into: a language code from that action's own list
     // (ai_actions.json). Changed on the AI page, or from the input box with \fy.
     std::string translate_language = "en";

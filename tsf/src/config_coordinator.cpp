@@ -156,4 +156,9 @@ ConfigSnapshot current_config_snapshot() {
     return g_coordinator ? g_coordinator->snapshot() : ConfigSnapshot{};
 }
 
+void patch_user_config(const std::string& merge_patch_json) {
+    std::lock_guard<std::mutex> lock(g_coordinator_mutex);
+    if (g_coordinator) g_coordinator->patch(merge_patch_json);
+}
+
 } // namespace cxxime_tsf
