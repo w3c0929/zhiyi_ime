@@ -282,7 +282,7 @@ private:
     HWND hAiKeyReveal_ = nullptr, hAiKeyAdd_ = nullptr, hAiKeyList_ = nullptr;
     HWND hAiKeyRemove_ = nullptr;
     HWND hAiUseTranslate_ = nullptr, hAiUseSelection_ = nullptr;
-    HWND hAiUseVoice_ = nullptr, hAiUseGlossary_ = nullptr;
+    HWND hAiUseVoice_ = nullptr;
     HWND hAiTest_ = nullptr, hAiTestResult_ = nullptr, hAiKeyHint_ = nullptr;
     HWND hAiActionKey_ = nullptr;  // AI actions on the selection: the menu key
     HWND hAiLanguageKey_ = nullptr;  // the key that opens the translate language list

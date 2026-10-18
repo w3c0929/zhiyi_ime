@@ -134,7 +134,6 @@ constexpr int kAiTimeoutId = 6006;
 constexpr int kAiUseTranslateId = 6007;
 constexpr int kAiUseSelectionId = 6008;
 constexpr int kAiUseVoiceId = 6010;
-constexpr int kAiUseGlossaryId = 6011;
 constexpr int kAiTestId = 6012;
 constexpr int kAiModelsId = 6013;  // "Get models"
 constexpr int kAiLanguageKeyId = 6014;  // the key that opens the translate language list

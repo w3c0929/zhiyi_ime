@@ -21,10 +21,9 @@ struct AiUseFor {
     bool translate = false;  // selection translation (Ctrl+C+C)
     bool selection = false;  // AI actions on the selected text
     bool voice = false;      // the recognized text is proofread before it is typed
-    bool glossary = false;   // language packs the offline model cannot cover
 
     // Any of them on: the settings page shows the API as in use.
-    bool any() const { return translate || selection || voice || glossary; }
+    bool any() const { return translate || selection || voice; }
 };
 
 struct AiConfig {

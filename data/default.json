@@ -115,8 +115,7 @@
         "use_for": {
             "translate": false,
             "selection": false,
-            "voice": false,
-            "glossary": false
+            "voice": false
         },
         "action_key": "",
         "action_keys": {},

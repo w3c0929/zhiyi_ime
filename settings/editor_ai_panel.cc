@@ -247,10 +247,6 @@ void EditorApp::create_ai_panel(HWND panel) {
     y += kRowH;
     hAiUseVoice_ = make_check(kAiUseVoiceId, tr("ai.use_voice"), use_x, y, hint_w, panel);
     y += kRowH;
-    hAiUseGlossary_ = make_check(kAiUseGlossaryId, tr("ai.use_glossary"), use_x, y, hint_w, panel);
-    y += kRowH;
-    make_hint(tr("ai.use_for_hint"), use_x, y - S(8), hint_w, panel, 1);
-    y += S(24);
     y = card_end(panel, y);
 
     // AI actions on the selection (docs/ai.md): the key that opens the menu of actions beside the
@@ -384,7 +380,6 @@ void EditorApp::populate_ai() {
     set_check(hAiUseTranslate_, config_.ai.use_for.translate);
     set_check(hAiUseSelection_, config_.ai.use_for.selection);
     set_check(hAiUseVoice_, config_.ai.use_for.voice);
-    set_check(hAiUseGlossary_, config_.ai.use_for.glossary);
 
     key_capture_set(hAiActionKey_, action_key_choice(config_.ai.action_key));
     key_capture_set(hAiLanguageKey_, action_key_choice(config_.ai.language_key));
@@ -435,7 +430,6 @@ void EditorApp::read_ai(cxxime::Config& config) {
     config.ai.use_for.translate = get_check(hAiUseTranslate_);
     config.ai.use_for.selection = get_check(hAiUseSelection_);
     config.ai.use_for.voice = get_check(hAiUseVoice_);
-    config.ai.use_for.glossary = get_check(hAiUseGlossary_);
     config.ai.action_key = action_key_shortcut(key_capture_get(hAiActionKey_));
     config.ai.language_key = action_key_shortcut(key_capture_get(hAiLanguageKey_));
 

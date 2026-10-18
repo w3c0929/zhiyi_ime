@@ -19,7 +19,7 @@
 | `ai.reasoning_effort` | `""` | 推理档位；空 = 不发这个字段 |
 | `ai.timeout_ms` | `8000` | 单次请求超时（1000–120000） |
 | `ai.keys` | `[]` | **多把** API 密钥，**DPAPI（当前用户）加密后的 base64**，不是明文。一把被拒（401/429）自动换下一把 |
-| `ai.use_for.*` | 全 `false` | 哪些功能允许走线上：`translate`（划词翻译）/ `selection`（选中文字的 AI 动作）/ `voice`（语音识别后处理）/ `glossary`（语言包兜底，尚未实现） |
+| `ai.use_for.*` | 全 `false` | 哪些功能允许走线上：`translate`（划词翻译）/ `selection`（选中文字的 AI 动作）/ `voice`（语音识别后处理） |
 | `ai.action_key` | `""` | 动作菜单键：**按一下就弹出菜单**（见下节）。可以是 `"F6"`、`"Ctrl+K"`，或轻按修饰键 `"RShift"` / `"Shift"`（任一侧）/ `"Ctrl"`。空 = 关闭 |
 | `ai.action_keys` | `{}` | 某个动作自己的键：`{"proofread": "F7"}`，按它直跑该动作、不弹菜单（写法同上） |
 | `ai.language_key` | `""` | **语言列表键**：按一下就弹出 `\fy` 那张 12 种语言的列表（写法同 `ai.action_key`，含轻按修饰键）。空 = 关闭 |
