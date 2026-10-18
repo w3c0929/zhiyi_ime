@@ -835,16 +835,25 @@ ProcessResult Engine::process_key(const KeyEvent& event, const OutputOptions& op
     if (!symbol_trigger && english_state && !context_.is_composing() && !event.is_key_up) {
         uint32_t vk = event.keycode;
 
-        // Letter keys (A-Z): commit as single ASCII char, respect Shift and CapsLock
+        // Letter keys (A-Z): full-shape mode has to be written by the IME (a full-width letter is
+        // not what the host would type), but a half-width letter belongs to the host — exactly like
+        // Space and Enter below. The host writes the same letter, and a program whose shortcut is a
+        // single letter (a DAW, a game) gets the *key* instead of a commit: measured 2026-10-18, a
+        // REAPER command bound to D never fired because the IME committed "d" in its place.
         if (vk >= 'A' && vk <= 'Z') {
+            if (!opts.full_shape) {
+                if (ascii_composer_.is_temporary_ascii()) {
+                    ascii_composer_.set_ascii_mode(false);  // the temporary English ends here
+                }
+                record_total_us(trace_, total_start, trace_enabled_);
+                return ProcessResult::REJECTED;
+            }
             char ch = static_cast<char>(vk);
             // Shift XOR CapsLock means uppercase; neither or both means lowercase.
             bool upper = event.is_shift() != event.is_caps_lock();
             if (!upper)
                 ch = static_cast<char>(tolower(ch));
-            context_.committed_text = opts.full_shape
-                ? OutputComposer::to_full_width(ch)
-                : std::string(1, ch);
+            context_.committed_text = OutputComposer::to_full_width(ch);
             context_.set_commit_source(CommitSource::kRawCodePretransformed);
             if (ascii_composer_.is_temporary_ascii()) {
                 ascii_composer_.set_ascii_mode(false);
