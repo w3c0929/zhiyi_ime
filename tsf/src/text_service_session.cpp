@@ -2,9 +2,11 @@
 
 #include "text_service.h"
 
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 
 #include <cxxime/logging.h>
@@ -41,6 +43,27 @@ std::string host_program_name() {
 }
 
 }  // namespace
+
+// The host program's file name, lowercased ("reaper.exe"): what 默认输入法 = 自动 and the
+// pass-through list (设置 > 常规 > 不接管按键的程序) are matched on.
+std::string TextService::_host_program_name() const {
+    std::string name = host_program_name();
+    for (char& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return name;
+}
+
+// Whether this program is one whose keys are left entirely alone (Config::pass_through_programs).
+void TextService::_refresh_keyboard_pass_through() {
+    const std::string host = _host_program_name();
+    _keyboardPassThrough = false;
+    if (host.empty()) return;
+    for (const std::string& program : _config.pass_through_programs) {
+        if (program == host) {
+            _keyboardPassThrough = true;
+            return;
+        }
+    }
+}
 
 void TextService::_sync_ime_status(const cxxime::ImeStatus& status) {
     bool local_changed = _chinese_mode != status.chinese_mode() ||

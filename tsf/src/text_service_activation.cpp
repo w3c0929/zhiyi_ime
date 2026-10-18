@@ -264,6 +264,7 @@ void TextService::_initialize_optional_activation_services() {
                                             false);
 
     _register_switch_keys();
+    _refresh_keyboard_pass_through();  // may be a program whose keys are left to it
 
     cxxime_tsf::trace_activation_step("conversion_sink", "attempt", S_OK, false);
     _register_conversion_compartment_sink();

@@ -521,6 +521,10 @@ private:
     void _trace_ai_source(const char* tier, const std::wstring& text);
 
     void _hide_translate_window();
+    // The host program's file name, lowercased ("reaper.exe"), and whether it is on the
+    // pass-through list (设置 > 常规 > 不接管按键的程序).
+    std::string _host_program_name() const;
+    void _refresh_keyboard_pass_through();
     // The caret of the focused input box, asked for now: the cached one may be stale with nothing
     // typed. The candidate window does the same before it opens.
     RECT _query_caret_rect();
@@ -614,6 +618,11 @@ private:
     std::wstring _translateSource;            // the selected text (shown after the translation)
     // The AI action menu: its own window (the translation window is dismissed by any key, the menu
     // has to take keys), the rows it shows (indices into cxxime::ai_actions()) and what it is for.
+    // 设置 > 常规 > 不接管按键的程序 (Config::pass_through_programs): this host is on the list, so
+    // every key goes straight to it — nothing is composed, no candidate window opens, no key is
+    // eaten (a DAW or a game, where a single letter is a shortcut). Kept in step with the config
+    // (_refresh_keyboard_pass_through).
+    bool _keyboardPassThrough = false;
     bool _aiMenuOpen = false;
     std::size_t _aiMenuHighlight = 0;
     std::vector<std::size_t> _aiMenuRows;

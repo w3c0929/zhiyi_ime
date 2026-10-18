@@ -85,6 +85,7 @@ void TextService::_apply_config_snapshot() {
 
     _inputIndicator.set_menu_language(cxxime::ime_menu_uses_chinese(_config.ui_language));
     _register_switch_keys();  // the switch keys may have changed
+    _refresh_keyboard_pass_through();  // 不接管按键的程序 may have changed
     _reportedInputTarget.clear();  // input collection may have been turned on
     _report_input_target();
     if (_localCandidateWindow) {

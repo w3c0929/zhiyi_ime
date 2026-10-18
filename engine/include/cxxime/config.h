@@ -90,6 +90,11 @@ struct Config {
     // so a mirror cannot pass off other files. https only; empty = no mirror.
     bool update_mirror_enable = false;
     std::string update_mirror_url;
+    // pass_through.programs (设置 > 常规 > 不接管按键的程序): the programs whose keys the input
+    // method leaves entirely alone — nothing is composed, no candidate window opens, no key is
+    // taken (DAWs, games and the like, where a single letter is a shortcut). The exe file name,
+    // lowercased ("reaper.exe"); empty = every program is served as usual.
+    std::vector<std::string> pass_through_programs;
     // startup.autostart: zhiyu-server starts when the user signs in (the installer's Run entry
     // passes --autostart and the server exits at once when this is off); otherwise the input
     // method starts it the first time it is switched to.

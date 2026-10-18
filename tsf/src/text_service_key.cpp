@@ -110,6 +110,13 @@ STDMETHODIMP TextService::OnSetFocus(BOOL fForeground) {
 }
 
 STDMETHODIMP TextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+    // 不接管按键的程序 (Config::pass_through_programs): a DAW or a game, where a single letter is a
+    // shortcut — every key is the program's: nothing is composed, no candidate window opens, no key
+    // is taken (docs/settings-guide.md).
+    if (_keyboardPassThrough) {
+        *pfEaten = FALSE;
+        return S_OK;
+    }
     // Our own copy, on its way to a program that cannot be read: not the user's key.
     if (GetMessageExtraInfo() == kInjectedCopyMark || _readingSource) {
         *pfEaten = FALSE;
@@ -186,6 +193,10 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
 }
 
 STDMETHODIMP TextService::OnTestKeyUp(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+    if (_keyboardPassThrough) {
+        *pfEaten = FALSE;
+        return S_OK;
+    }
     if (GetMessageExtraInfo() == kInjectedCopyMark || _readingSource) {
         *pfEaten = FALSE;
         return S_OK;
@@ -216,6 +227,10 @@ STDMETHODIMP TextService::OnTestKeyUp(ITfContext* pic, WPARAM wParam, LPARAM lPa
 }
 
 STDMETHODIMP TextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+    if (_keyboardPassThrough) {
+        *pfEaten = FALSE;
+        return S_OK;
+    }
     if (GetMessageExtraInfo() == kInjectedCopyMark || _readingSource) {
         *pfEaten = FALSE;
         return S_OK;
@@ -256,6 +271,10 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lPara
 }
 
 STDMETHODIMP TextService::OnKeyUp(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+    if (_keyboardPassThrough) {
+        *pfEaten = FALSE;
+        return S_OK;
+    }
     if (GetMessageExtraInfo() == kInjectedCopyMark || _readingSource) {
         *pfEaten = FALSE;
         return S_OK;
@@ -447,6 +466,22 @@ bool TextService::_ProcessKeyEvent(ITfContext* pic, WPARAM wParam, LPARAM lParam
     const bool response_applied = _apply_engine_response(pic, response, pfEaten, &trace);
     if (!response_applied && !*pfEaten && wParam < _passThroughKeyUps.size()) {
         _passThroughKeyUps.set(wParam);
+    }
+    {
+        // TEMPORARY (2026-10-18): what the engine answered for this key — an English-mode letter
+        // came back as a one-character commit, which eats every single-key shortcut (REAPER's D).
+        char detail[176] = {};
+        snprintf(detail, sizeof(detail),
+                 "vk=0x%04x handled=%u applied=%u eaten=%d ascii=%u composing=%u commit_len=%zu "
+                 "preedit_len=%zu candidates=%u chinese=%d",
+                 static_cast<unsigned>(wParam), response.key_handled, response_applied ? 1 : 0,
+                 *pfEaten ? 1 : 0, static_cast<unsigned>(response.ascii_mode),
+                 static_cast<unsigned>(response.composing),
+                 strnlen_s(response.commit_text, sizeof(response.commit_text)),
+                 strnlen_s(response.preedit, sizeof(response.preedit)),
+                 static_cast<unsigned>(response.candidate_count),
+                 response.ime_status.chinese_mode() ? 1 : 0);
+        _enqueue_event_trace("key_verdict", detail, true);
     }
 
     // Finalize and enqueue trace (async, non-blocking)

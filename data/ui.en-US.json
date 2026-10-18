@@ -147,6 +147,9 @@
     "general.mirror_custom": "Custom",
     "general.mirror_hint": "GitHub is often slow to reach or unreachable here. With this ticked, the update check, the installer, and the language packs, translation model and voice model all go through the mirror on the right — a proxy that sees your IP and which file you asked for; the files themselves are still checked against the release's signature and SHA-256, so a mirror cannot pass off other content. If no listed mirror fits, pick Custom and type an https:// mirror prefix below: the address that is fetched is \"your prefix + /https://github.com/…\". Unticked goes to GitHub directly.",
 
+    "general.passthrough_card": "Programs the keyboard is left to",
+    "general.passthrough_hint": "Program file names (e.g. reaper.exe), separated by commas or spaces. In those programs the input method takes **no keys at all** — nothing is composed, no candidate window opens, every key goes straight to the program. Meant for DAWs and games, where a single letter is a shortcut (in REAPER, for example, D). The cost: you cannot type Chinese in them — remove the name, or type the Chinese elsewhere and paste it in.",
+
     "fuzzy.enable": "Enable fuzzy pinyin",
     "fuzzy.hint": "Words with a similar sound are offered too, with their correct pinyin in parentheses, e.g. 中国(zhong guo)",
     "fuzzy.initials": "Initials",

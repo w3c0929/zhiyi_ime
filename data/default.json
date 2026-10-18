@@ -22,6 +22,9 @@
         "chinese_punct": true,
         "language": "chinese"
     },
+    "pass_through": {
+        "programs": []
+    },
     "style": {
         "font_face": "Microsoft YaHei UI",
         "font_point": 14,

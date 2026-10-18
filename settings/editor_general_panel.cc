@@ -55,6 +55,7 @@ enum ControlId {
     kMirrorEnableId,
     kMirrorId,
     kMirrorUrlId,
+    kPassThroughId,
     kSwitchKeyId = 1101,
     kStyleKeyId,
     kPunctKeyId,
@@ -270,6 +271,14 @@ void EditorApp::create_general_panel(HWND panel) {
     hMirrorUrl_ = make_text_edit(kMirrorUrlId, x0, y, S(660), panel);
     y += kRowH + S(4);
     make_hint(tr("general.mirror_hint"), x0, y - S(4), S(660), panel, 3);
+    y = card_end(panel, y + S(56));
+
+    // 不接管按键的程序（Config::pass_through_programs）：DAW、游戏这类"满键盘都是快捷键"的软件里，
+    // 输入法完全不接管按键，全部交给程序。
+    y = card_begin(panel, y, tr("general.passthrough_card"));
+    hPassThrough_ = make_text_edit(kPassThroughId, x0, y, S(660), panel);
+    y += kRowH + S(4);
+    make_hint(tr("general.passthrough_hint"), x0, y - S(4), S(660), panel, 3);
     y = card_end(panel, y + S(56));
     create_data_card(panel, y);
 }
@@ -532,6 +541,15 @@ void EditorApp::populate_controls() {
     }
     cxxime::update::set_mirror(config_.update_mirror_enable ? config_.update_mirror_url
                                                             : std::string());
+    {
+        // 不接管按键的程序: one line of exe names ("reaper.exe, notepad.exe"), commas or spaces.
+        std::wstring names;
+        for (const std::string& program : config_.pass_through_programs) {
+            if (!names.empty()) names += L", ";
+            names += utf8_to_wstr(program);
+        }
+        SetWindowTextW(hPassThrough_, names.c_str());
+    }
     set_switch_key_boxes(config_);
     key_capture_set(hTranslateKey_, KeyChoice::of(config_.translate_selection_shortcut));
     set_check(hTranslateDirect_, config_.translate_direct_insert);
@@ -586,6 +604,24 @@ bool EditorApp::read_controls(bool report_errors) {
                                                                  : edit_text_utf8(hMirrorUrl_);
         if (c.update_mirror_url.compare(0, 8, "https://") != 0) c.update_mirror_url.clear();
         cxxime::update::set_mirror(c.update_mirror_enable ? c.update_mirror_url : std::string());
+    }
+    {
+        // 不接管按键的程序: split on commas / semicolons / whitespace; the config loader keeps only
+        // the exe file name, lowercased, so what is typed here may be a path or any case.
+        c.pass_through_programs.clear();
+        std::string typed = edit_text_utf8(hPassThrough_);
+        std::string current;
+        for (const char c_ch : typed) {
+            const bool separator = c_ch == ',' || c_ch == ';' || c_ch == ' ' || c_ch == '\t' ||
+                                   c_ch == '\r' || c_ch == '\n';
+            if (separator) {
+                if (!current.empty()) c.pass_through_programs.push_back(std::move(current));
+                current.clear();
+            } else {
+                current.push_back(c_ch);
+            }
+        }
+        if (!current.empty()) c.pass_through_programs.push_back(std::move(current));
     }
     c.autostart = get_check(hAutostart_);
     c.laya.enable = get_check(hLaya_);

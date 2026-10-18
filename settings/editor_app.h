@@ -328,6 +328,8 @@ private:
     HWND hMirrorEnable_ = nullptr;
     HWND hMirror_ = nullptr;
     HWND hMirrorUrl_ = nullptr;
+    // pass_through.programs: the programs whose keys the input method leaves alone.
+    HWND hPassThrough_ = nullptr;
     HWND hCheckUpdate_ = nullptr;
     HWND hUpdateStatus_ = nullptr;
     HWND hNewVersion_ = nullptr;

@@ -3,6 +3,7 @@
 #include <cxxime/config.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -433,6 +434,20 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
     }
     if (j.contains("startup") && j["startup"].is_object()) {
         load_bool(j["startup"], "autostart", config.autostart);
+    }
+    if (j.contains("pass_through") && j["pass_through"].is_object() &&
+        j["pass_through"].contains("programs") && j["pass_through"]["programs"].is_array()) {
+        // The exe file name only, lowercased: "C:\Program Files\REAPER\reaper.exe" and "REAPER.exe"
+        // both mean the program. Anything that is not a string is skipped.
+        config.pass_through_programs.clear();
+        for (const auto& entry : j["pass_through"]["programs"]) {
+            if (!entry.is_string()) continue;
+            std::string name = entry.get<std::string>();
+            const std::size_t slash = name.find_last_of("\\/");
+            if (slash != std::string::npos) name.erase(0, slash + 1);
+            for (char& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (!name.empty()) config.pass_through_programs.push_back(std::move(name));
+        }
     }
     config.learning_section_loaded = j.contains("learning") && j["learning"].is_object();
     if (config.learning_section_loaded) {
@@ -940,6 +955,9 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["update"]["notify"] = config.update_notify;
     j["update"]["mirror_enable"] = config.update_mirror_enable;
     j["update"]["mirror_url"] = config.update_mirror_url;
+    for (const std::string& program : config.pass_through_programs) {
+        j["pass_through"]["programs"].push_back(program);
+    }
     j["startup"]["autostart"] = config.autostart;
     j["learning"]["gloss_targets"] = nlohmann::json::object();
     for (const auto& [source, target] : config.gloss_targets) {
