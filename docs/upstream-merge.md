@@ -221,6 +221,10 @@
 - 现有内容：`glossary`（28 个 `.gloss` + `glossary.json`）、`translator`（`zhiyi-mt-v2-Q4_K_M.gguf` 396 MB 与
   v3 的 gguf 322 MB，用户可在「学习」页选；`llama-b11480-vulkan-x64.zip` 32 MB）、`voice`（`model.int8.onnx`
   239 MB + `tokens.txt` + `silero_vad.onnx` + 两个 LICENSE 文件）。
+- **bucket 里的 `zhiyuime.json` 是用户另一个项目在维护的**（`E:\09.同步\06.配置\myscoop`，那个仓库有自己的
+  `download.ps1` / SKILL / progress）：**只改 `version` / `url` / `hash` 这三个值，绝不整份覆盖**（两边的
+  `installer.script`、`post_install`、`pre_uninstall` 本来就是两套，2026-10-18 实测过）；**而且推送之后要把
+  这三个值恢复成原样**——bucket 由用户自己更新，本仓库的 `scripts/zhiyu-scoop.json` 才是本 fork 的那一份。
 - **Laya 推荐模型是例外**：它不走上面那套签名清单，而是**随安装包发**（打包时模型文件来自参考安装目录），
   `scripts/fetch_model.py` 另外把它下到 `models/laya/` 供源码构建用——那个脚本指向**本仓库**的
   `model-zhen-long-l18` Release（上游 1.5.9 起的默认模型，文件逐字节相同）。换模型 = 转存上游资产到本仓库
