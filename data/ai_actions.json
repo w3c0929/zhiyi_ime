@@ -49,6 +49,15 @@
             "insert": "below",
             "max_input_chars": 32000,
             "timeout_ms": 60000
+        },
+        {
+            "id": "ask",
+            "label": "提问",
+            "label_en": "Ask",
+            "prompt": "You answer the question the user selected. It may be written in Chinese, English or another language: answer in the language the question is in, concisely and to the point, with no preamble, no restating of the question and no quotes around the answer. Plain text; use short lines or a short list only when that makes the answer clearer. If the answer needs facts you do not have, say so briefly instead of guessing.",
+            "insert": "below",
+            "max_input_chars": 8000,
+            "timeout_ms": 30000
         }
     ]
 }

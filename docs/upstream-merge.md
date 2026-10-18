@@ -62,7 +62,7 @@
   `proofread` 动作过一遍再上屏，失败/超限一律退回识别原文，录音与按键流程不动）。
   数据文件 `data/ai_thinking_levels.json`。**默认关，关着时行为与从前完全一致**——合并时别把它改成默认开。
   用途开关是 `ai.use_for.*`（translate / selection / voice / glossary），**没有 english**（1.7.36 删掉）。
-- **选中文字的 AI 动作（翻译 / 润色 / 纠错 / 改写 / 摘要）**：动作定义是数据（`data/ai_actions.json`，
+- **选中文字的 AI 动作（翻译 / 润色 / 纠错 / 改写 / 摘要 / 提问）**：动作定义是数据（`data/ai_actions.json`，
   读取器 `shared/src/ai_actions.cc`，三端共用：服务端取提示词、TSF 取名字画菜单、设置页列行）；
   提示词调用 `ai_client` 的 `run_action()`（含去引号/去「以下是…」包装）；服务端
   `server/src/ai_action_service.cc`（单 worker 线程、`owner_`/`generation_` 失效、结果留内存供分块取回、
