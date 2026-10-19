@@ -1483,11 +1483,17 @@ TranslationResult Engine::ai_language_result(int page_index, int page_offset,
     }
     const int end = (std::min)(offset + page_capacity, known_count);
     const std::string& ui_language = runtime_->config().ui_language;
+    // 现在用的是哪一种，就在它后面标「（当前）」——与其它几张列表（语音 / 在线 / 搜索）一个写法，
+    // 选之前一眼看得出当前状态（docs/ai.md）。
+    const std::string& current = runtime_->config().ai.translate_language;
+    const bool english = ui_language.compare(0, 2, "en") == 0;
+    const char* const mark = english ? " (current)" : "（当前）";
     result.entries.reserve(static_cast<std::size_t>(end - offset));
     for (int index = offset; index < end; ++index) {
         const std::string& code = action->languages[index];
         Candidate candidate;
         candidate.text = cxxime::ai_language_label(code, ui_language);
+        if (code == current) candidate.text += mark;
         candidate.code = std::string(1, kSymbolPrefix) + kAiLanguageCommand;
         candidate.source = CandidateSource::kSymbol;
         CandidateEntry entry;

@@ -1396,22 +1396,41 @@ void TextService::_open_voice_mode_menu() {
 std::string TextService::_menu_special_label(AiMenuPurpose purpose, std::size_t special) const {
     const bool english = _config.ui_language.compare(0, 2, "en") == 0;
     const bool search = purpose == AiMenuPurpose::kToggleSearch;
+    // 每一张列表都把"当前在用的那一项"标出来（docs/ai.md）：名字右边加「（当前）」，其余行不加——
+    // 选之前一眼看得出现在的状态，而不是靠猜（动作菜单不标：它只是命令，没有状态）。
+    const char* const mark = english ? " (current)" : "（当前）";
     switch (special) {
     case kMenuRowVoiceOff:
-        return english ? "Not used" : "不使用";
-    case kMenuRowSwitchOn:
-        if (search) return english ? "Search (on)" : "搜索（开）";
-        return english ? "Online (on)" : "线上（开）";
-    case kMenuRowSwitchOff:
-        if (search) return english ? "Search (off)" : "搜索（关）";
-        return english ? "Online (off)" : "线上（关）";
+        // 语音那一层关着时，"不使用"就是当前那一项。
+        return std::string(english ? "Not used" : "不使用") +
+               (!_config.ai.use_for.voice ? mark : "");
+    case kMenuRowSwitchOn: {
+        const bool on = search ? _config.ai.search_enabled : _config.ai.enabled;
+        std::string name;
+        if (search) {
+            name = english ? "Search (on)" : "搜索（开）";
+        } else {
+            name = english ? "Online (on)" : "线上（开）";
+        }
+        return name + (on ? mark : "");
+    }
+    case kMenuRowSwitchOff: {
+        const bool off = search ? !_config.ai.search_enabled : !_config.ai.enabled;
+        std::string name;
+        if (search) {
+            name = english ? "Search (off)" : "搜索（关）";
+        } else {
+            name = english ? "Online (off)" : "线上（关）";
+        }
+        return name + (off ? mark : "");
+    }
     case kMenuRowSearchTavily:
     case kMenuRowSearchDeepseek: {
         // 搜索这一家是谁：当前在用的那家后面标一下（换个来源不用猜现在用的是哪个）。
         const bool tavily = special == kMenuRowSearchTavily;
         const bool current = tavily == (_config.ai.search_provider != "deepseek");
         std::string name = tavily ? "Tavily" : "DeepSeek";
-        if (current) name += english ? " (current)" : "（当前）";
+        if (current) name += mark;
         return name;
     }
     default:
@@ -1487,6 +1506,12 @@ void TextService::_render_ai_menu() {
         cxxime::CandidatePresentationItem item;
         if (row < actions.size()) {
             item.text = cxxime::ai_action_label(actions[row], _config.ui_language);
+            // 语音那一张：正在用的那个动作（且这一层开着）后面标「（当前）」，与其它几张列表一致。
+            if (_aiMenuPurpose == AiMenuPurpose::kSetVoiceMode && _config.ai.use_for.voice &&
+                actions[row].id == _config.ai.voice_polish_action) {
+                item.text += _config.ui_language.compare(0, 2, "en") == 0 ? " (current)"
+                                                                         : "（当前）";
+            }
         } else {
             // 不使用 / 线上（开、关）/ 搜索（开、关）——哪一对由这个列表是谁决定。
             item.text = _menu_special_label(_aiMenuPurpose, row - actions.size());
