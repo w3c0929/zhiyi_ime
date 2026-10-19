@@ -1396,9 +1396,10 @@ void TextService::_open_voice_mode_menu() {
 std::string TextService::_menu_special_label(AiMenuPurpose purpose, std::size_t special) const {
     const bool english = _config.ui_language.compare(0, 2, "en") == 0;
     const bool search = purpose == AiMenuPurpose::kToggleSearch;
-    // 每一张列表都把"当前在用的那一项"标出来（docs/ai.md）：名字右边加「（当前）」，其余行不加——
-    // 选之前一眼看得出现在的状态，而不是靠猜（动作菜单不标：它只是命令，没有状态）。
-    const char* const mark = english ? " (current)" : "（当前）";
+    // 每一张列表都把"当前在用的那一项"标出来（docs/ai.md）：名字右边加一个 ✅，其余行不加——
+    // 选之前一眼看得出现在的状态，而不是靠猜（动作菜单不标：它只是命令，没有状态）。勾是图形字符，
+    // 中英文界面都一样。
+    const char* const mark = " \xE2\x9C\x85";  // ✅
     switch (special) {
     case kMenuRowVoiceOff:
         // 语音那一层关着时，"不使用"就是当前那一项。
@@ -1506,11 +1507,10 @@ void TextService::_render_ai_menu() {
         cxxime::CandidatePresentationItem item;
         if (row < actions.size()) {
             item.text = cxxime::ai_action_label(actions[row], _config.ui_language);
-            // 语音那一张：正在用的那个动作（且这一层开着）后面标「（当前）」，与其它几张列表一致。
+            // 语音那一张：正在用的那个动作（且这一层开着）后面标 ✅，与其它几张列表一致。
             if (_aiMenuPurpose == AiMenuPurpose::kSetVoiceMode && _config.ai.use_for.voice &&
                 actions[row].id == _config.ai.voice_polish_action) {
-                item.text += _config.ui_language.compare(0, 2, "en") == 0 ? " (current)"
-                                                                         : "（当前）";
+                item.text += " \xE2\x9C\x85";  // ✅
             }
         } else {
             // 不使用 / 线上（开、关）/ 搜索（开、关）——哪一对由这个列表是谁决定。
