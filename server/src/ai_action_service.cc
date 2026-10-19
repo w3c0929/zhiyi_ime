@@ -148,39 +148,29 @@ void AiActionService::do_action(uint32_t id, uint64_t generation, std::string ac
             reason = "选中的文字超过这个动作的上限";
         }
         if (reason.empty()) {
-            // 「提问」先联网搜一下（docs/ai.md）：开关（ai.search_enabled）打开、且所选来源
-            // （ai.search_provider）有密钥时，把那句话当查询搜一页结果，连同结果一起交给模型；
-            // 搜不到就照旧只回答问题，不因此失败（每次尝试都留一行 ai_search 记录）。
+            // 「提问」先联网搜一下（docs/ai.md）：开关打开、且所选来源有密钥时，把那句话当查询搜一页
+            // 结果，连同结果一起交给模型；搜不到就照旧只回答问题，不因此失败（每次尝试都留一行
+            // ai_search 记录）。语音那条路走的是同一个 with_web_search()。
             std::string prompt = action->prompt;
             std::string question = text;
-            if (action->id == "ask" && config->ai.search_enabled &&
-                cxxime::ai::search_available(config->ai)) {
-                std::string results;
-                std::string search_error;
-                const bool searched =
-                    cxxime::ai::web_search(config->ai, text, &results, &search_error, &cancel_);
-                {
-                    // 一行记录，用来确认"这次提问到底搜没搜、搜回来多少"（`%USERPROFILE%\zhiyu\logs\
-                    // server-trace.jsonl`，需要 diagnostics.trace_mode 不是 off）。
-                    char line[224] = {};
-                    const int length = snprintf(
-                        line, sizeof(line),
-                        "{\"event\":\"ai_search\",\"provider\":\"%s\",\"ok\":%d,\"chars\":%zu,"
-                        "\"error\":\"%s\"}",
-                        config->ai.search_provider.c_str(), searched ? 1 : 0,
-                        searched ? results.size() : 0,
-                        searched ? "" : json_safe(search_error).c_str());
-                    if (length > 0) cxxime::enqueue_server_trace_json(line, length);
-                }
-                if (searched) {
-                    prompt +=
-                        "\n\nThe user's message starts with web search results (numbered, each with"
-                        " its title, address and a snippet), then the question. Answer from them"
-                        " where they are relevant, and end with a short list of the sources you"
-                        " used (their addresses); if they do not answer the question, say so and"
-                        " answer from your own knowledge instead.";
-                    question = "Web search results:\n\n" + results + "\nThe question:\n" + text;
-                }
+            std::string search_error;
+            std::size_t context_chars = 0;
+            const bool searched = cxxime::ai::with_web_search(config->ai, action->id, text, &prompt,
+                                                              &question, &context_chars,
+                                                              &search_error, &cancel_);
+            const bool search_wanted = action->id == "ask" && config->ai.search_enabled &&
+                                       cxxime::ai::search_available(config->ai);
+            if (search_wanted) {
+                // 一行记录，用来确认"这次提问到底搜没搜、搜回来多少"（`%USERPROFILE%\zhiyu\logs\
+                // server-trace.jsonl`，需要 diagnostics.trace_mode 不是 off）。
+                char line[224] = {};
+                const int length = snprintf(
+                    line, sizeof(line),
+                    "{\"event\":\"ai_search\",\"from\":\"ask\",\"provider\":\"%s\",\"ok\":%d,"
+                    "\"chars\":%zu,\"error\":\"%s\"}",
+                    config->ai.search_provider.c_str(), searched ? 1 : 0, context_chars,
+                    json_safe(search_error).c_str());
+                if (length > 0) cxxime::enqueue_server_trace_json(line, length);
             }
             std::string error;
             if (!cxxime::ai::run_action(config->ai, prompt, question, &answer, &error, &cancel_)) {

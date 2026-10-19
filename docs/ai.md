@@ -98,6 +98,9 @@
   数字键、方向键、空格或回车执行，Esc 取消，也可以鼠标点；**选中即写进配置**：选动作就打开「语音识别后处理」
   （否则选了不生效），选「不使用」就关掉它。
   它就是动作菜单那套窗口，不用先进设置页；列表里的名字取自 `data/ai_actions.json`。
+- **联网搜索也管语音**：`ai.voice_polish_action = "ask"` 时，**用的就是「AI」页那套搜索设置**（同一个开关、
+  同一个来源、同一把密钥）——识别出来的那句话先拿去搜一页结果再交给 AI，见「联网搜索」一节
+  （两条路共用 `cxxime::ai::with_web_search()`）。
 - **插在哪儿**：`server/src/voice_service.cc` 的 `finish_recording()` 里，`tidy()` 之后、把文字存进
   `text_` 之前（那是语音自己的工作线程，占线也不影响录音与按键）。
 - **任何一步不顺都退回识别原文**：总开关没开 / 没勾这个用途 / `ai.voice_polish_action` 空着或写了不存在的
@@ -242,7 +245,8 @@
 - **两家**：`tavily`（[tavily.com](https://app.tavily.com/home)，注册就能复制，免费额度 1000 credits）与
   `deepseek`（DeepSeek 自己的搜索接口，**用同一把平台 key**——所以 DeepSeek 那一栏**留空就用 AI 里那把
   DeepSeek 密钥**，也可以单独填一把覆盖它）。链接与说明跟着来源换。
-- **只给「提问」用**：`ask` 动作（选中文字 → 菜单第 6 项 / 语音后处理选「提问」/ 自己配的键）在发请求前，
+- **只给「提问」用**：`ask` 动作——**两条路都算**：选中文字（菜单第 6 项 / 自己配的键）与**语音识别后处理选「提问」**
+  （识别出来的那句话就是问题）——在发请求前，
   先把**那句话本身**当作查询发出去——Tavily 是 `POST https://api.tavily.com/search`（`max_results` 5、
   `search_depth: basic`，一次搜索算一个 credit）；DeepSeek 是 `POST https://api.deepseek.com/v1/tools/search`
   （`count` 5、`need_content: false`，用它的 `snippet` + `summary`；地址跟着 AI 页的地址走，填了代理就用代理）。

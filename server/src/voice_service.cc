@@ -12,6 +12,7 @@
 #include <cxxime/gpu_adapters.h>
 #include <cxxime/ipc_protocol.h>
 #include <cxxime/logging.h>
+#include <cxxime/query_trace.h>
 #include <cxxime/voice_files.h>
 
 namespace {
@@ -443,10 +444,37 @@ std::string VoiceService::post_process(std::string text) {
     const auto start = std::chrono::steady_clock::now();
     std::string answer;
     std::string error;
+    // 「提问」（ai.voice_polish_action = "ask"）与选中文字那条路一样先联网搜一下（docs/ai.md）：
+    // 识别出来的那句话就是问题。搜不到就照旧只回答问题，不因此失败。
+    std::string prompt = action->prompt;
+    std::string question = text;
+    std::string search_error;
+    std::size_t context_chars = 0;
+    const bool searched = cxxime::ai::with_web_search(config->ai, action->id, text, &prompt,
+                                                      &question, &context_chars, &search_error,
+                                                      nullptr);
+    if (action->id == "ask" && config->ai.search_enabled &&
+        cxxime::ai::search_available(config->ai)) {
+        // 一行记录，用来确认"这次语音提问到底搜没搜"（server-trace.jsonl）。
+        std::string safe;
+        for (const char ch : search_error) {  // 引号与控制字符会把那一行 JSON 弄坏
+            const unsigned char byte = static_cast<unsigned char>(ch);
+            if (ch == '"' || ch == '\\') continue;
+            safe.push_back(byte < 0x20 ? ' ' : ch);
+            if (safe.size() >= 80) break;
+        }
+        char line[224] = {};
+        const int length = snprintf(line, sizeof(line),
+                                    "{\"event\":\"ai_search\",\"from\":\"voice\",\"provider\":\"%s\","
+                                    "\"ok\":%d,\"chars\":%zu,\"error\":\"%s\"}",
+                                    config->ai.search_provider.c_str(), searched ? 1 : 0,
+                                    context_chars, safe.c_str());
+        if (length > 0) cxxime::enqueue_server_trace_json(line, length);
+    }
     // No cancel flag: this runs on the worker with the generation checked right after (a
     // recording dropped in the meantime is not delivered), and the request is bounded by
     // ai.timeout_ms anyway.
-    if (!cxxime::ai::run_action(config->ai, action->prompt, text, &answer, &error, nullptr)) {
+    if (!cxxime::ai::run_action(config->ai, prompt, question, &answer, &error, nullptr)) {
         CXXIME_LOG(L"voice: post-processing failed: %S", error.c_str());
         return text;
     }

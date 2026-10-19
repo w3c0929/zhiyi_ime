@@ -970,6 +970,31 @@ bool search_available(const AiConfig& config) {
     return unprotect_secret(own->second, &key) && !key.empty();
 }
 
+bool with_web_search(const AiConfig& config, const std::string& action_id,
+                     const std::string& question, std::string* prompt, std::string* message,
+                     std::size_t* context_chars, std::string* error,
+                     const std::atomic<bool>* cancel) {
+    if (context_chars) *context_chars = 0;
+    if (error) error->clear();
+    if (action_id != "ask" || !config.search_enabled || !search_available(config)) return false;
+    std::string results;
+    std::string search_error;
+    if (!web_search(config, question, &results, &search_error, cancel)) {
+        if (error) *error = search_error;
+        return false;
+    }
+    if (prompt) {
+        *prompt +=
+            "\n\nThe user's message starts with web search results (numbered, each with its title,"
+            " address and a snippet), then the question. Answer from them where they are relevant,"
+            " and end with a short list of the sources you used (their addresses); if they do not"
+            " answer the question, say so and answer from your own knowledge instead.";
+    }
+    if (message) *message = "Web search results:\n\n" + results + "\nThe question:\n" + question;
+    if (context_chars) *context_chars = results.size();
+    return true;
+}
+
 bool web_search(const AiConfig& config, const std::string& query, std::string* context,
                 std::string* error, const std::atomic<bool>* cancel) {
     g_last_error.clear();

@@ -84,6 +84,16 @@ bool run_action(const AiConfig& config, const std::string& system_prompt, const 
 // or (DeepSeek) the setup's DeepSeek API key.
 bool search_available(const AiConfig& config);
 
+// 「提问」在发请求前先联网搜一下（docs/ai.md）——选中的文字与语音识别后处理两条路共用这一个：
+// `action_id` 是 "ask"、搜索开关打开、且所选来源有密钥时，把 `question` 当查询搜一页结果，
+// `prompt` 与 `message` 换成"带搜索结果"的那一份（message 变成"结果 + 问题"，prompt 追加一句
+// 要求依据结果回答并列出来源）。返回是否真的搜到了：false 时两者原样不动（照旧直接回答），
+// `context_chars` 是结果的字节数，`error` 是没搜成的原因。
+bool with_web_search(const AiConfig& config, const std::string& action_id,
+                     const std::string& question, std::string* prompt, std::string* message,
+                     std::size_t* context_chars, std::string* error,
+                     const std::atomic<bool>* cancel);
+
 // A web search (docs/ai.md): `query` goes to the service Config::ai.search_provider names — Tavily
 // (https://api.tavily.com/search) or DeepSeek's own search (https://api.deepseek.com/v1/tools/
 // search, on the DeepSeek API key of this setup unless the search has one of its own) — and the
