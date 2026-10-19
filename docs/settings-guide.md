@@ -272,6 +272,8 @@
 | `ai.action_keys` | `{}` | 给某个动作配的独立键：`{"proofread": "F7"}`，按它就直跑该动作 |
 | `ai.language_key` | `""` | 语言列表键：按一下就弹出 `\fy` 那张 12 种语言的列表，选中即写进 `ai.translate_language`（见 [在线 AI](ai.md)） |
 | `ai.voice_action_key` | `""` | 语音处理键：按一下就弹出「纠错 / 提问 / 不使用」三行，选中即写进 `ai.voice_polish_action`（选动作顺带打开 `ai.use_for.voice`，选「不使用」关掉它） |
+| `ai.enable_key` | `""` | 在线 AI 开关键：按一下就弹出「线上（开）/ 线上（关）」，选中即写进 `ai.enabled`（与「AI」页那个勾选框是同一项） |
+| `ai.translate_language` | `en` | 走线上时**中文**译成哪种语言（12 种）；别的语言一律译成中文。划词翻译（Ctrl+C+C）与「翻译」动作都用它；离线模型不看它，只看「学习」页那两行 |
 | `ai.voice_polish_action` | `proofread` | 语音识别后处理用哪个动作（`data/ai_actions.json` 的 id）：`proofread`（纠错）或 `ask`（提问：识别文字当问题，上屏 AI 的回答）；**空 = 不做这一层**。设置页「AI」页那一行右侧的下拉给**纠错 / 提问 / 不使用**三项 |
 | `ascii_composer.switch_key` | Shift 切换 | 单独轻按 Shift / Ctrl 的行为（`code`、`clear`、`set_ascii_mode`、`noop` 等，见 [组合输入](ascii-composer.md)）；`..._L` / `..._R` 两侧同值表示不区分左右，只写一侧表示只认该侧 |
 | `english.word_mode` | true | 英文模式默认单词联想 |

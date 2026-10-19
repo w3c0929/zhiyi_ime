@@ -308,19 +308,19 @@ void TranslateService::do_translate(uint32_t id, uint64_t generation, std::strin
     // translate action alike (the rows are where the languages and their packs are).
     const std::string offline_target =
         config ? translation_target(*config, source) : (source == "zh" ? "en" : "zh");
-    // The API: the translate action puts Chinese into the language its list has selected and
-    // anything else into Chinese; the translate key goes by the learning rows there too.
+    // The API goes by the AI page's translate language instead (Config::ai.translate_language):
+    // Chinese into it, anything else into Chinese. The translate action sends the language it was
+    // started with; the translate key (Ctrl+C+C) sends none, and gets the same setting.
+    std::string online_language = chinese_target;
+    if (online_language.empty() && config) online_language = config->ai.translate_language;
     std::string online_target = offline_target;
-    if (!chinese_target.empty()) {
-        online_target = source == "zh" ? chinese_target : std::string("zh");
+    if (!online_language.empty()) {
+        online_target = source == "zh" ? online_language : std::string("zh");
     }
 
     // The online AI first, when the user turned it on for the selection translation
-    // (Config::ai.use_for.translate). A failure falls back to the offline model, unless the
-    // mode is "remote_only".
-    bool remote_only = false;
+    // (Config::ai.use_for.translate). A failure falls back to the offline model.
     if (config && cxxime::ai::usable_for(config->ai, &cxxime::AiUseFor::translate)) {
-        remote_only = config->ai.remote_only();
         std::string translation;
         std::string ai_error;
         if (cxxime::ai::translate(config->ai, text, online_target, &translation, &ai_error,
@@ -330,7 +330,7 @@ void TranslateService::do_translate(uint32_t id, uint64_t generation, std::strin
         }
     }
 
-    if (result.empty() && !remote_only && ensure_server(&error)) {
+    if (result.empty() && ensure_server(&error)) {
         last_used_ = std::chrono::steady_clock::now();
         cxxime::mt::Item item;
         item.source = source;

@@ -92,8 +92,6 @@ cxxime::KeyboardShortcut action_key_shortcut(const KeyChoice& choice) {
     return {};
 }
 
-// The two modes, in the order of the combo (AiConfig::mode).
-const char* const kAiModeKeys[] = {"ai.mode_prefer_remote", "ai.mode_remote_only"};
 // The reasoning levels the combo offers; the first sends nothing (AiConfig::reasoning_effort).
 const char* const kAiEffortValues[] = {"", "low", "medium", "high"};
 const char* const kAiEffortKeys[] = {"ai.effort_default", "ai.effort_low", "ai.effort_medium",
@@ -162,14 +160,24 @@ std::wstring masked_key(const std::string& key) {
 void EditorApp::create_ai_panel(HWND panel) {
     const int x0 = kPanelPadLeft;
     const int labels = label_width({"ai.enabled", "ai.provider", "ai.base_url", "ai.model",
-                                    "ai.key", "ai.mode", "ai.timeout", "ai.use_for", "ai.effort",
+                                    "ai.key", "ai.timeout", "ai.use_for", "ai.effort",
                                     "ai.use_voice"});
     const int control_w = S(300);
     const int hint_w = S(420);
     int y = card_begin(panel, kPanelPadTop, tr("ai.card_service"));
 
     const int label_x = make_aligned_label(tr("ai.enabled"), x0, labels, y, panel);
-    hAiEnabled_ = make_check(kAiEnabledId, tr("ai.enabled_check"), label_x, y, hint_w, panel);
+    const int enable_w = text_width(tr("ai.enabled_check")) + S(28);
+    hAiEnabled_ = make_check(kAiEnabledId, tr("ai.enabled_check"), label_x, y, enable_w, panel);
+    // 这个开关右边就是「在线 AI 开关键」（docs/ai.md）：按一下弹出 线上（开）/ 线上（关）两行，
+    // 写的就是这个勾选框那一项（ai.enabled），不用进设置页。
+    hAiEnableKey_ =
+        create_key_capture(kAiEnableKeyId, label_x + enable_w + S(16), y, S(150), kCtrlH, panel, true);
+    key_capture_set_allow_common(hAiEnableKey_, false);
+    key_capture_set_check(hAiEnableKey_, [this](const KeyChoice& choice) -> std::wstring {
+        return action_key_notice(choice, hTranslateKey_ ? key_capture_get(hTranslateKey_)
+                                                        : KeyChoice::none());
+    });
     y += kRowH;
     make_hint(tr("ai.enabled_hint"), label_x, y - S(8), hint_w, panel, 1);
     y += S(24);
@@ -222,13 +230,9 @@ void EditorApp::create_ai_panel(HWND panel) {
     hAiThinking_ = make_check(kAiThinkingId, tr("ai.thinking"), effort_x + S(170), y, S(240), panel);
     y += kRowH;
 
-    // 超时与模式
+    // 超时
     const int timeout_x = make_aligned_label(tr("ai.timeout"), x0, labels, y, panel);
     hAiTimeout_ = make_edit(kAiTimeoutId, timeout_x, y, S(90), panel);
-    y += kRowH;
-    const int mode_x = make_aligned_label(tr("ai.mode"), x0, labels, y, panel);
-    hAiMode_ = make_list_combo(kAiModeId, mode_x, y, S(260), 4, panel);
-    for (const char* key : kAiModeKeys) combo_add(hAiMode_, tr(key));
     y += kRowH;
 
     hAiTest_ = make_button(kAiTestId, tr("ai.test"), timeout_x, y, S(110), panel);
@@ -400,7 +404,7 @@ void EditorApp::populate_ai() {
     set_combo_text(hAiBaseUrl_, ai::effective_base_url(config_.ai));
     set_combo_text(hAiModel_, ai::effective_model(config_.ai));
     SetWindowTextW(hAiKey_, L"");
-    combo_set_index(hAiMode_, config_.ai.mode == "remote_only" ? 1 : 0);
+    key_capture_set(hAiEnableKey_, action_key_choice(config_.ai.enable_key));
     set_edit_int(hAiTimeout_, config_.ai.timeout_ms);
 
     refresh_ai_effort_combo();  // the levels this service and model offer
@@ -459,7 +463,7 @@ void EditorApp::read_ai(cxxime::Config& config) {
                                      ? ai_effort_levels_[static_cast<std::size_t>(effort - 1)]
                                      : std::string();
     config.ai.thinking = get_check(hAiThinking_);
-    config.ai.mode = combo_index(hAiMode_) == 1 ? "remote_only" : "prefer_remote";
+    config.ai.enable_key = action_key_shortcut(key_capture_get(hAiEnableKey_));
     config.ai.timeout_ms = (std::max)(1000, (std::min)(get_edit_int(hAiTimeout_), 120000));
     config.ai.use_for.translate = get_check(hAiUseTranslate_);
     config.ai.use_for.selection = get_check(hAiUseSelection_);

@@ -1141,8 +1141,8 @@ void TextService::_watch_ai_action_tap() {
     _fire_ai_action_key(purpose, action_id);
 }
 
-// What a key that has decided to fire does: the language list, the voice post-processing list, or
-// the action (the menu, when the id is empty).
+// What a key that has decided to fire does: the language list, the voice post-processing list, the
+// online switch's list, or the action (the menu, when the id is empty).
 void TextService::_fire_ai_action_key(AiKeyPurpose purpose, const std::string& action_id) {
     switch (purpose) {
     case AiKeyPurpose::kLanguage:
@@ -1150,6 +1150,9 @@ void TextService::_fire_ai_action_key(AiKeyPurpose purpose, const std::string& a
         break;
     case AiKeyPurpose::kVoiceMode:
         _pendingVoiceModeMenu = true;
+        break;
+    case AiKeyPurpose::kOnline:
+        _pendingOnlineMenu = true;
         break;
     case AiKeyPurpose::kAction:
     default:
@@ -1167,6 +1170,8 @@ bool TextService::_handle_ai_action_key(WPARAM key) {
     AiKeyPurpose purpose = AiKeyPurpose::kAction;
     if (_is_language_key(key)) {
         purpose = AiKeyPurpose::kLanguage;
+    } else if (_is_enable_key(key)) {
+        purpose = AiKeyPurpose::kOnline;
     } else if (_is_voice_action_key(key)) {
         purpose = AiKeyPurpose::kVoiceMode;
     } else if (!_ai_action_key_for(key, &action_id)) {
@@ -1296,6 +1301,12 @@ void TextService::_process_ai_action_selection() {
         _open_voice_mode_menu();
         return;
     }
+    if (_pendingOnlineMenu) {
+        // 在线 AI 的总开关（线上（开）/ 线上（关））同样与光标处的文字无关。
+        _pendingOnlineMenu = false;
+        _open_online_menu();
+        return;
+    }
     const std::string action_id = _pendingAiActionId;
     _pendingAiActionId.clear();
     const std::vector<cxxime::AiAction>& actions = cxxime::ai_actions();
@@ -1355,9 +1366,28 @@ void TextService::_open_voice_mode_menu() {
     if (!_show_menu_window()) _close_ai_menu();
 }
 
-// 那个"不使用"行的名字（TSF 没有界面串表，就照「正在…」那样写死中英两份）。
-std::string TextService::_voice_off_label() const {
-    return _config.ui_language.compare(0, 2, "en") == 0 ? "Not used" : "不使用";
+// 那几行不是动作的行（TSF 没有界面串表，就照「正在…」那样写死中英两份）：0 = 语音列表的「不使用」，
+// 1 / 2 = 在线开关的「线上（开）/ 线上（关）」。行号就是 actions.size() 之后第几个。
+std::string TextService::_menu_special_label(std::size_t special) const {
+    const bool english = _config.ui_language.compare(0, 2, "en") == 0;
+    switch (special) {
+    case 0:
+        return english ? "Not used" : "不使用";
+    case 1:
+        return english ? "Online (on)" : "线上（开）";
+    default:
+        return english ? "Online (off)" : "线上（关）";
+    }
+}
+
+// 在线 AI 的总开关（ai.enabled）：两行，选中即写进配置——与设置页那个勾选框是同一项（docs/ai.md）。
+void TextService::_open_online_menu() {
+    _close_ai_menu();
+    const std::size_t actions = cxxime::ai_actions().size();
+    _aiMenuRows.push_back(actions);      // 线上（开）
+    _aiMenuRows.push_back(actions + 1);  // 线上（关）
+    _aiMenuPurpose = AiMenuPurpose::kToggleOnline;
+    if (!_show_menu_window()) _close_ai_menu();
 }
 
 // The menu window: created (or reused), placed at the caret, filled with the current rows, shown.
@@ -1412,8 +1442,8 @@ void TextService::_render_ai_menu() {
         cxxime::CandidatePresentationItem item;
         if (row < actions.size()) {
             item.text = cxxime::ai_action_label(actions[row], _config.ui_language);
-        } else if (_aiMenuPurpose == AiMenuPurpose::kSetVoiceMode) {
-            item.text = _voice_off_label();  // the "不使用" row
+        } else {
+            item.text = _menu_special_label(row - actions.size());  // 不使用 / 线上（开 / 关）
         }
         page.items.push_back(std::move(item));
     }
@@ -1433,6 +1463,17 @@ void TextService::_close_ai_menu() {
     _aiMenuHighlight = 0;
     _aiMenuPurpose = AiMenuPurpose::kRunAction;
     if (_aiMenuWindow) _aiMenuWindow->hide();
+}
+
+// The key that opens the online switch's list (线上（开）/ 线上（关）), if this is it — the same shape.
+bool TextService::_is_enable_key(WPARAM key) const {
+    const cxxime::KeyboardShortcut& shortcut = _config.ai.enable_key;
+    if (!shortcut.enabled() || key != shortcut.virtual_key) return false;
+    std::uint32_t modifiers = _get_modifiers() & cxxime::kShortcutModifierMask;
+    if (shortcut.modifiers == 0 && is_tap_key(shortcut.virtual_key)) {
+        modifiers &= ~modifier_family_bit(shortcut.virtual_key);
+    }
+    return modifiers == shortcut.modifiers;
 }
 
 // A key while the menu is open: the menu's own keys are taken, anything else closes it and stays
@@ -1516,6 +1557,15 @@ void TextService::_run_ai_action(std::size_t row) {
             "{\"ai\":{\"use_for\":{\"voice\":true},\"voice_polish_action\":\"" + id + "\"}}";
         cxxime_tsf::patch_user_config(patch);
         _enqueue_event_trace("ai_ui", ("voice_mode " + actions[index].id).c_str());
+        return;
+    }
+    if (purpose == AiMenuPurpose::kToggleOnline) {
+        // 选中的是在线 AI 的总开关（线上（开）/ 线上（关））：写进 ai.enabled——与设置页那个勾选框
+        // 是同一项（docs/ai.md），不执行任何动作。
+        const bool on = index == cxxime::ai_actions().size();  // 第一行是"开"
+        cxxime_tsf::patch_user_config(on ? "{\"ai\":{\"enabled\":true}}"
+                                         : "{\"ai\":{\"enabled\":false}}");
+        _enqueue_event_trace("ai_ui", on ? "online on" : "online off");
         return;
     }
     // The text is read *here*, now that the user has said which action to run: opening the menu alone

@@ -57,7 +57,10 @@
 - **在线 AI（设置「AI」页，默认关闭）**：`shared/include/cxxime/ai_config.h`（配置）、
   `shared/src/ai_client.cc`（约 30 家提供方的协议表、DPAPI 加密的多密钥、`list_models()`、
   `thinking_levels()` 与 `apply_thinking()` 按服务商映射「关思考」字段）。
-  `server/src/translate_service.cc` 让划词翻译优先走线上、失败回退本地；语音识别后处理在
+  `server/src/translate_service.cc` 让划词翻译优先走线上、失败回退本地（**1.7.64 起没有「仅线上」**：
+  唯一的开关是 `ai.enabled`，线上失败一律回退；线上目标语言用 `ai.translate_language`，离线才按「学习」
+  页那两行）。`ai.enable_key`（「在线 AI 开关键」）与 `ai.voice_action_key` 同款：`_open_online_menu` +
+  `patch_user_config` 写 `ai.enabled`。语音识别后处理在
   `server/src/voice_service.cc` 的 `finish_recording()` 里插一步（`ai.use_for.voice` 开时把识别文字交给
   `ai.voice_polish_action` 指定的动作过一遍再上屏；**默认 `proofread`（纠错），也可以是 `ask`（提问：这句话当
   问题、上屏 AI 的回答）**；失败/超限一律退回识别原文，录音与按键流程不动）。设置页那一行右侧是一个下拉

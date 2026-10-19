@@ -466,10 +466,11 @@ private:
     // service the modifier's key-up, so waiting for that event would never fire (docs/ai.md).
     void _watch_ai_action_tap();
     // Which key was tapped, and what its tap opens (docs/ai.md): an action (or the menu when its id
-    // is empty), the translate language list, or the voice post-processing list.
-    enum class AiKeyPurpose { kAction, kLanguage, kVoiceMode };
-    // Whether the open menu runs an action, or sets 语音识别后处理's action (docs/ai.md).
-    enum class AiMenuPurpose { kRunAction, kSetVoiceMode };
+    // is empty), the translate language list, the voice post-processing list, or the online switch.
+    enum class AiKeyPurpose { kAction, kLanguage, kVoiceMode, kOnline };
+    // What the open menu does with a row (docs/ai.md): run the action, set 语音识别后处理's action,
+    // or turn the whole online AI on and off.
+    enum class AiMenuPurpose { kRunAction, kSetVoiceMode, kToggleOnline };
     // The menu key was taken: read the selection and open the menu (on the config window's thread,
     // like _process_selection_translate).
     void _process_ai_action_selection();
@@ -530,7 +531,13 @@ private:
     // The key that opens the voice post-processing list (纠错 / 提问 / 不使用), and that list itself.
     bool _is_voice_action_key(WPARAM key) const;
     void _open_voice_mode_menu();
-    std::string _voice_off_label() const;  // the list's "不使用" row (the TSF has no ui strings)
+    // The key that opens the online switch's list (线上（开）/ 线上（关）), and that list itself: it
+    // writes the same ai.enabled the settings page's master switch does (docs/ai.md).
+    bool _is_enable_key(WPARAM key) const;
+    void _open_online_menu();
+    // The name of a menu row that is not an AI action — 不使用, 线上（开）, 线上（关）— by its number
+    // after the actions (the TSF has no ui strings of its own).
+    std::string _menu_special_label(std::size_t special) const;
     // The host program's file name, lowercased ("reaper.exe"), and whether it is on the
     // pass-through list (设置 > 常规 > 不接管按键的程序).
     std::string _host_program_name() const;
@@ -639,6 +646,7 @@ private:
     std::string _pendingAiActionId;  // an action's own key was pressed: run it, no menu
     bool _pendingLanguageMenu = false;   // the language key was pressed: open \fy's list
     bool _pendingVoiceModeMenu = false;  // the voice key was pressed: open the 纠错 / 提问 list
+    bool _pendingOnlineMenu = false;     // the online key was pressed: open the 线上（开/关）list
     AiKeyPurpose _aiActionKeyPurpose = AiKeyPurpose::kAction;
     AiMenuPurpose _aiMenuPurpose = AiMenuPurpose::kRunAction;
     std::unique_ptr<cxxime::CandidateWindow> _aiMenuWindow;

@@ -27,10 +27,9 @@ struct AiUseFor {
 };
 
 struct AiConfig {
+    // The one switch there is: on = the features ticked in use_for run on the API, and anything the
+    // API fails at falls back to the offline model. Off = nothing leaves the machine.
     bool enabled = false;
-    // "prefer_remote": run on the API, fall back to the offline model when it fails.
-    // "remote_only": never fall back (a failure then shows nothing).
-    std::string mode = "prefer_remote";
     std::string provider = "deepseek";  // an id of the built-in provider table (ai_client.h)
     std::string base_url;               // empty: the provider's own
     std::string model;                  // empty: the provider's own
@@ -60,8 +59,14 @@ struct AiConfig {
     // language key opens, for what the recognized text goes through (voice_polish_action) without
     // going into the settings. Written like action_key; empty = off.
     KeyboardShortcut voice_action_key;
-    // What the "translate" action translates into: a language code from that action's own list
-    // (ai_actions.json). Changed on the AI page, or from the input box with \fy.
+    // The key that opens the online switch's list (线上（开）/ 线上（关）) — the same kind of list,
+    // for turning the whole API on and off from the input box instead of the settings page. It
+    // writes the same field the master switch does (enabled). Written like action_key; empty = off.
+    KeyboardShortcut enable_key;
+    // What Chinese is translated into on the API: a language code from the "translate" action's own
+    // list (ai_actions.json) — the translate action and the selection translation key (Ctrl+C+C)
+    // alike; anything that is not Chinese goes into Chinese. The offline model always goes by the
+    // Learning page's rows instead. Changed on the AI page, or from the input box with \fy.
     std::string translate_language = "en";
     // ai.use_for.voice: which action the recognized text goes through before it is typed — an id
     // of data/ai_actions.json, "proofread" (纠错) by default, whose prompt is then the one used.
@@ -69,7 +74,6 @@ struct AiConfig {
     std::string voice_polish_action = "proofread";
 
     bool uses(bool AiUseFor::*use) const { return enabled && use_for.*use; }
-    bool remote_only() const { return mode == "remote_only"; }
 };
 
 }  // namespace cxxime

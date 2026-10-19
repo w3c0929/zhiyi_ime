@@ -518,8 +518,6 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
     if (j.contains("ai") && j["ai"].is_object()) {
         auto& ai = j["ai"];
         load_bool(ai, "enabled", config.ai.enabled);
-        load_string(ai, "mode", config.ai.mode);
-        if (config.ai.mode != "remote_only") config.ai.mode = "prefer_remote";
         load_string(ai, "provider", config.ai.provider);
         load_string(ai, "base_url", config.ai.base_url);
         load_string(ai, "model", config.ai.model);
@@ -572,6 +570,9 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         if (!voice_action_key.empty()) {
             parse_ai_action_key(voice_action_key, &config.ai.voice_action_key);
         }
+        std::string enable_key;
+        load_string(ai, "enable_key", enable_key);
+        if (!enable_key.empty()) parse_ai_action_key(enable_key, &config.ai.enable_key);
         config.ai.action_keys.clear();
         if (ai.contains("action_keys") && ai["action_keys"].is_object()) {
             for (const auto& [id, value] : ai["action_keys"].items()) {
@@ -625,6 +626,7 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         note_tap_shortcut(config.ai.action_key);
         note_tap_shortcut(config.ai.language_key);
         note_tap_shortcut(config.ai.voice_action_key);
+        note_tap_shortcut(config.ai.enable_key);
         for (const auto& [id, text] : config.ai.action_keys) note_tap_name(text);
         for (const std::string& slot : switch_slots) config.ascii_switch_key[slot] = "noop";
     }
@@ -989,7 +991,6 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["translate"]["idle_seconds"] = config.translate_idle_seconds;
     j["translate"]["max_selection_chars"] = config.translate_max_selection_chars;
     j["ai"]["enabled"] = config.ai.enabled;
-    j["ai"]["mode"] = config.ai.mode;
     j["ai"]["provider"] = config.ai.provider;
     j["ai"]["base_url"] = config.ai.base_url;
     j["ai"]["model"] = config.ai.model;
@@ -1004,6 +1005,7 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["ai"]["action_key"] = ai_action_key_string(config.ai.action_key);
     j["ai"]["language_key"] = ai_action_key_string(config.ai.language_key);
     j["ai"]["voice_action_key"] = ai_action_key_string(config.ai.voice_action_key);
+    j["ai"]["enable_key"] = ai_action_key_string(config.ai.enable_key);
     j["ai"]["action_keys"] = config.ai.action_keys;
     j["ai"]["action_disabled"] = config.ai.action_disabled;
     j["ai"]["translate_language"] = config.ai.translate_language;

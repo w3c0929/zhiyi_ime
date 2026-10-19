@@ -278,7 +278,8 @@ private:
     HWND hTranslatorAction_ = nullptr, hTranslatorRemove_ = nullptr, hTranslatorHint_ = nullptr;
     // AI (editor_ai_panel.cc)
     HWND hAiEnabled_ = nullptr, hAiProvider_ = nullptr, hAiBaseUrl_ = nullptr;
-    HWND hAiModel_ = nullptr, hAiKey_ = nullptr, hAiMode_ = nullptr, hAiTimeout_ = nullptr;
+    HWND hAiModel_ = nullptr, hAiKey_ = nullptr, hAiTimeout_ = nullptr;
+    HWND hAiEnableKey_ = nullptr;  // 在线 AI 开关键（与 hAiEnabled_ 是同一项）
     HWND hAiKeyReveal_ = nullptr, hAiKeyAdd_ = nullptr, hAiKeyList_ = nullptr;
     HWND hAiKeyRemove_ = nullptr;
     HWND hAiUseTranslate_ = nullptr, hAiUseSelection_ = nullptr;
