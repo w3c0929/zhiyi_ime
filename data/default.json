@@ -122,6 +122,10 @@
         "language_key": "",
         "voice_action_key": "",
         "enable_key": "",
+        "search_provider": "tavily",
+        "search_keys": {},
+        "search_enabled": false,
+        "search_key": "",
         "translate_language": "en",
         "voice_polish_action": "proofread"
     },

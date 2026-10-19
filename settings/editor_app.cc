@@ -372,6 +372,10 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(translate_direct_insert);
     KEEP_PAGE_EDIT(ai.enabled);
     KEEP_PAGE_EDIT(ai.enable_key);
+    KEEP_PAGE_EDIT(ai.search_provider);
+    KEEP_PAGE_EDIT(ai.search_keys);
+    KEEP_PAGE_EDIT(ai.search_enabled);
+    KEEP_PAGE_EDIT(ai.search_key);
     KEEP_PAGE_EDIT(ai.provider);
     KEEP_PAGE_EDIT(ai.base_url);
     KEEP_PAGE_EDIT(ai.model);

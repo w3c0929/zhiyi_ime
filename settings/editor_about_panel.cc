@@ -25,6 +25,10 @@ constexpr wchar_t kProjectUrl[] = L"https://github.com/w3c0929/zhiyi_ime";
 constexpr wchar_t kUpstreamUrl[] = L"https://github.com/deanxyuan/cxx-ime";
 // The learning-mode word lists, open to corrections.
 constexpr wchar_t kGlossaryUrl[] = L"https://github.com/dd1000001000/zhiyi-glossary";
+// Tavily's home page and DeepSeek's key page, where an API key is copied from (the AI page's
+// "获取 API Key", docs/ai.md).
+constexpr wchar_t kTavilyUrl[] = L"https://app.tavily.com/home";
+constexpr wchar_t kDeepseekKeysUrl[] = L"https://platform.deepseek.com/api_keys";
 
 const wchar_t* about_link_url(UINT_PTR control_id) {
     switch (control_id) {
@@ -38,6 +42,10 @@ const wchar_t* about_link_url(UINT_PTR control_id) {
         return tr("privacy.doc_url");  // the document in the UI language
     case kReleaseLinkId:
         return update::kReleasesPage;
+    case kTavilyLinkId:
+        return kTavilyUrl;
+    case kDeepseekLinkId:
+        return kDeepseekKeysUrl;
     default:
         return nullptr;
     }

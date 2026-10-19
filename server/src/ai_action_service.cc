@@ -135,9 +135,26 @@ void AiActionService::do_action(uint32_t id, uint64_t generation, std::string ac
             reason = "选中的文字超过这个动作的上限";
         }
         if (reason.empty()) {
+            // 「提问」先联网搜一下（docs/ai.md）：开关（ai.search_enabled）与 Tavily 密钥都在时，
+            // 把那句话当查询搜一页结果，连同结果一起交给模型；搜不到就照旧只回答问题，不因此失败。
+            std::string prompt = action->prompt;
+            std::string question = text;
+            if (action->id == "ask" && config->ai.search_enabled &&
+                cxxime::ai::search_available(config->ai)) {
+                std::string results;
+                std::string search_error;
+                if (cxxime::ai::web_search(config->ai, text, &results, &search_error, &cancel_)) {
+                    prompt +=
+                        "\n\nThe user's message starts with web search results (numbered, each with"
+                        " its title, address and a snippet), then the question. Answer from them"
+                        " where they are relevant, and end with a short list of the sources you"
+                        " used (their addresses); if they do not answer the question, say so and"
+                        " answer from your own knowledge instead.";
+                    question = "Web search results:\n\n" + results + "\nThe question:\n" + text;
+                }
+            }
             std::string error;
-            if (!cxxime::ai::run_action(config->ai, action->prompt, text, &answer, &error,
-                                        &cancel_)) {
+            if (!cxxime::ai::run_action(config->ai, prompt, question, &answer, &error, &cancel_)) {
                 reason = error.empty() ? "请求失败" : error;
             }
         }

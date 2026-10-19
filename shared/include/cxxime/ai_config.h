@@ -63,6 +63,17 @@ struct AiConfig {
     // for turning the whole API on and off from the input box instead of the settings page. It
     // writes the same field the master switch does (enabled). Written like action_key; empty = off.
     KeyboardShortcut enable_key;
+    // Web search, used by the "ask" action only (docs/ai.md): the question goes out first and what
+    // comes back is handed to the model as context. Two services can do it — Tavily, and DeepSeek's
+    // own search API (the same platform key as its chat API, so leaving the DeepSeek entry empty
+    // means "use the DeepSeek API key of this setup"). `search_keys` holds one DPAPI-protected key
+    // per service, like keys_by_provider above; `search_enabled` is the switch (the settings page's
+    // tick and `search_key`'s list both write it) and `search_key` opens that list from the input
+    // box. Written like action_key; empty = off.
+    std::string search_provider = "tavily";  // "tavily" | "deepseek"
+    std::map<std::string, std::string> search_keys;
+    bool search_enabled = false;
+    KeyboardShortcut search_key;
     // What Chinese is translated into on the API: a language code from the "translate" action's own
     // list (ai_actions.json) — the translate action and the selection translation key (Ctrl+C+C)
     // alike; anything that is not Chinese goes into Chinese. The offline model always goes by the

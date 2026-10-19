@@ -903,5 +903,196 @@ bool list_models(const AiConfig& config, std::vector<std::string>* models, std::
     return false;
 }
 
+// ---- Web search: what the "ask" action runs before it answers (docs/ai.md) ----------------------
+
+namespace {
+
+constexpr wchar_t kTavilySearchUrl[] = L"https://api.tavily.com/search";
+constexpr int kSearchMaxResults = 5;
+
+// The DeepSeek search API's address: https://api.deepseek.com/v1/tools/search, or the setup's own
+// address when this is the DeepSeek service (a gateway or proxy in ai.base_url is used then).
+std::string deepseek_search_url(const AiConfig& config) {
+    std::string base = trim_slashes(effective_base_url(config));
+    if (std::string(selected_provider(config).id) != "deepseek" || base.empty()) {
+        base = "https://api.deepseek.com";
+    }
+    if (base.size() > 3 && base.compare(base.size() - 3, 3, "/v1") == 0) {
+        base.erase(base.size() - 3);
+    }
+    return base + "/v1/tools/search";
+}
+
+// The DeepSeek key the search uses: its own when one was pasted on the AI page, the setup's DeepSeek
+// API key otherwise — it is the same platform key, so leaving the search's box empty is the normal
+// case.
+bool deepseek_search_key(const AiConfig& config, std::string* key) {
+    const auto own = config.search_keys.find("deepseek");
+    if (own != config.search_keys.end() && !own->second.empty()) {
+        return unprotect_secret(own->second, key) && !key->empty();
+    }
+    const auto stored = config.keys_by_provider.find("deepseek");
+    const std::vector<std::string>* list = nullptr;
+    if (stored != config.keys_by_provider.end()) {
+        list = &stored->second;
+    } else if (config.provider == "deepseek") {
+        list = &config.keys;  // an older file: one flat list, which was the selected provider's
+    }
+    if (!list) return false;
+    for (const std::string& item : *list) {
+        if (unprotect_secret(item, key) && !key->empty()) return true;
+    }
+    return false;
+}
+// How much of each result's text goes to the model: the gist, not the page.
+constexpr std::size_t kSearchSnippetChars = 900;
+
+// Cut `text` to `limit` bytes at a character boundary. A half sequence at the end would make the
+// request's JSON unserializable (nlohmann refuses invalid UTF-8), which would lose the whole call.
+void cut_utf8(std::string* text, std::size_t limit) {
+    if (text->size() <= limit) return;
+    text->resize(limit);
+    while (!text->empty() && (static_cast<unsigned char>(text->back()) & 0xC0) == 0x80) {
+        text->pop_back();  // continuation bytes: their lead byte is gone
+    }
+    if (!text->empty() && (static_cast<unsigned char>(text->back()) & 0xC0) == 0xC0) {
+        text->pop_back();  // a lead byte whose continuation bytes were just removed
+    }
+}
+
+}  // namespace
+
+bool search_available(const AiConfig& config) {
+    std::string key;
+    if (config.search_provider == "deepseek") return deepseek_search_key(config, &key);
+    const auto own = config.search_keys.find("tavily");
+    if (own == config.search_keys.end() || own->second.empty()) return false;
+    return unprotect_secret(own->second, &key) && !key.empty();
+}
+
+bool web_search(const AiConfig& config, const std::string& query, std::string* context,
+                std::string* error, const std::atomic<bool>* cancel) {
+    g_last_error.clear();
+    if (context) context->clear();
+    if (query.empty()) {
+        g_last_error = "nothing to search for";
+        if (error) *error = g_last_error;
+        return false;
+    }
+    const bool deepseek = config.search_provider == "deepseek";
+    std::string key;
+    if (deepseek) {
+        if (!deepseek_search_key(config, &key)) {
+            g_last_error = "no DeepSeek API key is configured";
+            if (error) *error = g_last_error;
+            return false;
+        }
+    } else {
+        const auto own = config.search_keys.find("tavily");
+        if (own == config.search_keys.end() || own->second.empty() ||
+            !unprotect_secret(own->second, &key) || key.empty()) {
+            g_last_error = "no Tavily API key is configured";
+            if (error) *error = g_last_error;
+            return false;
+        }
+    }
+    if (cancel && cancel->load()) {
+        g_last_error = "cancelled";
+        if (error) *error = g_last_error;
+        return false;
+    }
+
+    nlohmann::json request;
+    request["query"] = query;
+    if (deepseek) {
+        request["count"] = kSearchMaxResults;
+        request["need_content"] = false;  // the snippet and summary are enough for an answer
+    } else {
+        request["max_results"] = kSearchMaxResults;
+        request["search_depth"] = "basic";  // one credit per search, as the free plan counts
+        request["include_answer"] = false;  // the model writes the answer, not Tavily
+        request["include_raw_content"] = false;
+    }
+    const std::string body = request.dump();
+
+    std::vector<std::wstring> headers;
+    headers.push_back(L"Content-Type: application/json");
+    headers.push_back(L"Authorization: Bearer " + utf8_to_wide(key));
+
+    std::string response;
+    std::string failure;
+    // Searching takes a moment longer than a chat call usually does: never below five seconds.
+    if (!http_request(L"POST", deepseek ? utf8_to_wide(deepseek_search_url(config))
+                                        : std::wstring(kTavilySearchUrl),
+                      headers, &body, (std::max)(5000, config.timeout_ms), &response, &failure)) {
+        g_last_error = failure;
+        if (error) *error = g_last_error;
+        return false;
+    }
+    nlohmann::json json;
+    try {
+        json = nlohmann::json::parse(response);
+    } catch (const std::exception&) {
+        g_last_error = "the search service answered something unexpected";
+        if (error) *error = g_last_error;
+        return false;
+    }
+    if (!json.contains("results") || !json["results"].is_array() || json["results"].empty()) {
+        // A refusal carries its reason in "detail" — a string, or an object with "error" /
+        // "message" ("Unauthorized: missing or invalid API key." and the like): pass that on rather
+        // than a bare failure. (A wrong key never gets this far: http_request turns 401/403 into its
+        // own message.)
+        std::string detail;
+        if (json.contains("detail")) {
+            const auto& field = json["detail"];
+            if (field.is_string()) {
+                detail = field.get<std::string>();
+            } else if (field.is_object()) {
+                for (const char* name : {"error", "message"}) {
+                    if (field.contains(name) && field[name].is_string()) {
+                        detail = field[name].get<std::string>();
+                        break;
+                    }
+                }
+            }
+        }
+        g_last_error = detail.empty() ? "the search found nothing" : detail;
+        if (error) *error = g_last_error;
+        return false;
+    }
+
+    std::string text;
+    int index = 0;
+    for (const auto& item : json["results"]) {
+        if (!item.is_object()) continue;
+        const auto field = [&item](const char* name) {
+            return item.contains(name) && item[name].is_string() ? item[name].get<std::string>()
+                                                                 : std::string();
+        };
+        const std::string title = field("title");
+        const std::string url = field("url");
+        // Tavily hands the page text in "content"; DeepSeek in "snippet" (a short summary) plus
+        // "summary" (a longer one) — its "content" is empty unless the request asked for the body.
+        std::string snippet = field("content");
+        if (snippet.empty()) {
+            snippet = field("snippet");
+            const std::string summary = field("summary");
+            if (!summary.empty()) snippet += (snippet.empty() ? "" : "\n") + summary;
+        }
+        cut_utf8(&snippet, kSearchSnippetChars);
+        if (url.empty()) continue;
+        ++index;
+        text += "[" + std::to_string(index) + "] " + title + "\n" + url + "\n" + snippet + "\n\n";
+    }
+    if (text.empty()) {
+        g_last_error = "the search found nothing usable";
+        if (error) *error = g_last_error;
+        return false;
+    }
+    if (context) *context = std::move(text);
+    if (error) error->clear();
+    return true;
+}
+
 }  // namespace ai
 }  // namespace cxxime

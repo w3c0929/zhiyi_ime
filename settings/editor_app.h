@@ -280,6 +280,18 @@ private:
     HWND hAiEnabled_ = nullptr, hAiProvider_ = nullptr, hAiBaseUrl_ = nullptr;
     HWND hAiModel_ = nullptr, hAiKey_ = nullptr, hAiTimeout_ = nullptr;
     HWND hAiEnableKey_ = nullptr;  // 在线 AI 开关键（与 hAiEnabled_ 是同一项）
+    // 联网搜索（只有「提问」用）：开关（与 hAiSearchKey_ 是同一项）、开关键、来源下拉、
+    // 该来源的密钥框、说明与「获取 API Key」链接（两个来源各一个链接，只显示当前那个）
+    HWND hAiSearch_ = nullptr;
+    HWND hAiSearchKey_ = nullptr;
+    HWND hAiSearchProvider_ = nullptr;
+    HWND hAiSearchKeyBox_ = nullptr;
+    HWND hAiSearchHint_ = nullptr;
+    HWND hAiTavilyLink_ = nullptr;
+    HWND hAiDeepseekLink_ = nullptr;
+    int ai_search_source_ = 0;  // 0 Tavily / 1 DeepSeek：密钥框里现在是哪个来源的
+    void store_ai_search_key_box();   // 把框里的密钥按 ai_search_source_ 收进 config_
+    void refresh_ai_search_source();  // 换来源：密钥框、说明与链接跟着换
     HWND hAiKeyReveal_ = nullptr, hAiKeyAdd_ = nullptr, hAiKeyList_ = nullptr;
     HWND hAiKeyRemove_ = nullptr;
     HWND hAiUseTranslate_ = nullptr, hAiUseSelection_ = nullptr;

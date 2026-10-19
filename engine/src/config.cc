@@ -573,6 +573,25 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         std::string enable_key;
         load_string(ai, "enable_key", enable_key);
         if (!enable_key.empty()) parse_ai_action_key(enable_key, &config.ai.enable_key);
+        // 联网搜索（只给「提问」用，docs/ai.md）：用哪家（tavily / deepseek）、每家的密钥
+        // （DPAPI 加密后的 base64，与 keys_by_provider 同路子）、开关、以及弹出搜索列表的键。
+        load_string(ai, "search_provider", config.ai.search_provider);
+        if (config.ai.search_provider != "deepseek") config.ai.search_provider = "tavily";
+        if (ai.contains("search_keys") && ai["search_keys"].is_object()) {
+            for (const auto& [name, value] : ai["search_keys"].items()) {
+                if (value.is_string()) config.ai.search_keys[name] = value.get<std::string>();
+            }
+        }
+        // 1.7.65 只支持 Tavily，密钥存在 tavily_key 里：搬进 search_keys。
+        std::string tavily_key;
+        load_string(ai, "tavily_key", tavily_key);
+        if (!tavily_key.empty() && config.ai.search_keys["tavily"].empty()) {
+            config.ai.search_keys["tavily"] = tavily_key;
+        }
+        load_bool(ai, "search_enabled", config.ai.search_enabled);
+        std::string search_key;
+        load_string(ai, "search_key", search_key);
+        if (!search_key.empty()) parse_ai_action_key(search_key, &config.ai.search_key);
         config.ai.action_keys.clear();
         if (ai.contains("action_keys") && ai["action_keys"].is_object()) {
             for (const auto& [id, value] : ai["action_keys"].items()) {
@@ -627,6 +646,7 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         note_tap_shortcut(config.ai.language_key);
         note_tap_shortcut(config.ai.voice_action_key);
         note_tap_shortcut(config.ai.enable_key);
+        note_tap_shortcut(config.ai.search_key);
         for (const auto& [id, text] : config.ai.action_keys) note_tap_name(text);
         for (const std::string& slot : switch_slots) config.ascii_switch_key[slot] = "noop";
     }
@@ -1006,6 +1026,10 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["ai"]["language_key"] = ai_action_key_string(config.ai.language_key);
     j["ai"]["voice_action_key"] = ai_action_key_string(config.ai.voice_action_key);
     j["ai"]["enable_key"] = ai_action_key_string(config.ai.enable_key);
+    j["ai"]["search_provider"] = config.ai.search_provider;
+    j["ai"]["search_keys"] = config.ai.search_keys;
+    j["ai"]["search_enabled"] = config.ai.search_enabled;
+    j["ai"]["search_key"] = ai_action_key_string(config.ai.search_key);
     j["ai"]["action_keys"] = config.ai.action_keys;
     j["ai"]["action_disabled"] = config.ai.action_disabled;
     j["ai"]["translate_language"] = config.ai.translate_language;

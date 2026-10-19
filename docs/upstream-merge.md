@@ -67,6 +67,12 @@
   （**纠错 / 提问 / 不使用**，它本身就是这个用途的开关），另有 `ai.voice_action_key`（「语音处理键」）按一下弹出
   同一组选项的列表（第三行「不使用」不是一个动作，用 `actions.size()` 当记号）
   （`TextService::_open_voice_mode_menu`，用动作菜单那套窗口，选中走 `patch_user_config`）。
+  **联网搜索（Tavily / DeepSeek）**：`ai.search_provider`（用哪家）、`ai.search_keys`（每家一把，
+  DPAPI 加密；**DeepSeek 留空 = 复用 `keys_by_provider["deepseek"]`**）、`ai.search_enabled`（开关）、
+  `ai.search_key`（「搜索开关键」，弹出「搜索（开）/ 搜索（关）/ Tavily / DeepSeek」四行；与 `enable_key`
+  共用 `TextService::_open_switch_menu`）；实现是 `shared/src/ai_client.cc` 的 `web_search()` /
+  `search_available()`，**只有「提问」（`action->id == "ask"`）**在 `server/src/ai_action_service.cc`
+  里先搜再答，搜不到一律照旧直接回答。
   数据文件 `data/ai_thinking_levels.json`。**默认关，关着时行为与从前完全一致**——合并时别把它改成默认开。
   用途开关是 `ai.use_for.*`（translate / selection / voice），**没有 english**（1.7.36 删掉）、**也没有 glossary**
   （那个「语言包兜底」勾选是个从未实现的占位，1.7.62 删掉了；语言包查不到时本来就有「学习 → 离线翻译」用本机模型兜底）。
@@ -244,9 +250,9 @@
 **构建完、提交推送完就停**：把「装哪个包、怎么验」告诉用户，**等他实机测试并明确说可以发布**再发
 （建 Release、传资产、更新 bucket 都算发布）。这是用户的明确要求，别再自动往下走到发布。
 
-范围提醒：本 fork 的联网面只有两处——**设置程序的更新检查/模型下载**，以及**可选的在线 AI**
-（`ai_config.h`，默认关，只有 `zhiyu-server` 用）。改动若扩大联网面，要一并更新 `docs/privacy.md`
-与 `update.h` 的说明。
+范围提醒：本 fork 的联网面只有三处——**设置程序的更新检查/模型下载**、**可选的在线 AI**
+（`ai_config.h`，默认关，只有 `zhiyu-server` 用），以及**可选的 Tavily 联网搜索**（同样默认关，
+只给「提问」用，见 §三）。改动若扩大联网面，要一并更新 `docs/privacy.md` 与 `update.h` 的说明。
 
 ## 九、不要提交
 

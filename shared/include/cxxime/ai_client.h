@@ -80,6 +80,18 @@ bool translate(const AiConfig& config, const std::string& text, const std::strin
 bool run_action(const AiConfig& config, const std::string& system_prompt, const std::string& text,
                 std::string* answer, std::string* error, const std::atomic<bool>* cancel);
 
+// Whether a search can run at all: the service of Config::ai.search_provider has a key — its own,
+// or (DeepSeek) the setup's DeepSeek API key.
+bool search_available(const AiConfig& config);
+
+// A web search (docs/ai.md): `query` goes to the service Config::ai.search_provider names — Tavily
+// (https://api.tavily.com/search) or DeepSeek's own search (https://api.deepseek.com/v1/tools/
+// search, on the DeepSeek API key of this setup unless the search has one of its own) — and the
+// results come back as the context handed to the model: numbered, each with its title, address and
+// a snippet. False with *error set when no key is configured or the service refused.
+bool web_search(const AiConfig& config, const std::string& query, std::string* context,
+                std::string* error, const std::atomic<bool>* cancel);
+
 // The last error of the most recent call on this thread (for the settings page's test button).
 std::string last_error();
 

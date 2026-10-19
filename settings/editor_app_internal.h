@@ -114,6 +114,9 @@ HWND make_check(int id, const wchar_t* text, int x, int y, int width, HWND paren
 constexpr int kPrivacyDocLinkId = 5004;  // docs/privacy*.md on GitHub (ui string privacy.doc_url)
 constexpr int kReleaseLinkId = 5005;     // the latest release on GitHub (update::kReleasesPage)
 // The data location row on the General page (editor_data_folder.cc).
+// "获取 API Key" on the AI page (docs/ai.md): Tavily's sign-in page and DeepSeek's key page.
+constexpr int kTavilyLinkId = 5007;
+constexpr int kDeepseekLinkId = 5008;
 constexpr int kDataChangeId = 5010;
 constexpr int kDataDefaultId = 5011;
 // Offline translation on the Learning page (editor_translator.cc).
@@ -140,6 +143,10 @@ constexpr int kAiLanguageKeyId = 6014;  // the key that opens the translate lang
 // feature (there is no tick beside it), so "off" is one of its three items.
 constexpr int kAiVoiceModeId = 6015;
 constexpr int kAiVoiceActionKeyId = 6016;  // the key that opens the voice post-processing list
+constexpr int kAiSearchKeyBoxId = 6009;    // the search key (of the selected search service)
+constexpr int kAiSearchId = 6011;          // the web search's switch (ai.search_enabled)
+constexpr int kAiSearchKeyId = 6017;       // the key that opens the search switch's list
+constexpr int kAiSearchProviderId = 6018;  // which service searches: Tavily / DeepSeek
 HWND make_web_link(int id, const wchar_t* text, int x, int y, int width, HWND parent);
 HWND make_button(int id, const wchar_t* text, int x, int y, int width, HWND parent);
 // A plain text box: make_edit (editor_controls.cc) is a number box (ES_NUMBER).

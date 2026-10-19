@@ -159,9 +159,9 @@ std::wstring masked_key(const std::string& key) {
 
 void EditorApp::create_ai_panel(HWND panel) {
     const int x0 = kPanelPadLeft;
-    const int labels = label_width({"ai.enabled", "ai.provider", "ai.base_url", "ai.model",
-                                    "ai.key", "ai.timeout", "ai.use_for", "ai.effort",
-                                    "ai.use_voice"});
+    const int labels = label_width({"ai.enabled", "ai.search_source", "ai.search", "ai.provider",
+                                    "ai.base_url", "ai.model", "ai.key", "ai.timeout", "ai.use_for",
+                                    "ai.effort", "ai.use_voice"});
     const int control_w = S(300);
     const int hint_w = S(420);
     int y = card_begin(panel, kPanelPadTop, tr("ai.card_service"));
@@ -180,6 +180,44 @@ void EditorApp::create_ai_panel(HWND panel) {
     });
     y += kRowH;
     make_hint(tr("ai.enabled_hint"), label_x, y - S(8), hint_w, panel, 1);
+    y += S(24);
+
+    // Tavily（联网搜索，docs/ai.md）：只有「提问」会用。密钥像 API 密钥一样 DPAPI 加密保存；
+    // 右边那一行是注册页，密钥就是在那儿复制的。
+    const int tavily_x = make_aligned_label(tr("ai.search_source"), x0, labels, y, panel);
+    hAiSearchProvider_ = make_list_combo(kAiSearchProviderId, tavily_x, y, S(130), 3, panel);
+    combo_add(hAiSearchProvider_, tr("ai.search_tavily"));
+    combo_add(hAiSearchProvider_, tr("ai.search_deepseek"));
+    const int tavily_box_w = S(160);
+    hAiSearchKeyBox_ = make_text_edit(kAiSearchKeyBoxId, tavily_x + S(140), y, tavily_box_w, panel);
+    SendMessageW(hAiSearchKeyBox_, EM_SETPASSWORDCHAR, static_cast<WPARAM>(L'\u25CF'), 0);
+    SendMessageW(hAiSearchKeyBox_, EM_SETCUEBANNER, TRUE,
+                 reinterpret_cast<LPARAM>(tr("ai.search_key_placeholder")));
+    // 链接就在密钥框右边（同一个控件行），不在下面那行说明里；两个来源各一个，显示当前那个。
+    const int link_x = tavily_x + S(140) + tavily_box_w + S(12);
+    hAiTavilyLink_ = make_web_link(kTavilyLinkId, tr("ai.search_get_key"), link_x, y + S(3), S(126),
+                                   panel);
+    hAiDeepseekLink_ = make_web_link(kDeepseekLinkId, tr("ai.search_get_key"), link_x, y + S(3),
+                                     S(126), panel);
+    ShowWindow(hAiDeepseekLink_, SW_HIDE);
+    y += kRowH;
+    hAiSearchHint_ = make_hint(tr("ai.search_hint_tavily"), tavily_x, y - S(8), hint_w, panel, 1);
+    y += S(24);
+
+    // 联网搜索的开关（ai.search_enabled）：勾选框 + 右边一个「搜索开关键」，按一下弹出
+    // 「搜索（开）/ 搜索（关）」——与勾选框是同一项。
+    const int search_x = make_aligned_label(tr("ai.search"), x0, labels, y, panel);
+    const int search_w = text_width(tr("ai.search_check")) + S(28);
+    hAiSearch_ = make_check(kAiSearchId, tr("ai.search_check"), search_x, y, search_w, panel);
+    hAiSearchKey_ =
+        create_key_capture(kAiSearchKeyId, search_x + search_w + S(16), y, S(150), kCtrlH, panel, true);
+    key_capture_set_allow_common(hAiSearchKey_, false);
+    key_capture_set_check(hAiSearchKey_, [this](const KeyChoice& choice) -> std::wstring {
+        return action_key_notice(choice, hTranslateKey_ ? key_capture_get(hTranslateKey_)
+                                                        : KeyChoice::none());
+    });
+    y += kRowH;
+    make_hint(tr("ai.search_hint"), search_x, y - S(8), hint_w, panel, 1);
     y += S(24);
 
     // 服务商
@@ -405,6 +443,12 @@ void EditorApp::populate_ai() {
     set_combo_text(hAiModel_, ai::effective_model(config_.ai));
     SetWindowTextW(hAiKey_, L"");
     key_capture_set(hAiEnableKey_, action_key_choice(config_.ai.enable_key));
+    // 搜索的来源与它自己的密钥（DeepSeek 留空 = 用 AI 里那把 DeepSeek 密钥）。
+    ai_search_source_ = config_.ai.search_provider == "deepseek" ? 1 : 0;
+    combo_set_index(hAiSearchProvider_, ai_search_source_);
+    refresh_ai_search_source();
+    set_check(hAiSearch_, config_.ai.search_enabled);
+    key_capture_set(hAiSearchKey_, action_key_choice(config_.ai.search_key));
     set_edit_int(hAiTimeout_, config_.ai.timeout_ms);
 
     refresh_ai_effort_combo();  // the levels this service and model offer
@@ -464,6 +508,17 @@ void EditorApp::read_ai(cxxime::Config& config) {
                                      : std::string();
     config.ai.thinking = get_check(hAiThinking_);
     config.ai.enable_key = action_key_shortcut(key_capture_get(hAiEnableKey_));
+    // 联网搜索：来源 + 该来源的密钥（空着就是没有；DeepSeek 空着则用 AI 里那把密钥），
+    // 另一来源已经存下的密钥原样留着。
+    config.ai.search_provider = combo_index(hAiSearchProvider_) == 1 ? "deepseek" : "tavily";
+    const std::string search_key_text = edit_text_utf8(hAiSearchKeyBox_);
+    if (search_key_text.empty()) {
+        config.ai.search_keys.erase(config.ai.search_provider);
+    } else {
+        config.ai.search_keys[config.ai.search_provider] = ai::protect_secret(search_key_text);
+    }
+    config.ai.search_enabled = get_check(hAiSearch_);
+    config.ai.search_key = action_key_shortcut(key_capture_get(hAiSearchKey_));
     config.ai.timeout_ms = (std::max)(1000, (std::min)(get_edit_int(hAiTimeout_), 120000));
     config.ai.use_for.translate = get_check(hAiUseTranslate_);
     config.ai.use_for.selection = get_check(hAiUseSelection_);
@@ -639,6 +694,37 @@ void EditorApp::run_ai_test() {
     refresh_ai_key_list();
 }
 
+// 搜索的密钥框里现在是哪个来源的那把：空着就把那个来源的条目删掉（Tavily 空 = 没有密钥，
+// DeepSeek 空 = 用 AI 里那把），另一来源的条目留着。
+void EditorApp::store_ai_search_key_box() {
+    if (!hAiSearchKeyBox_) return;
+    const std::string provider = ai_search_source_ == 1 ? "deepseek" : "tavily";
+    const std::string typed = edit_text_utf8(hAiSearchKeyBox_);
+    if (typed.empty()) {
+        config_.ai.search_keys.erase(provider);
+    } else {
+        config_.ai.search_keys[provider] = ai::protect_secret(typed);
+    }
+}
+
+// 换搜索来源：密钥框显示这个来源自己那把（没有就空着）、说明与「获取 API Key」链接跟着换。
+void EditorApp::refresh_ai_search_source() {
+    if (!hAiSearchProvider_) return;
+    ai_search_source_ = combo_index(hAiSearchProvider_) == 1 ? 1 : 0;
+    const bool deepseek = ai_search_source_ == 1;
+    const std::string provider = deepseek ? "deepseek" : "tavily";
+    std::string plain;
+    const auto stored = config_.ai.search_keys.find(provider);
+    if (stored != config_.ai.search_keys.end() && !stored->second.empty()) {
+        ai::unprotect_secret(stored->second, &plain);
+    }
+    SetWindowTextW(hAiSearchKeyBox_, utf8_to_wstr(plain).c_str());
+    SetWindowTextW(hAiSearchHint_,
+                   tr(deepseek ? "ai.search_hint_deepseek" : "ai.search_hint_tavily"));
+    ShowWindow(hAiTavilyLink_, deepseek ? SW_HIDE : SW_SHOW);
+    ShowWindow(hAiDeepseekLink_, deepseek ? SW_SHOW : SW_HIDE);
+}
+
 // Row two shows the value of the key the list has selected (dots unless revealed).
 void EditorApp::show_ai_key_value() {
     if (!hAiKey_) return;
@@ -727,6 +813,13 @@ bool EditorApp::handle_ai_command(int control_id, int notification) {
     case kAiKeyListId:
         // Another key picked: row two shows that one's value.
         if (notification == CBN_SELCHANGE) show_ai_key_value();
+        return true;
+    case kAiSearchProviderId:
+        // 换了搜索来源：先把框里的密钥归到刚才那个来源名下（还没保存也不丢），再显示新来源的。
+        if (notification == CBN_SELCHANGE) {
+            store_ai_search_key_box();
+            refresh_ai_search_source();
+        }
         return true;
     case kAiKeyRemoveId: {
         if (notification != BN_CLICKED) return true;

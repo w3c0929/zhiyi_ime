@@ -25,6 +25,10 @@
 | `ai.voice_action_key` | `""` | **语音处理键**：按一下就弹出语音识别后处理的列表（纠错 / 提问），选中即写进 `ai.voice_polish_action` 并把 `ai.use_for.voice` 打开（写法同上）。空 = 关闭 |
 | `ai.translate_language` | `en` | **走线上时中文译成哪种语言**（12 种代码；默认与 `translate` 动作的 `languages` 首项一致）：「翻译」动作和划词翻译键（Ctrl+C+C）都按它，别的语言一律译成中文。设置页有下拉可选，输入框里用 `\fy` 换。**离线模型不看它**，只看「学习」页那两行 |
 | `ai.enable_key` | `""` | **在线 AI 开关键**：按一下就弹出「线上（开）/ 线上（关）」，选中即写进 `ai.enabled`——与设置页那个勾选框是同一项（写法同 `ai.action_key`，含轻按修饰键）。空 = 关闭 |
+| `ai.search_provider` | `tavily` | 联网搜索用哪家：`tavily` 或 `deepseek`（DeepSeek 自己的搜索接口，用同一把平台 key）。设置页那一行是个下拉 |
+| `ai.search_keys` | `{}` | 每家的密钥（**DPAPI 加密后的 base64**，与 `ai.keys_by_provider` 同路子）：`{"tavily": "…", "deepseek": "…"}`。**DeepSeek 留空 = 用 AI 里那把 DeepSeek 密钥**（同一个平台的 key），Tavily 没有就搜不了 |
+| `ai.search_enabled` | `false` | **联网搜索的开关**：打开后「提问」会先搜再答（见下节）。设置页那个勾选框与搜索开关键写的是同一项 |
+| `ai.search_key` | `""` | **搜索开关键**：按一下就弹出四行「搜索（开）/ 搜索（关）/ Tavily / DeepSeek」（当前在用的那家标着「（当前）」），选中即写进配置（写法同上）。空 = 关闭 |
 | `ai.action_disabled` | `{}` | 不在菜单里列出的动作：`{"summarize": true}`。没写的都列出 |
 | `ai.voice_polish_action` | `proofread` | 语音识别后处理用哪个动作（`data/ai_actions.json` 的 id）；**空 = 不做这一层**。设置页「语音识别后处理」那一行右侧的下拉给**纠错 / 提问 / 不使用**三项（它同时就是这个用途的开关） |
 
@@ -69,6 +73,7 @@
 |------|------|
 | **划词翻译**（`Ctrl+C+C`） | 已接入：`ai.use_for.translate` 打开后由 API 翻译（自然更省内存、也不用下载本地翻译模型），**目标语言用 `ai.translate_language`**（中文→它，其它→中文）；失败自动回退本地模型，本地模型按「学习」页那两行（`server/src/translate_service.cc`） |
 | **选中文字的 AI 动作** | 已接入：翻译 / 润色 / 纠错 / 改写 / 摘要 / 提问（见下节） |
+| **联网搜索（Tavily / DeepSeek）** | 已接入：**只有「提问」**在开关打开、且该来源有密钥时先搜再答（见下节） |
 | **语音识别后处理** | 已接入：`ai.use_for.voice` 打开后，识别出的文字先过一遍「纠错」动作再上屏（见下节）；语音键与录音状态机完全不变 |
 | 设置界面「AI」页 | 已接入（总开关 + 开关键、密钥、动作菜单键、每个动作的开关、独立键、翻译的语言下拉） |
 
@@ -228,6 +233,30 @@
   去「以下是…」这类包装）、`server/src/ai_action_service.cc`（后台线程跑、结果留内存供分块取回）、
   `tsf/src/text_service_translate.cpp`（菜单与写回）。
 
+## 联网搜索（只有「提问」用）
+
+「AI」页「在线 AI」那一行下面就是搜索那一块：**「搜索」开关行**（勾选框「启用联网搜索」+ 右边的「搜索开关键」）
+和**「来源」行**（下拉 **Tavily / DeepSeek** + 该来源的密钥框 + 「获取 API Key」链接）。密钥与 API 密钥一样
+**DPAPI 加密**后存进 `ai.search_keys`，不写明文。
+
+- **两家**：`tavily`（[tavily.com](https://app.tavily.com/home)，注册就能复制，免费额度 1000 credits）与
+  `deepseek`（DeepSeek 自己的搜索接口，**用同一把平台 key**——所以 DeepSeek 那一栏**留空就用 AI 里那把
+  DeepSeek 密钥**，也可以单独填一把覆盖它）。链接与说明跟着来源换。
+- **只给「提问」用**：`ask` 动作（选中文字 → 菜单第 6 项 / 语音后处理选「提问」/ 自己配的键）在发请求前，
+  先把**那句话本身**当作查询发出去——Tavily 是 `POST https://api.tavily.com/search`（`max_results` 5、
+  `search_depth: basic`，一次搜索算一个 credit）；DeepSeek 是 `POST https://api.deepseek.com/v1/tools/search`
+  （`count` 5、`need_content: false`，用它的 `snippet` + `summary`；地址跟着 AI 页的地址走，填了代理就用代理）。
+  拿回来的标题 / 地址 / 摘要按 `[1] …` 编号拼成上下文，连同问题一起交给 AI；提示词里同时要求"依据这些结果
+  回答，并在末尾列出用到的来源地址"。润色 / 纠错 / 改写 / 摘要 / 翻译**都不搜**。
+- **开关**：`ai.search_enabled`。设置页那个勾选框「启用联网搜索」，以及它右边的**「搜索开关键」**
+  （`ai.search_key`）写的是同一项。默认关。开关键按一下弹出**四行**：
+  `1 搜索（开）` `2 搜索（关）` `3 Tavily` `4 DeepSeek`——后两行是换来源（当前在用的那家标着「（当前）」），
+  选中即写进 `ai.search_provider` 并**顺手打开搜索**。
+- **搜不到不失败**：没有密钥 / 开关关着 / 请求失败 / 结果为空 —— 一律**照旧直接回答**（搜索只是加料，
+  不是前提）；密钥被拒这类原因由服务商返回（`http_request` 把 401/403 变成"密钥被拒"）。
+- 实现：`shared/src/ai_client.cc` 的 `web_search()` / `search_available()`（复用同一套 WinHTTP + nlohmann +
+  DPAPI），调用点在 `server/src/ai_action_service.cc` 的 `do_action()`（只对 `action->id == "ask"`）。
+
 ### 长文本怎么走 IPC
 
 选中的文字和 AI 的回答都可能很长，而 IPC 的普通字段只有 4096 字节。短文本仍走老路
@@ -252,6 +281,9 @@ baseline 与 static_assert 全部保持）。**顺带修掉了划词翻译的两
 
 - **在线 AI**：总开关（唯一的开关），**右边就是「在线 AI 开关键」**（`ai.enable_key`，按一下弹出
   「线上（开）/ 线上（关）」），以及一行「当前使用：地址 · 模型」——地址或模型留空时用的就是服务商自己的
+- **搜索**（就在「在线 AI」那一行下面）：勾选框「启用联网搜索」+ 右边的「搜索开关键」（`ai.search_key`）；
+  再下面一行是**「来源」**：下拉 Tavily / DeepSeek + 该来源的密钥框 + 框右边的「获取 API Key」链接
+  （Tavily 与 DeepSeek 各一个链接，显示当前来源那个），密钥框下面一行是随来源变的说明
 - **服务商**：内置表里的下拉（约 30 家）
 - **接口地址 / 模型**：留空即用服务商自带的，也可以填自建或代理
 - **API 密钥**：密码框；填入后点「确定/应用」即加密保存（DPAPI，仅本机本用户可解）并清空输入框，
