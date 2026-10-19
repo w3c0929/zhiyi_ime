@@ -664,6 +664,10 @@ private:
     // *old* text is still there, and -1 when there was nothing to read at all — a program that will
     // not tell, where the paste is taken on trust (the retry has already run).
     int _line_starts_with(const std::wstring& expected);
+    // `insert: below` in a program the input method cannot write into (Sublime Text and the like):
+    // the caret is walked to the end of what was worked on with the program's own keys, and the
+    // answer, newline first, is pasted there (docs/ai.md).
+    void _deliver_below_by_keys(const std::wstring& block);
     // The read selected the caret's line itself (the tier-2 read: the part before the caret) in a
     // document the input method *can* read: the answer replaces it, and the delivery selects it with
     // the program's own keys, because a TSF selection is not the program's own (docs/ai.md).

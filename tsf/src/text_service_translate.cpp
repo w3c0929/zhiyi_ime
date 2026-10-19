@@ -690,6 +690,19 @@ int TextService::_line_starts_with(const std::wstring& expected) {
     return head > 0 && line.compare(0, head, expected, 0, head) == 0 ? 1 : 0;
 }
 
+// `insert: below` in a program the input method cannot write into (Sublime Text and the like,
+// docs/ai.md): the caret is walked to the end of what was worked on with the program's own keys, and
+// the answer — newline first, so it lands on a line of its own — is pasted there. `End` when the
+// program copied the caret's line because nothing was selected (the caret can sit anywhere in that
+// line), `Right` when a selection is still there: it collapses to the selection's end without taking
+// the text away. Nothing of the old text moves; that is the whole point of this insert mode.
+void TextService::_deliver_below_by_keys(const std::wstring& block) {
+    const bool line = _textProgramCopiedLine;
+    tap_key(line ? VK_END : VK_RIGHT);
+    paste_text(block);
+    _enqueue_event_trace("ai_ui", line ? "below keys=end" : "below keys=right");
+}
+
 void TextService::_process_selection_translate() {
     std::wstring selection;
     bool shortened = false;
@@ -872,8 +885,8 @@ void TextService::_poll_translation() {
 
     // A program that keeps its text to itself (a classic edit box, Sublime Text and the like) has
     // no selection TSF can see, let alone replace: its own copy is the only way to the text, and the
-    // answer goes back the same way. Writing *under* a selection cannot be done that way (a paste
-    // would throw the selection away), so an action that wants that is only shown there.
+    // answer goes back the same way — for `below` that is the program's own keys plus a paste
+    // (_deliver_below_by_keys), since a bare paste would go over the selection instead of under it.
     ITfContext* write_context = _current_edit_context_for_composition();
     // Either the read showed the document could not be read at all (the strongest signal: the text
     // came from the program's own copy), or it looks like one of the programs that keeps its text
@@ -984,13 +997,20 @@ void TextService::_poll_translation() {
             _hide_translate_window();  // the answer is in: the window has done its job (OnEndEdit
                                        // cannot be relied on for it — see the grace window)
         }  // It did not land: the window stays, saying the answer. Shown, not written elsewhere.
-    } else if (deliver && _textInsert == cxxime::AiActionInsert::kBelow && !program_owns_its_text) {
+    } else if (deliver && _textInsert == cxxime::AiActionInsert::kBelow) {
         // Under the selection, on a line of its own (a summary is read under the text it
         // summarizes). The note — only the beginning of a long selection was worked on — rides
         // along as the last line: there is no window here to say it in.
         std::wstring inserted = L"\r\n" + translation;
         if (!note.empty()) inserted += L"\r\n" + note;
-        insert_text(inserted, true, nullptr, true, false);
+        if (program_owns_its_text) {
+            // A program that keeps its text to itself (Sublime Text and the like): TSF cannot write
+            // into it at all, so the caret is walked there with the program's own keys and the answer
+            // pasted under what was worked on (docs/ai.md) — the same way its selection was read.
+            _deliver_below_by_keys(inserted);
+        } else {
+            insert_text(inserted, true, nullptr, true, false);
+        }
         _hide_translate_window();
     } else {
         // The cached caret may be stale (nothing typed): ask for it now, like the candidate
