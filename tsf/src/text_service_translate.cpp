@@ -28,6 +28,16 @@ constexpr UINT kTranslatePollMs = 100;
 // One piece of a long text: what fits in the IPC field it travels in (ipc_protocol.h).
 constexpr std::size_t kTextChunkBytes = cxxime::kTranslateTextCapacity - 1;
 
+// The rows of the little menus that are not AI actions, numbered after the actions
+// (ai_actions().size() + n): the voice list's 不使用, and the online switch's 线上（开）/ 线上（关）.
+// Their names live in TextService::_menu_special_label, right by these numbers — the two drifting
+// apart by one is exactly how a 不使用 row turns up in the online list.
+enum MenuSpecialRow {
+    kMenuRowVoiceOff = 0,
+    kMenuRowOnlineOn = 1,
+    kMenuRowOnlineOff = 2,
+};
+
 // How many bytes of `text` from `offset` fit in `limit` without ending inside a character. Zero
 // only when there is nothing left to send.
 std::size_t utf8_piece(const std::string& text, std::size_t offset, std::size_t limit) {
@@ -1361,31 +1371,32 @@ void TextService::_open_voice_mode_menu() {
         }
     }
     if (_aiMenuRows.empty()) return;  // no data file: the off row alone is no use
-    _aiMenuRows.push_back(actions.size());  // 不使用
+    _aiMenuRows.push_back(actions.size() + kMenuRowVoiceOff);  // 不使用
     _aiMenuPurpose = AiMenuPurpose::kSetVoiceMode;
     if (!_show_menu_window()) _close_ai_menu();
 }
 
-// 那几行不是动作的行（TSF 没有界面串表，就照「正在…」那样写死中英两份）：0 = 语音列表的「不使用」，
-// 1 / 2 = 在线开关的「线上（开）/ 线上（关）」。行号就是 actions.size() 之后第几个。
+// 那几行不是动作的行（TSF 没有界面串表，就照「正在…」那样写死中英两份）。行号 = actions.size() + n，
+// n 就是下面这个枚举——名字和行号放在一处，因为这两边错开一位正是"在线列表里冒出个『不使用』"的来路。
 std::string TextService::_menu_special_label(std::size_t special) const {
     const bool english = _config.ui_language.compare(0, 2, "en") == 0;
     switch (special) {
-    case 0:
+    case kMenuRowVoiceOff:
         return english ? "Not used" : "不使用";
-    case 1:
+    case kMenuRowOnlineOn:
         return english ? "Online (on)" : "线上（开）";
     default:
         return english ? "Online (off)" : "线上（关）";
     }
 }
 
-// 在线 AI 的总开关（ai.enabled）：两行，选中即写进配置——与设置页那个勾选框是同一项（docs/ai.md）。
+// 在线 AI 的总开关（ai.enabled）：两行「线上（开）/ 线上（关）」，选中即写进配置——与设置页那个
+// 勾选框是同一项（docs/ai.md）。
 void TextService::_open_online_menu() {
     _close_ai_menu();
     const std::size_t actions = cxxime::ai_actions().size();
-    _aiMenuRows.push_back(actions);      // 线上（开）
-    _aiMenuRows.push_back(actions + 1);  // 线上（关）
+    _aiMenuRows.push_back(actions + kMenuRowOnlineOn);
+    _aiMenuRows.push_back(actions + kMenuRowOnlineOff);
     _aiMenuPurpose = AiMenuPurpose::kToggleOnline;
     if (!_show_menu_window()) _close_ai_menu();
 }
@@ -1562,7 +1573,7 @@ void TextService::_run_ai_action(std::size_t row) {
     if (purpose == AiMenuPurpose::kToggleOnline) {
         // 选中的是在线 AI 的总开关（线上（开）/ 线上（关））：写进 ai.enabled——与设置页那个勾选框
         // 是同一项（docs/ai.md），不执行任何动作。
-        const bool on = index == cxxime::ai_actions().size();  // 第一行是"开"
+        const bool on = index == cxxime::ai_actions().size() + kMenuRowOnlineOn;
         cxxime_tsf::patch_user_config(on ? "{\"ai\":{\"enabled\":true}}"
                                          : "{\"ai\":{\"enabled\":false}}");
         _enqueue_event_trace("ai_ui", on ? "online on" : "online off");
