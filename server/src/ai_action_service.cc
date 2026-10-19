@@ -5,8 +5,21 @@
 #include <cxxime/ai_actions.h>
 #include <cxxime/ai_client.h>
 #include <cxxime/ipc_protocol.h>
+#include <cxxime/query_trace.h>
 
 namespace {
+
+// 写进 trace 的失败原因：去掉引号、反斜杠和控制字符，免得把那一行 JSON 弄坏。
+std::string json_safe(const std::string& text) {
+    std::string out;
+    for (const char ch : text) {
+        const unsigned char byte = static_cast<unsigned char>(ch);
+        if (ch == '"' || ch == '\\') continue;
+        out.push_back(byte < 0x20 ? ' ' : ch);
+        if (out.size() >= 80) break;
+    }
+    return out;
+}
 
 // What the input box shows when the action could not run. Short and readable: it lands in the
 // popup the answer would have used.
@@ -135,15 +148,31 @@ void AiActionService::do_action(uint32_t id, uint64_t generation, std::string ac
             reason = "选中的文字超过这个动作的上限";
         }
         if (reason.empty()) {
-            // 「提问」先联网搜一下（docs/ai.md）：开关（ai.search_enabled）与 Tavily 密钥都在时，
-            // 把那句话当查询搜一页结果，连同结果一起交给模型；搜不到就照旧只回答问题，不因此失败。
+            // 「提问」先联网搜一下（docs/ai.md）：开关（ai.search_enabled）打开、且所选来源
+            // （ai.search_provider）有密钥时，把那句话当查询搜一页结果，连同结果一起交给模型；
+            // 搜不到就照旧只回答问题，不因此失败（每次尝试都留一行 ai_search 记录）。
             std::string prompt = action->prompt;
             std::string question = text;
             if (action->id == "ask" && config->ai.search_enabled &&
                 cxxime::ai::search_available(config->ai)) {
                 std::string results;
                 std::string search_error;
-                if (cxxime::ai::web_search(config->ai, text, &results, &search_error, &cancel_)) {
+                const bool searched =
+                    cxxime::ai::web_search(config->ai, text, &results, &search_error, &cancel_);
+                {
+                    // 一行记录，用来确认"这次提问到底搜没搜、搜回来多少"（`%USERPROFILE%\zhiyu\logs\
+                    // server-trace.jsonl`，需要 diagnostics.trace_mode 不是 off）。
+                    char line[224] = {};
+                    const int length = snprintf(
+                        line, sizeof(line),
+                        "{\"event\":\"ai_search\",\"provider\":\"%s\",\"ok\":%d,\"chars\":%zu,"
+                        "\"error\":\"%s\"}",
+                        config->ai.search_provider.c_str(), searched ? 1 : 0,
+                        searched ? results.size() : 0,
+                        searched ? "" : json_safe(search_error).c_str());
+                    if (length > 0) cxxime::enqueue_server_trace_json(line, length);
+                }
+                if (searched) {
                     prompt +=
                         "\n\nThe user's message starts with web search results (numbered, each with"
                         " its title, address and a snippet), then the question. Answer from them"
