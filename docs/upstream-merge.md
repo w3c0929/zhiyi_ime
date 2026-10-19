@@ -164,6 +164,13 @@
   现在会核对包里每个 `zhiyu*` 程序的内嵌版本，对不上直接 exit 1，兜住这条。
 - **NSIS 开始菜单位置**：elevated 安装器必须 `SetShellVarContext all`，否则菜单项落到「当前用户」
   （`%APPDATA%\…\Start Menu`）而不是「所有用户」（`%ProgramData%\…\Start Menu`）。
+- **AppContainer 程序（Win11 搜索框 SearchHost、UWP）里输入法"被禁用" = 安装目录没有 AppContainer 的读权限**：
+  这类进程只加载它读得到的 DLL，而 `C:\Program Files` / `System32` 天生带
+  `ALL APPLICATION PACKAGES`（S-1-15-2-1）的"读取和执行"。装在别处（scoop 的 persist 目录）就没有，
+  DLL 根本不加载，症状看起来像"输入法被禁用"甚至"要签名"——**与签名无关**。安装器现在给版本目录补
+  `S-1-15-2-1` 与 `S-1-15-2-2`（`ALL RESTRICTED APPLICATION PACKAGES`）的 `(OI)(CI)(RX)`；
+  IPC 管道本来就有 `PIPE_SDDL` 的 `AC` 与 Low 完整性标签（`ipc/src/security_attributes.h`），不用再动。
+  自查：`Get-Acl <版本目录>` 里应能看到 "APPLICATION PACKAGE AUTHORITY\ALL APPLICATION PACKAGES"。
 - **升级前先停 `zhiyu-server`**：否则旧目录里的 DLL 被正在运行的 App 映射，卸载删不干净，
   留下 `D:\scoop\persist\zhiyuime\zhiyuime.busy-*` 残留（关掉这些 App 或重启系统后才能删）。
   **另一条更隐蔽的后果**（2026-10-17 实测）：升级会**退休**旧版本目录（连它的 `data\` 一起删），

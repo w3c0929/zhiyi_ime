@@ -127,6 +127,15 @@ Section "Install"
   SetOutPath "$AppDir"
   File /r "${SRCDIR}\*.*"
 
+  ; AppContainer 进程（Win11 的搜索框 SearchHost.exe、各种 UWP 应用）只加载它读得到的 DLL。
+  ; C:\Program Files 与 System32 本来就给"所有应用程序包"授了读取和执行；装在别处（比如 scoop 的
+  ; persist 目录）就没有这一条，结果是**搜索框里输入法整个不可用**（DLL 根本不加载，看起来像"被禁用"）。
+  ; 这里按 SID 授权，与系统目录保持一致；失败不拦安装（只是那个环境里输入法仍然不可用）。
+  nsExec::ExecToLog 'icacls "$AppDir" /grant *S-1-15-2-1:(OI)(CI)(RX) /T /C /Q'
+  Pop $0
+  nsExec::ExecToLog 'icacls "$AppDir" /grant *S-1-15-2-2:(OI)(CI)(RX) /T /C /Q'
+  Pop $0
+
   ; A marker the settings program and the helper look for.
   FileOpen $0 "$AppDir\.zhiyu-install-complete" w
   FileClose $0
