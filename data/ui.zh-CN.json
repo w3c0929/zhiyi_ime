@@ -121,6 +121,8 @@
     "general.laya": "上文推荐:",
     "general.laya_enable": "按上文推荐候选和组长句（中文和英文）",
     "general.laya_hint": "本机的小模型读光标前的文字，把最合适的候选排到第一位（带星标）。关闭后按词频和学习记录排列，也少占内存",
+    "general.ngram": "词语 n-gram（选词更准，没上文的页会多算一次）",
+    "general.ngram_hint": "推荐模型旁边再加一个 79 MB 的词语模型：长句和词组更准。关掉它就不会加载，光标前没有上文的页也不再为它多算一次（每页约快 9 毫秒）",
     "general.device": "推理设备:",
     "general.device_cpu": "CPU（{0}）",
     "general.device_cpus": "CPU（{1} × {0}）",

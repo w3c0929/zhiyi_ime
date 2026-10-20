@@ -121,6 +121,8 @@
     "general.laya": "Recommendations:",
     "general.laya_enable": "Recommend candidates and compose long input by context",
     "general.laya_hint": "A local model reads the text before the caret and puts the best candidate first, starred. When off, candidates follow frequency and learning, and less memory is used",
+    "general.ngram": "Word n-gram (better word choice; a page with no context costs a little more)",
+    "general.ngram_hint": "A 79 MB word model next to the recommendation model: better long input and phrases. Off, it is not loaded at all, and a page with nothing before the caret no longer pays for it (about 9 ms a page)",
     "general.device": "Run on:",
     "general.device_cpu": "CPU ({0})",
     "general.device_cpus": "CPU ({1} × {0})",

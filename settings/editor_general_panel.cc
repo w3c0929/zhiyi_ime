@@ -76,6 +76,7 @@ enum ControlId {
     kDeleteLogsId,
     kFuzzyEnabledId = 1301,
     kFuzzyGroupFirstId = 1311,  // .. 1317, FuzzyGroup bit order
+    kNgramId = 1350,            // 词语 n-gram（laya.ngram），列在推荐模型下面
 };
 
 // Page key choices in combo order; 0 is none (shortcuts.page_up / page_down).
@@ -209,7 +210,13 @@ void EditorApp::create_general_panel(HWND panel) {
     hLaya_ = make_check(kLayaId, tr("general.laya_enable"), laya_x, y, S(440), panel);
     y += kRowH;
     make_hint(tr("general.laya_hint"), laya_x, y - S(6), S(480), panel);
-    y += S(40);
+    y += S(20);
+    // 词语 n-gram（laya.ngram）：推荐模型旁边的词语三元模型。关掉它 = 不加载，光标前没有上文的页
+    // 不再多算一次（docs/settings-guide.md）。
+    hNgram_ = make_check(kNgramId, tr("general.ngram"), laya_x, y, S(440), panel);
+    y += kRowH;
+    make_hint(tr("general.ngram_hint"), laya_x, y - S(6), S(480), panel, 1);
+    y += S(20);
     // Graphics card (editor_gpu.cc): no row when this computer has none to offer.
     load_gpu_choices();
     hDevice_ = nullptr;
@@ -519,6 +526,8 @@ void EditorApp::populate_controls() {
     set_check(hEnglishCorrection_, config_.english.correction);
     set_check(hAutostart_, config_.autostart);
     set_check(hLaya_, config_.laya.enable);
+    // 词语 n-gram：配置里是文件路径，空 = 不用（与数据文件里默认的 ngram/zh.ngram 对应）。
+    set_check(hNgram_, !config_.laya.ngram.empty());
     populate_device();
 
     set_check(hDefaultChinese_, config_.initial_language == "chinese");
@@ -625,6 +634,13 @@ bool EditorApp::read_controls(bool report_errors) {
     }
     c.autostart = get_check(hAutostart_);
     c.laya.enable = get_check(hLaya_);
+    // 勾上就用默认路径（配置里已有别的路径就留着），没勾就是空 = 不加载。
+    if (get_check(hNgram_)) {
+        c.laya.ngram = config_.laya.ngram.empty() ? std::string("ngram/zh.ngram")
+                                                  : config_.laya.ngram;
+    } else {
+        c.laya.ngram.clear();
+    }
     c.laya.device = selected_device();
     const KeyChoice choices[kSwitchKeyCount] = {
         key_capture_get(hSwitchKey_), key_capture_get(hStyleKey_), key_capture_get(hPunctKey_),
@@ -738,6 +754,9 @@ void EditorApp::update_enabled_controls() {
     }
     if (hDevice_) {
         EnableWindow(hDevice_, get_check(hLaya_) && !gpu_testing_ && !gpu_choices_.empty());
+    }
+    if (hNgram_) {
+        EnableWindow(hNgram_, get_check(hLaya_));  // 推荐关着时 n-gram 也没意义
     }
     // 镜像下载: the address only matters with the box ticked, and the typed-in one only with 自定义.
     const bool mirror = get_check(hMirrorEnable_);
