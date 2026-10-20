@@ -298,7 +298,10 @@
 | `laya.continuation_min_syllables` | 4 | 从几个音节起由模型参与组句 |
 | `laya.continuation_paths` | 4 | 每个组合最多给模型几种拼音切分（每种一次模型调用，在后台算） |
 | `laya.continuation_delay_ms` | 100 | 停止打字多少毫秒后后台才开始组句（CPU 和显卡都一样）；连续打字时不做马上作废的计算 |
-| `laya.continuation_rerank` | false | 模型组出的整句再交给选词头重排；关时模型的第一句放在第一个并加星标，这一页不再重排 |
+| `laya.continuation_rerank` | true | 模型组出的整句再交给选词头重排；关时模型的第一句放在第一个并加星标，这一页不再重排 |
+| `laya.ngram` | `ngram/zh.ngram` | 词语 n-gram 的文件（相对服务端程序目录）：整句候选的分数再加上"它在上文之后的概率"；空或文件不在 = 不用 |
+| `laya.ngram_weight` | 1.0 | 上面那一项的权重；0 = 不用 n-gram |
+| `laya.ngram_without_context` | true | 有 n-gram 时，光标前没有上文的页也用它参与选词（模型单独在那种页上没什么可依据的） |
 | `laya.decoder_beam` | 16 | 解码器模型（上游 1.5.4–1.5.8 的模型）逐字组句时同时保留的路径数；每写一个字所有路径一起算一次。现在默认的模型不带解码器，这一项只在换上解码器模型时起作用 |
 | `laya.decoder_weight` | 0.3 | 解码器模型组句时每个词的分数 = 各字 ln P(模型) 之和 + 权重 × 引擎的词分数（`laya.continuation_weight` 只用于组句头模型） |
 | `laya.decoder_cache` | true | 模型目录里有解码器的 KV 缓存图（`laya_decoder_memory` / `laya_decoder_step`）时使用：每写一个字只算新字，前面字算过的结果留着复用；关掉则每个字都把前面的字重算一遍。首选不变，长句快一半左右。现在默认的模型（1.4V2-Long-L18）用组句头、没有解码器，这一项对它不起作用 |

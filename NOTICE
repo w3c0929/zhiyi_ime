@@ -28,7 +28,8 @@ Changes made to CxxIME (2026-10):
 - Relicensed the combined work under GPL-3.0-only.
 - The weights of the models trained by 知意输入法 (the Laya recommendation model in models/laya/
   and the offline translation models v2 and v3) are licensed under the Apache License, Version 2.0
-  (data/licenses/Apache-2.0.txt) since 2026-10-20 (GPL-3.0-only before).
+  (data/licenses/Apache-2.0.txt) since 2026-10-20 (GPL-3.0-only before). The word n-gram in
+  ngram/ keeps LGPL-2.1-or-later, as its base (data/licenses/LGPL-2.1.txt).
 - Renamed to 知意输入法 / Zhiyi IME with new text service and UI GUIDs, pipe, mutex,
   window class, registry, file and data directory names, and new icons.
 - Fixed an out-of-bounds read in SpellingsIndex::load and the node count written by

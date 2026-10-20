@@ -242,6 +242,11 @@
 - 现有内容：`glossary`（28 个 `.gloss` + `glossary.json`）、`translator`（`zhiyi-mt-v2-Q4_K_M.gguf` 396 MB 与
   v3 的 gguf 322 MB，用户可在「学习」页选；`llama-b11480-vulkan-x64.zip` 32 MB）、`voice`（`model.int8.onnx`
   239 MB + `tokens.txt` + `silero_vad.onnx` + 两个 LICENSE 文件）。
+- **词语 n-gram 与 Laya 模型一样是例外**：`ngram-zh-1017`（`zhiyi-ngram-zh-1017.zip` 40 MB，里面是
+  `zh.ngram` 79 MB，sha256 `0a9e5c15…`，LGPL-2.1-or-later）与 `model-zhen-long-l18` 都是**随安装包发**
+  （打包时取自参考安装目录的 `ngram/` 与 `laya/`），只是 `scripts/fetch_model.py` 给源码构建下载用。
+  换 ngram 或模型 = 转存上游资产到本仓库同名 Release → 改 `fetch_model.py` 的 ASSET/URL/SHA →
+  把文件放进参考目录 → 打包（**不用**重签清单、也不用重新生成词典包）。
 - **bucket 里的 `zhiyuime.json` 是用户另一个项目在维护的**（`E:\09.同步\06.配置\myscoop`，那个仓库有自己的
   `download.ps1` / SKILL / progress）：**只改 `version` / `url` / `hash` 这三个值，绝不整份覆盖**（两边的
   `installer.script`、`post_install`、`pre_uninstall` 本来就是两套，2026-10-18 实测过）；**而且推送之后要把
