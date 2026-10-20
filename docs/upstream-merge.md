@@ -253,7 +253,8 @@
   这三个值恢复成原样**——bucket 由用户自己更新，本仓库的 `scripts/zhiyu-scoop.json` 才是本 fork 的那一份。
 - **Laya 推荐模型是例外**：它不走上面那套签名清单，而是**随安装包发**（打包时模型文件来自参考安装目录），
   `scripts/fetch_model.py` 另外把它下到 `models/laya/` 供源码构建用——那个脚本指向**本仓库**的
-  `model-zhen-long-l18` Release（上游 1.5.9 起的默认模型，文件逐字节相同）。换模型 = 转存上游资产到本仓库
+  `model-zhen-long-l12` Release（上游 1.5.12 起的默认模型，文件逐字节相同；1.5.9–1.5.11 的
+  `model-zhen-long-l18` 也还在本仓库）。换模型 = 转存上游资产到本仓库
   同名 Release → 改 `fetch_model.py` 的 ASSET/URL/SHA 与 `FILES`/`OLD_FILES` → 换掉参考目录里的模型文件
   再打包（**不需要**重签清单、也不用重新生成词典包）。
 

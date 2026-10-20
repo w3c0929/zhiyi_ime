@@ -304,7 +304,7 @@
 | `laya.ngram_without_context` | true | 有 n-gram 时，光标前没有上文的页也用它参与选词（模型单独在那种页上没什么可依据的） |
 | `laya.decoder_beam` | 16 | 解码器模型（上游 1.5.4–1.5.8 的模型）逐字组句时同时保留的路径数；每写一个字所有路径一起算一次。现在默认的模型不带解码器，这一项只在换上解码器模型时起作用 |
 | `laya.decoder_weight` | 0.3 | 解码器模型组句时每个词的分数 = 各字 ln P(模型) 之和 + 权重 × 引擎的词分数（`laya.continuation_weight` 只用于组句头模型） |
-| `laya.decoder_cache` | true | 模型目录里有解码器的 KV 缓存图（`laya_decoder_memory` / `laya_decoder_step`）时使用：每写一个字只算新字，前面字算过的结果留着复用；关掉则每个字都把前面的字重算一遍。首选不变，长句快一半左右。现在默认的模型（1.4V2-Long-L18）用组句头、没有解码器，这一项对它不起作用 |
+| `laya.decoder_cache` | true | 模型目录里有解码器的 KV 缓存图（`laya_decoder_memory` / `laya_decoder_step`）时使用：每写一个字只算新字，前面字算过的结果留着复用；关掉则每个字都把前面的字重算一遍。首选不变，长句快一半左右。现在默认的模型（1.4V2-Long-L12）用组句头、没有解码器，这一项对它不起作用 |
 | `privacy.experience_program` / `collect_input` | false / false | 用户体验改进计划两档 |
 | `update.notify` | true | 打开设置时检查更新 |
 | `update.mirror_enable` / `update.mirror_url` | false / 空 | 镜像下载：检查更新与各类下载是否走镜像、走哪个（只接受 `https://` 开头的地址；空 = 直连）。见“常规”页那两行 |

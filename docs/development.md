@@ -20,7 +20,7 @@ IMM 兼容模块）、构建脚本，以及生成运行时词典的工具（`dat
 
 ```cmd
 python scripts\fetch_onnxruntime.py   :: ONNX Runtime 1.24.4（DirectML 版）+ DirectML.dll -> third_party\onnxruntime\
-python scripts\fetch_model.py         :: Laya 模型（本仓库 Release model-zhen-long-l18）-> models\laya\
+python scripts\fetch_model.py         :: Laya 模型（本仓库 Release model-zhen-long-l12）+ 词语 n-gram（ngram-zh-1017）-> models\
 build_laya.bat                        :: Ninja Release 构建，产物在 build\
 ```
 
