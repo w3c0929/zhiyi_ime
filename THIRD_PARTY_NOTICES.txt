@@ -214,7 +214,8 @@ Upstream: https://huggingface.co/convaiinnovations/laya
 License: Apache License 2.0
 
 The trained weights in models/laya/ are 知意输入法's own work and are licensed
-GPL-3.0-only; the upstream parts below keep their licenses.
+under the Apache License, Version 2.0 (data/licenses/Apache-2.0.txt) since
+2026-10-20 (GPL-3.0-only before); the upstream parts below keep their licenses.
 
 The model in models/laya/ (laya.int8g.onnx, tokenizer.json, unified_vocab.json,
 rl_agent_config.json)
