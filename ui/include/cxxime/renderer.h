@@ -49,6 +49,13 @@ private:
     IDWriteTextFormat* fmt_left_ = nullptr;
     IDWriteTextFormat* fmt_right_ = nullptr;
     IDWriteTextFormat* fmt_preedit_ = nullptr;
+    IDWriteTextFormat* fmt_status_ = nullptr;  // right-aligned, the state line
+    IDWriteTextFormat* fmt_status_center_ = nullptr;  // centered, one glyph per box (vertical)
+    // Vertical state column, recreated when the fit-to-height scale changes.
+    IDWriteTextFormat* fmt_status_v_ = nullptr;
+    float fmt_status_v_scale_ = 0.0f;
+    float psize_ = 0.0f;
+    std::wstring font_name_;
     IDWriteTextFormat* fmt_small_ = nullptr;
     IDWriteTextFormat* fmt_gloss_ = nullptr;      // learning mode translations, cut with "…"
     IDWriteInlineObject* gloss_ellipsis_ = nullptr;

@@ -44,6 +44,8 @@ public:
     void update(const CandidatePresentationPage& page);
     void update(const CandidatePage& page);
     void set_preedit(const std::string& preedit);
+    // 右上角的状态串（预编辑那一行），空 = 不画（style.show_status 打开时才由调用方设置）。
+    void set_status_text(const std::string& text);
     void set_preedit(const std::string& preedit, size_t cursor);
     void set_preedit(const std::string& preedit, size_t cursor,
                      size_t converted_prefix, size_t focused_start, size_t focused_end,
@@ -54,6 +56,9 @@ public:
     void set_candidate_selection_callback(CandidateSelectionCallback cb);
     void set_layout_changed_callback(LayoutChangedCallback cb);
     void set_page_callback(PageCallback cb);
+    // Toolbar: the settings button (☰) at the end of the candidate row / the nav row. Only
+    // the real candidate window turns it on; the menus reusing this window do not.
+    void set_toolbar(bool on);
     void set_draggable(bool draggable);
     void set_theme(const Theme& theme);
     void set_render_backend(RenderBackend backend);
@@ -110,6 +115,7 @@ private:
     LayoutConfig scaled_cfg_;
     CandidatePage page_;
     std::string preedit_text_;
+    std::string status_text_;  // the top-right state line
     size_t preedit_cursor_ = 0;
     size_t converted_prefix_ = 0;
     size_t focused_preedit_start_ = 0;
@@ -122,6 +128,7 @@ private:
     LayoutChangedCallback layout_changed_cb_;
     PageCallback page_cb_;
     bool draggable_ = false;
+    bool toolbar_ = false;  // the settings button (☰); see set_toolbar
     std::vector<CandidateRect> candidate_rects_;
     RenderContext render_ctx_;
     Theme theme_;

@@ -13,15 +13,6 @@ namespace cxxime {
 
 static D2D1_COLOR_F c2d(const Color& c) { return D2D1::ColorF(c.r/255.0f, c.g/255.0f, c.b/255.0f, c.a/255.0f); }
 
-static D2D1_COLOR_F separator_color(const Theme* theme) {
-    if (!theme)
-        return D2D1::ColorF(160.0f / 255.0f, 160.0f / 255.0f, 160.0f / 255.0f, 1.0f);
-    return D2D1::ColorF(
-        (float)(theme->background.r * 3 + theme->text.r) / 4.0f / 255.0f,
-        (float)(theme->background.g * 3 + theme->text.g) / 4.0f / 255.0f,
-        (float)(theme->background.b * 3 + theme->text.b) / 4.0f / 255.0f,
-        1.0f);
-}
 
 static std::wstring dec(const std::string& s) {
     int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
@@ -99,18 +90,26 @@ bool D2DRenderer::initialize(const Theme& theme, UINT dpi) {
     }
     float fsize = (float)theme.font_size * dpi / 72.0f;
     float psize = (float)theme.preedit_font_size * dpi / 72.0f;
+    psize_ = psize;
+    font_name_ = theme.font_name;
     fmt_left_ = mkfmt(dwrite_factory_, theme.font_name.c_str(), fsize,
                         DWRITE_TEXT_ALIGNMENT_LEADING);
     fmt_right_ = mkfmt(dwrite_factory_, theme.font_name.c_str(), fsize,
                         DWRITE_TEXT_ALIGNMENT_LEADING);
     fmt_preedit_ = mkfmt(dwrite_factory_, theme.font_name.c_str(), psize,
                          DWRITE_TEXT_ALIGNMENT_LEADING);
-    fmt_small_ = mkfmt(dwrite_factory_, theme.font_name.c_str(), 9.0f * dpi / 72.0f,
+    fmt_status_ = mkfmt(dwrite_factory_, theme.font_name.c_str(), psize,
+                        DWRITE_TEXT_ALIGNMENT_TRAILING);
+    fmt_status_center_ = mkfmt(dwrite_factory_, theme.font_name.c_str(), psize,
+                               DWRITE_TEXT_ALIGNMENT_CENTER);
+    // The page arrows are the candidate size (the same as Sogou's), not a smaller one.
+    fmt_small_ = mkfmt(dwrite_factory_, theme.font_name.c_str(), fsize,
                         DWRITE_TEXT_ALIGNMENT_CENTER);
     fmt_gloss_ = mkfmt(dwrite_factory_, theme.font_name.c_str(),
                        (float)gloss_font_point(theme.font_size) * dpi / 72.0f,
                        DWRITE_TEXT_ALIGNMENT_LEADING);
-    if (!fmt_left_ || !fmt_right_ || !fmt_preedit_ || !fmt_small_ || !fmt_gloss_) {
+    if (!fmt_left_ || !fmt_right_ || !fmt_preedit_ || !fmt_status_ || !fmt_status_center_ ||
+        !fmt_small_ || !fmt_gloss_) {
         finalize();
         return false;
     }
@@ -123,7 +122,11 @@ bool D2DRenderer::initialize(const Theme& theme, UINT dpi) {
 
 void D2DRenderer::finalize() {
     if (gloss_ellipsis_) { gloss_ellipsis_->Release(); gloss_ellipsis_ = nullptr; }
-    for (auto* p : {&fmt_gloss_, &fmt_small_, &fmt_preedit_, &fmt_right_, &fmt_left_}) { if (*p) { (*p)->Release(); *p = nullptr; } }
+    for (auto* p : {&fmt_status_v_, &fmt_gloss_, &fmt_small_, &fmt_status_center_, &fmt_status_,
+                    &fmt_preedit_, &fmt_right_, &fmt_left_}) {
+        if (*p) { (*p)->Release(); *p = nullptr; }
+    }
+    fmt_status_v_scale_ = 0.0f;
     if (dwrite_factory_) { dwrite_factory_->Release(); dwrite_factory_ = nullptr; }
     for (auto* p : {&border_brush_, &nav_brush_, &label_brush_, &preedit_cursor_brush_,
                     &preedit_active_border_brush_, &preedit_active_back_brush_,
@@ -141,23 +144,8 @@ void D2DRenderer::draw_preedit(const RenderContext& ctx) {
         return;
     }
 
-    if (ctx.preedit_active_rect.right > ctx.preedit_active_rect.left &&
-        preedit_active_back_brush_ && preedit_active_border_brush_) {
-        const D2D1_ROUNDED_RECT active = {
-            D2D1::RectF(static_cast<float>(ctx.preedit_active_rect.left),
-                        static_cast<float>(ctx.preedit_active_rect.top),
-                        static_cast<float>(ctx.preedit_active_rect.right),
-                        static_cast<float>(ctx.preedit_active_rect.bottom)),
-            static_cast<float>(ctx.preedit_corner_radius),
-            static_cast<float>(ctx.preedit_corner_radius),
-        };
-        render_target_->FillRoundedRectangle(active, preedit_active_back_brush_);
-        if (ctx.preedit_border_width > 0) {
-            render_target_->DrawRoundedRectangle(
-                active, preedit_active_border_brush_,
-                static_cast<float>(ctx.preedit_border_width));
-        }
-    }
+    // The popup preedit is plain text: no fill and no box around the part being edited
+    // (the runs already tell converted from active apart by colour).
 
     for (const auto& run : ctx.preedit_runs) {
         const std::wstring text = dec(run.text);
@@ -229,19 +217,6 @@ HRESULT D2DRenderer::render(HDC hdc, const RECT& rect, const RenderContext& ctx)
     D2D1_SIZE_F sz = render_target_->GetSize();
     render_target_->FillRectangle(D2D1::RectF(0,0,sz.width,sz.height), bg_brush_);
 
-    auto draw_preedit_separator = [&]() {
-        if (ctx.preedit.empty() || ctx.preedit_rect.right <= ctx.preedit_rect.left ||
-            !preedit_brush_)
-            return;
-        float sep_y = (float)ctx.preedit_rect.bottom + (cfg ? (float)cfg->spacing/3 : 5.0f);
-        preedit_brush_->SetColor(ctx.high_contrast ? c2d(ctx.theme->border)
-                                                   : separator_color(ctx.theme));
-        render_target_->DrawLine({margin + 2.0f, sep_y}, {sz.width - margin - 2.0f, sep_y},
-                                 preedit_brush_, 1.0f);
-        if (ctx.theme) {
-            preedit_brush_->SetColor(c2d(ctx.theme->preedit_text));
-        }
-    };
 
     auto draw_border = [&]() {
         if (ctx.theme && cfg && cfg->border_width > 0 && border_brush_) {
@@ -263,7 +238,6 @@ HRESULT D2DRenderer::render(HDC hdc, const RECT& rect, const RenderContext& ctx)
         } else {
             render_target_->DrawText(L"知语输入法", 5, fmt_left_, D2D1::RectF(0,0,sz.width,sz.height), preedit_brush_);
         }
-        draw_preedit_separator();
         draw_border();
         return render_target_->EndDraw();
     }
@@ -271,7 +245,40 @@ HRESULT D2DRenderer::render(HDC hdc, const RECT& rect, const RenderContext& ctx)
     // Preedit
     if (!ctx.preedit.empty() && ctx.preedit_rect.right > ctx.preedit_rect.left) {
         draw_preedit(ctx);
-        draw_preedit_separator();
+    }
+    // 状态串：横排一行右对齐；竖排一列、每行一个字（字形不旋转）。
+    if (!ctx.status_text.empty() && ctx.theme && fmt_status_ &&
+        ctx.status_rect.right > ctx.status_rect.left) {
+        const std::wstring status = dec(ctx.status_text);
+        comment_brush_->SetColor(c2d(ctx.theme->comment_text));
+        if (ctx.status_vertical && fmt_status_center_) {
+            // 竖排：按「塞进窗口高度」的比例重建字号（行距收紧时字也跟着缩）。
+            const float scale = ctx.status_font_scale > 0.05f ? ctx.status_font_scale : 1.0f;
+            if (!fmt_status_v_ || fmt_status_v_scale_ != scale) {
+                if (fmt_status_v_) { fmt_status_v_->Release(); fmt_status_v_ = nullptr; }
+                fmt_status_v_ = mkfmt(dwrite_factory_, font_name_.c_str(), psize_ * scale,
+                                      DWRITE_TEXT_ALIGNMENT_CENTER);
+                fmt_status_v_scale_ = fmt_status_v_ ? scale : 0.0f;
+            }
+            std::size_t at = 0;
+            for (const RECT& gr : ctx.status_glyph_rects) {
+                while (at < status.size() && is_status_space(status[at])) {
+                    ++at;
+                }
+                if (at >= status.size()) break;
+                const std::wstring one(1, status[at++]);
+                const D2D1_RECT_F sr = {(float)gr.left, (float)gr.top, (float)gr.right,
+                                        (float)gr.bottom};
+                render_target_->DrawText(one.c_str(), 1,
+                                         fmt_status_v_ ? fmt_status_v_ : fmt_status_center_, sr,
+                                         comment_brush_);
+            }
+        } else {
+            const D2D1_RECT_F sr = {(float)ctx.status_rect.left, (float)ctx.status_rect.top,
+                                    (float)ctx.status_rect.right, (float)ctx.status_rect.bottom};
+            render_target_->DrawText(status.c_str(), (UINT32)status.length(), fmt_status_, sr,
+                                     comment_brush_);
+        }
     }
 
     // Candidates
@@ -332,6 +339,17 @@ HRESULT D2DRenderer::render(HDC hdc, const RECT& rect, const RenderContext& ctx)
     if (ctx.page_total > 1 && fmt_small_) {
         float nc = corner > 2 ? corner-1 : 1;
         bool pe = (ctx.page_current > 1), ne = (ctx.page_current < ctx.page_total);
+        // 不可用时用"背景 3/4 + 文字 1/4"的浅色（与 GDI 同一公式）：一眼看出点不了。
+        Color dim_color = ctx.theme
+                              ? Color{static_cast<uint8_t>(
+                                          (ctx.theme->background.r * 3 + ctx.theme->text.r) / 4),
+                                      static_cast<uint8_t>(
+                                          (ctx.theme->background.g * 3 + ctx.theme->text.g) / 4),
+                                      static_cast<uint8_t>(
+                                          (ctx.theme->background.b * 3 + ctx.theme->text.b) / 4),
+                                      255}
+                              : Color{160, 160, 160, 255};
+        preedit_brush_->SetColor(c2d(dim_color));
         // <
         {
             D2D1_RECT_F pr = {(float)ctx.prev_button_rect.left, (float)ctx.prev_button_rect.top,
@@ -339,7 +357,13 @@ HRESULT D2DRenderer::render(HDC hdc, const RECT& rect, const RenderContext& ctx)
             bool h = pe && ctx.hovered_target == CandidateHoverTarget::PreviousPage;
             if (h) { D2D1_ROUNDED_RECT rr = {pr, nc, nc}; render_target_->FillRoundedRectangle(rr, highlight_brush_); }
             auto* b = h ? highlight_text_brush_ : (pe ? nav_brush_ : preedit_brush_);
-            render_target_->DrawText(L"<", 1, fmt_small_, pr, b);
+            // 画出来的折线（不用字形：‹ 在字体里本身只是小标点，放大字号也显小）。
+            const float cx = (pr.left + pr.right) / 2.0f;
+            const float cy = (pr.top + pr.bottom) / 2.0f;
+            const float hw = (pr.right - pr.left) * 0.16f;
+            const float hh = (pr.bottom - pr.top) * 0.20f;
+            render_target_->DrawLine({cx + hw, cy - hh}, {cx - hw, cy}, b, 1.6f);
+            render_target_->DrawLine({cx - hw, cy}, {cx + hw, cy + hh}, b, 1.6f);
         }
         // >
         {
@@ -348,8 +372,48 @@ HRESULT D2DRenderer::render(HDC hdc, const RECT& rect, const RenderContext& ctx)
             bool h = ne && ctx.hovered_target == CandidateHoverTarget::NextPage;
             if (h) { D2D1_ROUNDED_RECT rr = {nr, nc, nc}; render_target_->FillRoundedRectangle(rr, highlight_brush_); }
             auto* b = h ? highlight_text_brush_ : (ne ? nav_brush_ : preedit_brush_);
-            render_target_->DrawText(L">", 1, fmt_small_, nr, b);
+            const float cx = (nr.left + nr.right) / 2.0f;
+            const float cy = (nr.top + nr.bottom) / 2.0f;
+            const float hw = (nr.right - nr.left) * 0.16f;
+            const float hh = (nr.bottom - nr.top) * 0.20f;
+            render_target_->DrawLine({cx - hw, cy - hh}, {cx + hw, cy}, b, 1.6f);
+            render_target_->DrawLine({cx + hw, cy}, {cx - hw, cy + hh}, b, 1.6f);
         }
+    }
+
+    // Toolbar: the settings button (☰) — three bars, hovered like the page arrows.
+    if (ctx.settings_button_rect.right > ctx.settings_button_rect.left) {
+        const float l = (float)ctx.settings_button_rect.left;
+        const float t = (float)ctx.settings_button_rect.top;
+        const float r = (float)ctx.settings_button_rect.right;
+        const float b = (float)ctx.settings_button_rect.bottom;
+        const float rc2 = corner > 2 ? corner - 1 : 1;
+        const bool h = ctx.hovered_target == CandidateHoverTarget::Settings;
+        if (h) {
+            D2D1_ROUNDED_RECT rr = {D2D1::RectF(l, t, r, b), rc2, rc2};
+            render_target_->FillRoundedRectangle(rr, highlight_brush_);
+        }
+        auto* brush = h ? highlight_text_brush_ : nav_brush_;
+        // 三条细横杠：条厚约 2px、缝约为条厚的 2 倍、整体宽约框宽的 58%。坐标取整 + 关闭抗锯齿，
+        // 否则半像素落点会把细线糊成灰边（Sogou 那个就是像素级清晰的细线）。
+        const int box_h = static_cast<int>(b - t);
+        const int box_w = static_cast<int>(r - l);
+        int bar = static_cast<int>(std::lround(box_h * 0.07f));
+        if (bar < 2) bar = 2;
+        const int gap = bar * 2;
+        const int total = bar * 3 + gap * 2;
+        const int left = static_cast<int>(std::lround((l + r) / 2.0f - box_w * 0.87f / 2.0f));
+        const int right = left + static_cast<int>(std::lround(box_w * 0.87f));
+        // 位置由几何决定（layout.nav_offset_y），这里只按按钮框垂直居中。
+        const int top = static_cast<int>(std::lround((t + b) / 2.0f - total / 2.0f));
+        const D2D1_ANTIALIAS_MODE previous = render_target_->GetAntialiasMode();
+        render_target_->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+        for (int i = 0; i < 3; ++i) {
+            const int y = top + i * (bar + gap);
+            render_target_->FillRectangle(
+                D2D1::RectF((float)left, (float)y, (float)right, (float)(y + bar)), brush);
+        }
+        render_target_->SetAntialiasMode(previous);
     }
 
     draw_border();

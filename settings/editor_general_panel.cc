@@ -13,7 +13,9 @@
 #include <string>
 
 #include <shellapi.h>
+#include <commdlg.h>  // ChooseColorW (the skin card's colour picker)
 
+#include <cxxime/render_context.h>
 #include <cxxime/diagnostic_log_path.h>
 #include <cxxime/experience_log.h>
 #include <cxxime/keyboard_shortcut.h>
@@ -77,6 +79,18 @@ enum ControlId {
     kFuzzyEnabledId = 1301,
     kFuzzyGroupFirstId = 1311,  // .. 1317, FuzzyGroup bit order
     kNgramId = 1350,            // 词语 n-gram（laya.ngram），列在推荐模型下面
+    // 皮肤（常规页底部，docs/settings-guide.md）
+    kSkinCustomColorsId = 1360,
+    kSkinPinyinColorId,
+    kSkinFocusedColorId,
+    kSkinFocusedBackColorId,
+    kSkinCandidateColorId,
+    kSkinBackgroundColorId,
+    kSkinFontSizeId,
+    kSkinScaleWithFontId,
+    kSkinFontId,
+    kShowStatusId,
+    kInlinePreeditId = 1351,    // 候选窗口里显示输入（style.inline_preedit）
 };
 
 // Page key choices in combo order; 0 is none (shortcuts.page_up / page_down).
@@ -125,6 +139,9 @@ const char* const kMirrorList[] = {
 };
 constexpr int kMirrorCount = static_cast<int>(std::size(kMirrorList));
 constexpr int kMirrorCustomIndex = kMirrorCount;  // the last combo item: type the address in
+// 本机已安装的字体族（皮肤卡片的「更换字体」）。
+std::vector<std::wstring> installed_font_families();
+
 constexpr int kFontSmall = 12;
 constexpr int kFontMedium = 14;
 constexpr int kFontLarge = 17;
@@ -238,16 +255,20 @@ void EditorApp::create_general_panel(HWND panel) {
     y = card_begin(panel, y, tr("general.card_appearance"));
     radios("general.theme", {{kLightId, "general.light"}, {kDarkId, "general.dark"}},
            {&hLight_, &hDark_});
-    radios("general.font_size",
-           {{kFontSmallId, "general.small"}, {kFontMediumId, "general.medium"},
-            {kFontLargeId, "general.large"}},
-           {&hFontSmall_, &hFontMedium_, &hFontLarge_});
     const int layout_x = radios(
         "general.layout", {{kVerticalId, "general.vertical"}, {kHorizontalId, "general.horizontal"}},
         {&hVertical_, &hHorizontal_});
     make_hint(tr("general.layout_hint"), layout_x, y - S(6), S(400), panel, 1);
     y += S(20);
+    // 预编辑放在候选窗口里（style.inline_preedit = false）：卡片里多一行输入，文档里不写字。
+    hInlinePreedit_ = make_check(kInlinePreeditId, tr("general.inline_preedit"), layout_x, y,
+                                 S(480), panel);
+    y += kRowH;
 
+    // 状态显示：候选窗右上角那行（中文·全拼·半角·中文标点），默认不显示。
+    hShowStatus_ = make_check(kShowStatusId, tr("general.show_status"), layout_x, y, S(460),
+                              panel);
+    y += kRowH;
     const int page_x = make_aligned_label(tr("general.page_size"), x0, labels, y, panel);
     hPageSize_ = make_combo(kPageSizeId, page_x, y, S(80), panel);
     for (int count = kMinPageSize; count <= kMaxPageSize; ++count) {
@@ -263,6 +284,58 @@ void EditorApp::create_general_panel(HWND panel) {
         combo_add(hLanguage_, language.name.c_str());
     }
     y += kRowH;
+    y = card_end(panel, y - S(6));
+
+    // ---- 皮肤：颜色、字号、随字体缩放（docs/settings-guide.md）----
+    y = card_begin(panel, y, tr("general.skin_card"));
+    const int skin_x = make_aligned_label(tr("general.skin_colors"), x0, labels, y, panel);
+    const int swatch_h = S(22);
+    // 无标签的方框在最前面；色块宽度跟着文字走（左右各约 2px），不再统一拉宽。
+    hSkinCustomColors_ = make_check(kSkinCustomColorsId, L"", skin_x, y, S(28), panel);
+    int sw = skin_x + S(32);
+    // 五个色块同一宽度：取最宽的那个文字（左右各约 2px），其余也按这个宽度排。
+    {
+        const wchar_t* labels[] = {tr("general.skin_pinyin"), tr("general.skin_focused"),
+                                   tr("general.skin_focused_back"), tr("general.skin_candidate"),
+                                   tr("general.skin_background")};
+        int widest = 0;
+        for (const wchar_t* label : labels) {
+            widest = (std::max)(widest, text_width(label));
+        }
+        skin_swatch_width_ = widest + S(4);
+    }
+    const auto place_swatch = [&](int id, const wchar_t* label) {
+        (void)label;
+        HWND swatch = make_color_swatch(id, sw, y, skin_swatch_width_, swatch_h, panel);
+        sw += skin_swatch_width_ + S(8);
+        return swatch;
+    };
+    hSkinColorPinyin_ = place_swatch(kSkinPinyinColorId, tr("general.skin_pinyin"));
+    hSkinColorFocused_ = place_swatch(kSkinFocusedColorId, tr("general.skin_focused"));
+    hSkinColorFocusedBack_ =
+        place_swatch(kSkinFocusedBackColorId, tr("general.skin_focused_back"));
+    hSkinColorCandidate_ = place_swatch(kSkinCandidateColorId, tr("general.skin_candidate"));
+    hSkinColorBack_ = place_swatch(kSkinBackgroundColorId, tr("general.skin_background"));
+    y += kRowH + S(6);
+    // 更换字体：列出本机已安装的字体族（EnumFontFamiliesEx），写 style.font_face。
+    const int font_x = make_aligned_label(tr("general.skin_font"), x0, labels, y, panel);
+    hSkinFont_ = make_combo(kSkinFontId, font_x, y, S(260), panel);
+    set_combo_drop_count(hSkinFont_, 24);
+    skin_fonts_ = installed_font_families();
+    for (const std::wstring& family : skin_fonts_) combo_add(hSkinFont_, family.c_str());
+    y += kRowH;
+    // 更换字号：12–24px（写 style.font_point）
+    const int size_x = make_aligned_label(tr("general.skin_size"), x0, labels, y, panel);
+    hSkinFontSize_ = make_combo(kSkinFontSizeId, size_x, y, S(110), panel);
+    for (int px = 12; px <= 24; ++px) {
+        combo_add(hSkinFontSize_, (std::to_wstring(px) + L"px").c_str());
+    }
+    y += kRowH;
+    hSkinScaleWithFont_ = make_check(kSkinScaleWithFontId, tr("general.skin_scale"), size_x, y,
+                                     S(460), panel);
+    y += kRowH;
+    make_hint(tr("general.skin_scale_hint"), size_x, y - S(6), S(700), panel, 1);
+    y += S(20);
     y = card_end(panel, y - S(6));
 
     // 镜像下载（update.h 的 set_mirror）：GitHub 在这里常常连不上或很慢，勾选后所有 GitHub 下载
@@ -506,10 +579,36 @@ void EditorApp::populate_controls() {
     set_check(hLight_, !dark);
     set_check(hDark_, dark);
     apply_ui_theme(dark);  // also after a change made elsewhere
-    const int font = config_.font_size;
-    set_check(hFontSmall_, font <= kFontSmall);
-    set_check(hFontMedium_, font > kFontSmall && font < kFontLarge);
-    set_check(hFontLarge_, font >= kFontLarge);
+    // 皮肤：字号下拉 + 四块颜色样本（没设自定义色时显示主题当前色）
+    {
+        const std::wstring current = utf8_to_wstr(config_.font_name);
+        auto it = std::find(skin_fonts_.begin(), skin_fonts_.end(), current);
+        if (it != skin_fonts_.end()) {
+            combo_set_index(hSkinFont_, static_cast<int>(it - skin_fonts_.begin()));
+        }
+    }
+    combo_set_index(hSkinFontSize_, std::clamp(config_.font_size, 12, 24) - 12);
+    set_check(hSkinCustomColors_, config_.skin_custom_colors);
+    set_check(hSkinScaleWithFont_, config_.skin_scale_with_font);
+    {
+        const cxxime::Theme theme = cxxime::build_theme_from_config(config_);
+        const auto hex = [](const cxxime::Color& c) {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "#%02X%02X%02X", c.r, c.g, c.b);
+            return std::string(buf);
+        };
+        skin_pinyin_hex_ = config_.skin_pinyin_color.empty() ? hex(theme.preedit_text)
+                                                             : config_.skin_pinyin_color;
+        skin_focused_hex_ = config_.skin_focused_color.empty() ? hex(theme.hilited_text)
+                                                               : config_.skin_focused_color;
+        skin_focused_back_hex_ = config_.skin_focused_back_color.empty()
+                                     ? hex(theme.hilited_back)
+                                     : config_.skin_focused_back_color;
+        skin_candidate_hex_ = config_.skin_candidate_color.empty() ? hex(theme.text)
+                                                                   : config_.skin_candidate_color;
+        skin_background_hex_ = config_.skin_background_color.empty() ? hex(theme.background)
+                                                                     : config_.skin_background_color;
+    }
     set_check(hVertical_, config_.layout != "horizontal");
     set_check(hHorizontal_, config_.layout == "horizontal");
 
@@ -525,6 +624,8 @@ void EditorApp::populate_controls() {
     combo_set_index(hLanguage_, language_index);
     set_check(hEnglishCorrection_, config_.english.correction);
     set_check(hAutostart_, config_.autostart);
+    set_check(hInlinePreedit_, !config_.inline_preedit);
+    set_check(hShowStatus_, config_.show_status);
     set_check(hLaya_, config_.laya.enable);
     // 词语 n-gram：配置里是文件路径，空 = 不用（与数据文件里默认的 ngram/zh.ngram 对应）。
     set_check(hNgram_, !config_.laya.ngram.empty());
@@ -590,9 +691,20 @@ bool EditorApp::read_controls(bool report_errors) {
                                   static_cast<int>(std::size(kShuangpinSchemeLabels)) - 1);
     c.shuangpin_scheme = built_in_pinyin_schemes()[1 + static_cast<std::size_t>(scheme)].id;
     c.theme = get_check(hDark_) ? kDarkTheme : kLightTheme;
-    c.font_size = get_check(hFontSmall_) ? kFontSmall
-                  : get_check(hFontLarge_) ? kFontLarge
-                                           : kFontMedium;
+    {
+        const int index = combo_index(hSkinFont_);
+        if (index >= 0 && static_cast<std::size_t>(index) < skin_fonts_.size()) {
+            c.font_name = wstr_to_utf8(skin_fonts_[static_cast<std::size_t>(index)]);
+        }
+    }
+    c.font_size = std::clamp(combo_index(hSkinFontSize_) + 12, 12, 24);
+    c.skin_custom_colors = get_check(hSkinCustomColors_);
+    c.skin_pinyin_color = skin_pinyin_hex_;
+    c.skin_focused_color = skin_focused_hex_;
+    c.skin_focused_back_color = skin_focused_back_hex_;
+    c.skin_candidate_color = skin_candidate_hex_;
+    c.skin_background_color = skin_background_hex_;
+    c.skin_scale_with_font = get_check(hSkinScaleWithFont_);
     c.layout = get_check(hHorizontal_) ? "horizontal" : "vertical";
     c.page_size = std::clamp(combo_index(hPageSize_) + kMinPageSize, kMinPageSize, kMaxPageSize);
     const int language_index = combo_index(hLanguage_);
@@ -633,6 +745,8 @@ bool EditorApp::read_controls(bool report_errors) {
         if (!current.empty()) c.pass_through_programs.push_back(std::move(current));
     }
     c.autostart = get_check(hAutostart_);
+    c.inline_preedit = !get_check(hInlinePreedit_);
+    c.show_status = get_check(hShowStatus_);
     c.laya.enable = get_check(hLaya_);
     // 勾上就用默认路径（配置里已有别的路径就留着），没勾就是空 = 不加载。
     if (get_check(hNgram_)) {
@@ -746,6 +860,140 @@ void EditorApp::restore_default_keys() {
     set_switch_key_boxes(defaults);
 }
 
+
+bool EditorApp::is_skin_swatch(int id) const {
+    return id == kSkinPinyinColorId || id == kSkinFocusedColorId ||
+           id == kSkinFocusedBackColorId || id == kSkinCandidateColorId ||
+           id == kSkinBackgroundColorId;
+}
+
+void EditorApp::draw_skin_swatch(const DRAWITEMSTRUCT& item) {
+    const std::string* hex = nullptr;
+    const wchar_t* label = L"";
+    const cxxime::Color* theme_color = nullptr;
+    const cxxime::Theme theme = cxxime::build_theme_from_config(config_);
+    switch (item.CtlID) {
+    case kSkinPinyinColorId:
+        hex = &skin_pinyin_hex_; label = tr("general.skin_pinyin");
+        theme_color = &theme.preedit_text;
+        break;
+    case kSkinFocusedColorId:
+        hex = &skin_focused_hex_; label = tr("general.skin_focused");
+        theme_color = &theme.hilited_text;
+        break;
+    case kSkinFocusedBackColorId:
+        hex = &skin_focused_back_hex_; label = tr("general.skin_focused_back");
+        theme_color = &theme.hilited_back;
+        break;
+    case kSkinCandidateColorId:
+        hex = &skin_candidate_hex_; label = tr("general.skin_candidate");
+        theme_color = &theme.text;
+        break;
+    default:
+        hex = &skin_background_hex_; label = tr("general.skin_background");
+        theme_color = &theme.background;
+        break;
+    }
+    // "#RRGGBB" → COLORREF（BGR）
+    unsigned int r = 0, g = 0, b = 0;
+    if (hex->size() == 7 && (*hex)[0] == '#') {
+        r = std::stoul(hex->substr(1, 2), nullptr, 16);
+        g = std::stoul(hex->substr(3, 2), nullptr, 16);
+        b = std::stoul(hex->substr(5, 2), nullptr, 16);
+    } else if (theme_color) {
+        // 没自定义过就显示主题当前色（勾选框关着时看到的就是 theme 的样子）。
+        r = theme_color->r;
+        g = theme_color->g;
+        b = theme_color->b;
+    }
+    HDC dc = item.hDC;
+    const RECT r0 = item.rcItem;
+    // 颜色底
+    HBRUSH brush = CreateSolidBrush(RGB(r, g, b));
+    FillRect(dc, &r0, brush);
+    DeleteObject(brush);
+    // 边框
+    const UiColors& colors = ui_colors();
+    HPEN pen = CreatePen(PS_SOLID, 1, (item.itemState & ODS_DISABLED) ? colors.hint : colors.border);
+    HPEN old_pen = static_cast<HPEN>(SelectObject(dc, pen));
+    HBRUSH old_brush = static_cast<HBRUSH>(SelectObject(dc, GetStockObject(NULL_BRUSH)));
+    Rectangle(dc, r0.left, r0.top, r0.right, r0.bottom);
+    SelectObject(dc, old_brush);
+    SelectObject(dc, old_pen);
+    DeleteObject(pen);
+    // 文字：底色的明暗决定黑还是白
+    const int luma = (r * 299 + g * 587 + b * 114) / 1000;
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, luma > 140 ? RGB(20, 20, 20) : RGB(250, 250, 250));
+    HFONT font = get_small_font();
+    HFONT old_font = static_cast<HFONT>(SelectObject(dc, font ? font : get_font()));
+    std::wstring text = label;  // 只写名字，不显示 #RRGGBB
+    RECT tr = r0;
+    DrawTextW(dc, text.c_str(), -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SelectObject(dc, old_font);
+}
+
+void EditorApp::pick_skin_color(int id) {
+    std::string* hex = nullptr;
+    HWND swatch = nullptr;
+    switch (id) {
+    case kSkinPinyinColorId: hex = &skin_pinyin_hex_; swatch = hSkinColorPinyin_; break;
+    case kSkinFocusedColorId: hex = &skin_focused_hex_; swatch = hSkinColorFocused_; break;
+    case kSkinFocusedBackColorId:
+        hex = &skin_focused_back_hex_; swatch = hSkinColorFocusedBack_;
+        break;
+    case kSkinCandidateColorId: hex = &skin_candidate_hex_; swatch = hSkinColorCandidate_; break;
+    default: hex = &skin_background_hex_; swatch = hSkinColorBack_; break;
+    }
+    unsigned int r = 0, g = 0, b = 0;
+    if (hex->size() == 7 && (*hex)[0] == '#') {
+        r = std::stoul(hex->substr(1, 2), nullptr, 16);
+        g = std::stoul(hex->substr(3, 2), nullptr, 16);
+        b = std::stoul(hex->substr(5, 2), nullptr, 16);
+    }
+    static COLORREF custom[16] = {};
+    CHOOSECOLORW cc = {};
+    cc.lStructSize = sizeof(cc);
+    cc.hwndOwner = hwnd_;
+    cc.rgbResult = RGB(r, g, b);
+    cc.lpCustColors = custom;
+    cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+    if (!ChooseColorW(&cc)) return;
+    char buf[8];
+    snprintf(buf, sizeof(buf), "#%02X%02X%02X", GetRValue(cc.rgbResult),
+             GetGValue(cc.rgbResult), GetBValue(cc.rgbResult));
+    *hex = buf;
+    // 选了颜色就顺手打开「使用自定义颜色」（否则选了也不生效）。
+    set_check(hSkinCustomColors_, true);
+    update_enabled_controls();
+    if (swatch) InvalidateRect(swatch, nullptr, TRUE);
+}
+
+namespace {
+int CALLBACK collect_font_family(const LOGFONTW* font, const TEXTMETRICW*, DWORD, LPARAM data) {
+    auto* names = reinterpret_cast<std::vector<std::wstring>*>(data);
+    // 竖排字体的名字以 @ 开头，不列。
+    if (font && font->lfFaceName[0] != L'@') names->push_back(font->lfFaceName);
+    return 1;
+}
+
+// 本机已安装的字体族（去重、排序）。放在同一个匿名命名空间里，与上面的前置声明同链接。
+std::vector<std::wstring> installed_font_families() {
+    std::vector<std::wstring> names;
+    HDC dc = GetDC(nullptr);
+    if (dc) {
+        LOGFONTW query = {};
+        query.lfCharSet = DEFAULT_CHARSET;
+        EnumFontFamiliesExW(dc, &query, collect_font_family,
+                            reinterpret_cast<LPARAM>(&names), 0);
+        ReleaseDC(nullptr, dc);
+    }
+    std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
+    return names;
+}
+}  // namespace
+
 void EditorApp::update_enabled_controls() {
     // The pairs keep their check marks but are grayed out while fuzzy pinyin is off.
     const bool fuzzy = get_check(hFuzzyEnabled_);
@@ -757,6 +1005,12 @@ void EditorApp::update_enabled_controls() {
     }
     if (hNgram_) {
         EnableWindow(hNgram_, get_check(hLaya_));  // 推荐关着时 n-gram 也没意义
+    }
+    // 皮肤：不勾「使用自定义颜色」时色块只是显示主题色，点不动。
+    const bool skin = get_check(hSkinCustomColors_);
+    for (HWND swatch : {hSkinColorPinyin_, hSkinColorFocused_, hSkinColorFocusedBack_,
+                        hSkinColorCandidate_, hSkinColorBack_}) {
+        if (swatch) EnableWindow(swatch, skin ? TRUE : FALSE);
     }
     // 镜像下载: the address only matters with the box ticked, and the typed-in one only with 自定义.
     const bool mirror = get_check(hMirrorEnable_);
@@ -784,6 +1038,16 @@ bool EditorApp::handle_command(int control_id, int notification) {
         if (notification == BN_CLICKED) {
             update_enabled_controls();
         }
+        return true;
+    case kSkinPinyinColorId:
+    case kSkinFocusedColorId:
+    case kSkinFocusedBackColorId:
+    case kSkinCandidateColorId:
+    case kSkinBackgroundColorId:
+        if (notification == STN_CLICKED) pick_skin_color(control_id);
+        return true;
+    case kSkinCustomColorsId:
+        if (notification == BN_CLICKED) update_enabled_controls();
         return true;
     case kMirrorEnableId:
     case kMirrorId:

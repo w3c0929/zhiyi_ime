@@ -341,6 +341,7 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(shuangpin_scheme);
     KEEP_PAGE_EDIT(theme);
     KEEP_PAGE_EDIT(font_size);
+    KEEP_PAGE_EDIT(font_name);
     KEEP_PAGE_EDIT(layout);
     KEEP_PAGE_EDIT(gloss_targets);
     KEEP_PAGE_EDIT(digits_type_translation);
@@ -358,6 +359,15 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(update_mirror_url);
     KEEP_PAGE_EDIT(pass_through_programs);
     KEEP_PAGE_EDIT(autostart);
+    KEEP_PAGE_EDIT(inline_preedit);
+    KEEP_PAGE_EDIT(show_status);
+    KEEP_PAGE_EDIT(skin_custom_colors);
+    KEEP_PAGE_EDIT(skin_pinyin_color);
+    KEEP_PAGE_EDIT(skin_focused_color);
+    KEEP_PAGE_EDIT(skin_focused_back_color);
+    KEEP_PAGE_EDIT(skin_candidate_color);
+    KEEP_PAGE_EDIT(skin_background_color);
+    KEEP_PAGE_EDIT(skin_scale_with_font);
     KEEP_PAGE_EDIT(laya.enable);
     KEEP_PAGE_EDIT(laya.ngram);
     KEEP_PAGE_EDIT(laya.device);
@@ -625,6 +635,10 @@ LRESULT CALLBACK EditorApp::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_DRAWITEM: {
         const auto* dis = reinterpret_cast<const DRAWITEMSTRUCT*>(lp);
         if (a->handle_learning_item(msg, lp)) return TRUE;
+        if (dis->CtlType == ODT_STATIC && a->is_skin_swatch(dis->CtlID)) {
+            a->draw_skin_swatch(*dis);
+            return TRUE;
+        }
         if (dis->CtlType == ODT_BUTTON) {
             draw_button(*dis);
             return TRUE;

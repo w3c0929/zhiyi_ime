@@ -154,16 +154,23 @@ bool TextService::_apply_engine_response(ITfContext* context, const cxxime::IPCR
             _end_reading_ui_element("hide:candidate_mirror_no_reading");
             external_candidate_window = _publish_candidate_ui_element();
             candidate_ui_published = true;
-            const bool use_decorated_inline =
-                _config.inline_preedit && _config.preedit_type == "composition";
-            const cxxime_tsf::PreeditText& inline_preedit = use_decorated_inline
-                ? decoded.display_preedit
-                : decoded.logical_preedit;
-            composition_result = apply_composition(
-                inline_preedit.text, inline_preedit.cursor,
-                inline_preedit.converted_prefix, inline_preedit.focused_start,
-                inline_preedit.focused_end, false,
-                use_decorated_inline ? decision.host_termination_text : std::nullopt);
+            if (!_config.inline_preedit) {
+                // Popup-only mode (style.inline_preedit = false): the host — Chromium and the like,
+                // which ask for the IME's own UI element for the candidates — gets an empty
+                // composition, and the candidate window shows what is being typed. The empty write
+                // is what keeps layout and selection tracking alive, as in the branch below.
+                composition_result = apply_composition(L"", 0, 0, 0, 0, false, std::nullopt);
+            } else {
+                const bool use_decorated_inline = _config.preedit_type == "composition";
+                const cxxime_tsf::PreeditText& inline_preedit = use_decorated_inline
+                    ? decoded.display_preedit
+                    : decoded.logical_preedit;
+                composition_result = apply_composition(
+                    inline_preedit.text, inline_preedit.cursor,
+                    inline_preedit.converted_prefix, inline_preedit.focused_start,
+                    inline_preedit.focused_end, false,
+                    use_decorated_inline ? decision.host_termination_text : std::nullopt);
+            }
         } else if (decision.start_composition) {
             _update_reading_ui_element(context, decoded.logical_preedit.text);
             composition_result = apply_composition(decision.inline_text, decision.inline_cursor,

@@ -30,6 +30,7 @@
         "font_point": 14,
         "layout": "vertical",
         "render_backend": "d2d",
+        "inline_preedit": true,
         "candidate_count": 7,
         "preedit_type": "composition"
     },
@@ -39,8 +40,8 @@
         "min_height": 0,
         "max_height": 0,
         "margin_x": 12,
-        "margin_y": 12,
-        "spacing": 10,
+        "margin_y": 4,
+        "spacing": 6,
         "candidate_spacing": 11,
         "row_spacing": 4,
         "hilite_spacing": 4,

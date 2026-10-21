@@ -44,6 +44,27 @@ static int preedit_font_size(const Config& cfg) {
     return std::clamp(size, 1, 72);
 }
 
+namespace {
+// "#RRGGBB" / "RRGGBB" → Color；格式不对就用 fallback（黑色）。
+Color parse_color_hex(const std::string& text) {
+    std::string hex = text;
+    if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+    if (hex.size() != 6) return Color{0, 0, 0, 255};
+    auto byte = [&](std::size_t at) -> uint8_t {
+        auto nibble = [](char c) -> int {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+            if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+            return -1;
+        };
+        const int hi = nibble(hex[at]), lo = nibble(hex[at + 1]);
+        if (hi < 0 || lo < 0) return 0;
+        return static_cast<uint8_t>((hi << 4) | lo);
+    };
+    return Color{byte(0), byte(2), byte(4), 255};
+}
+}  // namespace
+
 Theme build_theme_from_config(const Config& cfg) {
     const Config::SchemeColors* s = find_scheme(cfg, cfg.theme);
     if (!s) s = find_scheme(cfg, "aqua");
@@ -86,6 +107,16 @@ Theme build_theme_from_config(const Config& cfg) {
     t.preedit_cursor = to_color(s->preedit_cursor_color);
     t.prev_page    = to_color(s->prevpage_color);
     t.next_page    = to_color(s->nextpage_color);
+
+    // 皮肤（设置 > 常规 > 皮肤）：四色覆盖主题；空着的沿用主题。custom_colors 关掉时完全照主题。
+    if (cfg.skin_custom_colors) {
+        if (!cfg.skin_pinyin_color.empty()) t.preedit_text = parse_color_hex(cfg.skin_pinyin_color);
+        if (!cfg.skin_focused_color.empty()) t.hilited_text = parse_color_hex(cfg.skin_focused_color);
+        if (!cfg.skin_focused_back_color.empty())
+            t.hilited_back = parse_color_hex(cfg.skin_focused_back_color);
+        if (!cfg.skin_candidate_color.empty()) t.text = parse_color_hex(cfg.skin_candidate_color);
+        if (!cfg.skin_background_color.empty()) t.background = parse_color_hex(cfg.skin_background_color);
+    }
     t.font_size    = cfg.font_size;
     t.preedit_font_size = preedit_font_size(cfg);
     t.font_name    = to_wstr(cfg.font_name);

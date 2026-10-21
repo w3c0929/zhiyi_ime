@@ -333,6 +333,8 @@ private:
             dispatch_command(cxxime::UiCommandType::kSelectCandidate,
                              static_cast<std::uint32_t>(index));
         });
+        // 候选窗的工具栏：右下角那个 ☰（打开设置）。动作菜单之类复用同一个窗口的地方不开。
+        candidate_window_.set_toolbar(true);
         candidate_window_.set_page_callback([this](cxxime::CandidatePageDirection direction) {
             dispatch_command(direction == cxxime::CandidatePageDirection::Previous
                                  ? cxxime::UiCommandType::kPagePrevious

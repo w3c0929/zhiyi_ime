@@ -59,6 +59,37 @@ bool current_process_is_elevated() {
 
 } // namespace
 
+std::string TextService::_status_line() {
+    cxxime::ImeStatus status;
+    {
+        std::lock_guard<std::mutex> lock(_lastImeStatusMutex);
+        status = _lastImeStatus;
+    }
+    const bool english = _config.ui_language.compare(0, 2, "en") == 0;
+    const auto flag = [&](cxxime::ImeStatusFlag f) { return status.has_flag(f); };
+    std::string line = status.chinese_mode() ? (english ? "Chinese" : "中文")
+                                             : (english ? "English" : "英文");
+    if (status.chinese_mode()) {
+        line += " · ";
+        if (status.input_mode == cxxime::InputMode::WUBI) {
+            line += english ? "Wubi" : "五笔";
+        } else if (flag(cxxime::ImeStatusFlag::PINYIN_INITIALS)) {
+            line += english ? "Initials" : "首字母";
+        } else if (flag(cxxime::ImeStatusFlag::SHUANGPIN)) {
+            line += english ? "Shuangpin" : "双拼";
+        } else {
+            line += english ? "Full pinyin" : "全拼";
+        }
+    }
+    line += " · ";
+    line += flag(cxxime::ImeStatusFlag::FULL_SHAPE) ? (english ? "Full shape" : "全角")
+                                                    : (english ? "Half shape" : "半角");
+    line += " · ";
+    line += flag(cxxime::ImeStatusFlag::CHINESE_PUNCT) ? (english ? "CN punct" : "中文标点")
+                                                       : (english ? "EN punct" : "英文标点");
+    return line;
+}
+
 bool TextService::_present_local_candidate_window(const cxxime::CandidatePresentationPage& page,
                                                   int page_current, int page_total,
                                                   const std::string& preedit,
@@ -84,6 +115,9 @@ bool TextService::_present_local_candidate_window(const cxxime::CandidatePresent
             _localCandidateWindow.reset();
             return false;
         }
+        // 工具栏（☰ 打开设置、横排上下双箭头翻页）：本地窗口也要有，否则 Chromium 这类
+        // 走本地候选窗的程序里看不到。
+        _localCandidateWindow->set_toolbar(true);
         _localCandidateWindow->set_candidate_selection_callback(
             [this](std::size_t index) {
                 select_candidate_from_ui(
@@ -112,6 +146,10 @@ bool TextService::_present_local_candidate_window(const cxxime::CandidatePresent
     // fallback window never goes through the server's set_layout call, so without this it would
     // keep CandidateWindow's default horizontal layout no matter what the settings say.
     _localCandidateWindow->set_layout(_config.layout);
+    _localCandidateWindow->set_toolbar(true);
+    // 右上角状态：只在这个开关打开时显示（默认关）。
+    _localCandidateWindow->set_status_text(_config.show_status ? _status_line()
+                                                               : std::string());
     _localCandidateWindow->set_page_info(page_current, page_total);
     _localCandidateWindow->set_preedit(
         preedit, preedit_cursor, _candidatePresentation.converted_prefix_bytes(),

@@ -31,18 +31,6 @@ static Color separator_color(const Theme* theme) {
     };
 }
 
-static void draw_preedit_separator(HDC dc, const RECT& clip, const RenderContext& ctx,
-                                   int margin) {
-    auto* cfg = ctx.layout_cfg;
-    int sep_y = ctx.preedit_rect.bottom + (cfg ? cfg->spacing / 3 : 5);
-    const Color color = ctx.high_contrast ? ctx.theme->border : separator_color(ctx.theme);
-    HPEN sep = CreatePen(PS_SOLID, 1, clr(color));
-    HPEN old_p = (HPEN)SelectObject(dc, sep);
-    MoveToEx(dc, margin + 2, sep_y, nullptr);
-    LineTo(dc, clip.right - margin - 2, sep_y);
-    SelectObject(dc, old_p);
-    DeleteObject(sep);
-}
 
 static void draw_border(HDC dc, const RECT& clip, const RenderContext& ctx) {
     auto* cfg = ctx.layout_cfg;
@@ -68,26 +56,7 @@ static void draw_preedit(HDC dc, const RenderContext& ctx, HFONT font, COLORREF 
     }
 
     HFONT old_font = static_cast<HFONT>(SelectObject(dc, font));
-    if (ctx.preedit_active_rect.right > ctx.preedit_active_rect.left) {
-        const COLORREF active_back = clr(ctx.theme->preedit_active_back);
-        const COLORREF active_border = clr(ctx.theme->preedit_active_border);
-        HBRUSH brush = CreateSolidBrush(active_back);
-        HPEN pen = ctx.preedit_border_width > 0
-                       ? CreatePen(PS_SOLID, ctx.preedit_border_width, active_border)
-                       : static_cast<HPEN>(GetStockObject(NULL_PEN));
-        HBRUSH old_brush = static_cast<HBRUSH>(SelectObject(dc, brush));
-        HPEN old_pen = static_cast<HPEN>(SelectObject(dc, pen));
-        const int corner_diameter = ctx.preedit_corner_radius * 2;
-        RoundRect(dc, ctx.preedit_active_rect.left, ctx.preedit_active_rect.top,
-                  ctx.preedit_active_rect.right, ctx.preedit_active_rect.bottom,
-                  corner_diameter, corner_diameter);
-        SelectObject(dc, old_pen);
-        SelectObject(dc, old_brush);
-        if (ctx.preedit_border_width > 0) {
-            DeleteObject(pen);
-        }
-        DeleteObject(brush);
-    }
+    // The popup preedit is plain text: no fill and no box (see d2d_renderer.cc).
 
     SetBkMode(dc, TRANSPARENT);
     for (const auto& run : ctx.preedit_runs) {
@@ -148,7 +117,7 @@ void GdiRenderer::initialize(HWND hwnd, const Theme& theme, UINT dpi) {
                                 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                                 OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                                 DEFAULT_PITCH | FF_DONTCARE, theme.font_name.c_str());
-    nav_font_ = CreateFontW(-MulDiv(9, dpi, 72),
+    nav_font_ = CreateFontW(-MulDiv(theme.font_size, dpi, 72),
                             0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                             DEFAULT_PITCH | FF_DONTCARE, theme.font_name.c_str());
@@ -201,7 +170,6 @@ void GdiRenderer::render(HDC hdc, const RECT& clip, const RenderContext& ctx) {
             DrawTextW(target_dc, L"知语输入法", -1, const_cast<RECT*>(&clip), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
         if (!ctx.preedit.empty() && ctx.preedit_rect.right > ctx.preedit_rect.left)
-            draw_preedit_separator(target_dc, clip, ctx, margin);
         draw_border(target_dc, clip, ctx);
         if (buffer_dc) {
             BitBlt(hdc, clip.left, clip.top, width, height, buffer_dc, 0, 0, SRCCOPY);
@@ -219,8 +187,46 @@ void GdiRenderer::render(HDC hdc, const RECT& clip, const RenderContext& ctx) {
     if (!ctx.preedit.empty() && ctx.preedit_rect.right > ctx.preedit_rect.left && preedit_font_) {
         draw_preedit(target_dc, ctx, preedit_font_, preedit_color_,
                      preedit_cursor_color_);
-        // Thin separator line between preedit and candidates
-        draw_preedit_separator(target_dc, clip, ctx, margin);
+    }
+
+    // 状态串：横排一行右对齐；竖排一列、每行一个字。
+    if (!ctx.status_text.empty() && ctx.theme && preedit_font_ &&
+        ctx.status_rect.right > ctx.status_rect.left) {
+        HFONT old_status = (HFONT)SelectObject(target_dc, preedit_font_);
+        SetBkMode(target_dc, TRANSPARENT);
+        SetTextColor(target_dc, clr(ctx.theme->comment_text));
+        const std::wstring status = to_wstr(ctx.status_text);
+        if (ctx.status_vertical) {
+            // 竖排：行距被收紧时按同一比例缩小字号，避免字形被字框裁掉。
+            HFONT vfont = preedit_font_;
+            const float scale = ctx.status_font_scale > 0.05f ? ctx.status_font_scale : 1.0f;
+            if (scale < 0.995f) {
+                LOGFONTW lf{};
+                if (GetObjectW(preedit_font_, sizeof(lf), &lf)) {
+                    lf.lfHeight = static_cast<LONG>(lf.lfHeight * scale);
+                    vfont = CreateFontIndirectW(&lf);
+                }
+            }
+            if (vfont) SelectObject(target_dc, vfont);
+            std::size_t at = 0;
+            for (const RECT& gr : ctx.status_glyph_rects) {
+                while (at < status.size() && is_status_space(status[at])) {
+                    ++at;
+                }
+                if (at >= status.size()) break;
+                wchar_t ch = status[at++];
+                RECT sr = gr;
+                DrawTextW(target_dc, &ch, 1, &sr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            }
+            if (vfont && vfont != preedit_font_) {
+                SelectObject(target_dc, preedit_font_);
+                DeleteObject(vfont);
+            }
+        } else {
+            RECT sr = ctx.status_rect;
+            DrawTextW(target_dc, status.c_str(), -1, &sr, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        }
+        SelectObject(target_dc, old_status);
     }
 
     // Candidates
@@ -325,8 +331,18 @@ void GdiRenderer::render(HDC hdc, const RECT& clip, const RenderContext& ctx) {
                 SelectObject(target_dc, op);
                 SelectObject(target_dc, ob);
             }
-            SetTextColor(target_dc, h ? hl_text_color_ : (pe ? nav_color_ : dim));
-            DrawTextW(target_dc, L"<", 1, const_cast<RECT*>(&ctx.prev_button_rect), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            const RECT& pb = ctx.prev_button_rect;
+            const int pcx = (pb.left + pb.right) / 2;
+            const int pcy = (pb.top + pb.bottom) / 2;
+            const int phw = (pb.right - pb.left) * 16 / 100;
+            const int phh = (pb.bottom - pb.top) * 20 / 100;
+            HPEN chev = CreatePen(PS_SOLID, 2, h ? hl_text_color_ : (pe ? nav_color_ : dim));
+            HPEN old_chev = (HPEN)SelectObject(target_dc, chev);
+            MoveToEx(target_dc, pcx + phw, pcy - phh, nullptr);
+            LineTo(target_dc, pcx - phw, pcy);
+            LineTo(target_dc, pcx + phw, pcy + phh);
+            SelectObject(target_dc, old_chev);
+            DeleteObject(chev);
         }
         // >
         {
@@ -339,10 +355,54 @@ void GdiRenderer::render(HDC hdc, const RECT& clip, const RenderContext& ctx) {
                 SelectObject(target_dc, op);
                 SelectObject(target_dc, ob);
             }
-            SetTextColor(target_dc, h ? hl_text_color_ : (ne ? nav_color_ : dim));
-            DrawTextW(target_dc, L">", 1, const_cast<RECT*>(&ctx.next_button_rect), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            const RECT& nb = ctx.next_button_rect;
+            const int ncx = (nb.left + nb.right) / 2;
+            const int ncy = (nb.top + nb.bottom) / 2;
+            const int nhw = (nb.right - nb.left) * 16 / 100;
+            const int nhh = (nb.bottom - nb.top) * 20 / 100;
+            HPEN chev = CreatePen(PS_SOLID, 2, h ? hl_text_color_ : (ne ? nav_color_ : dim));
+            HPEN old_chev = (HPEN)SelectObject(target_dc, chev);
+            MoveToEx(target_dc, ncx - nhw, ncy - nhh, nullptr);
+            LineTo(target_dc, ncx + nhw, ncy);
+            LineTo(target_dc, ncx - nhw, ncy + nhh);
+            SelectObject(target_dc, old_chev);
+            DeleteObject(chev);
         }
         SelectObject(target_dc, old_nav);
+    }
+
+    // Toolbar: the settings button (☰) — three bars, hovered like the page arrows.
+    if (ctx.settings_button_rect.right > ctx.settings_button_rect.left && ctx.theme) {
+        const RECT& sb = ctx.settings_button_rect;
+        const bool h = ctx.hovered_target == CandidateHoverTarget::Settings;
+        if (h) {
+            HBRUSH ob = (HBRUSH)SelectObject(target_dc, hl_brush_);
+            HPEN op = (HPEN)SelectObject(target_dc, GetStockObject(NULL_PEN));
+            RoundRect(target_dc, sb.left, sb.top, sb.right, sb.bottom,
+                      corner > 2 ? corner - 1 : 1, corner > 2 ? corner - 1 : 1);
+            SelectObject(target_dc, op);
+            SelectObject(target_dc, ob);
+        }
+        const COLORREF color = h ? hl_text_color_ : nav_color_;
+        HBRUSH brush = CreateSolidBrush(color);
+        const int box_h = sb.bottom - sb.top;
+        const int box_w = sb.right - sb.left;
+        int ch = (box_h * 7 + 50) / 100;  // ≈ 2px：条厚
+        if (ch < 2) ch = 2;
+        const int gap = ch * 2;           // 缝 = 2 倍条厚
+        const int cw = (box_w * 87 + 50) / 100;
+        const int total = ch * 3 + gap * 2;
+        const int cx = (sb.left + sb.right) / 2;
+        const int cy = (sb.top + sb.bottom) / 2;
+        const int step = ch + gap;
+        const int top = cy - total / 2;
+        const int left = cx - cw / 2;
+        for (int i = 0; i < 3; ++i) {
+            const int y = top + i * step;
+            RECT bar = {left, y, left + cw, y + ch};
+            FillRect(target_dc, &bar, brush);
+        }
+        DeleteObject(brush);
     }
 
     draw_border(target_dc, clip, ctx);

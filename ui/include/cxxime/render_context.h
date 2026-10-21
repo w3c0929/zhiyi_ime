@@ -84,7 +84,7 @@ struct Config;
 Theme build_theme_from_config(const Config& cfg);
 
 struct LayoutConfig;
-enum class CandidateHoverTarget { None, Candidate, PreviousPage, NextPage };
+enum class CandidateHoverTarget { None, Candidate, PreviousPage, NextPage, Settings };
 enum class PreeditRunKind { Converted, Active, Separator };
 
 struct PreeditTextRun {
@@ -94,11 +94,25 @@ struct PreeditTextRun {
     bool focused = false;
 };
 
+// 竖排状态串里不占行的字符（空格、制表、换行）。
+inline bool is_status_space(wchar_t ch) {
+    return ch == L' ' || ch == L'\t' || ch == L'\r' || ch == L'\n';
+}
+
 struct RenderContext {
     const std::vector<CandidateRect>* rects = nullptr;
     const Theme* theme = nullptr;
     const LayoutConfig* layout_cfg = nullptr;
     std::string preedit;
+    // 右上角的状态串（中文·全拼·半角·中文标点），空 = 不显示
+    std::string status_text;
+    RECT status_rect{};  // 状态串的整体区域（横排：一行；竖排：一列）
+    bool status_vertical = false;  // 竖排：一个字一行，右侧一列
+    // 竖排时每个字一个字框（几何和渲染共用，避免两边算法不一致）。
+    std::vector<RECT> status_glyph_rects;
+    // 竖排状态列为了塞进窗口高度而缩小的字号比例（1.0 = 不缩）。
+    float status_font_scale = 1.0f;
+    int status_width = 0;  // 横排状态串的像素宽度（用来和 ☰ 按钮对齐）
     size_t preedit_cursor = 0;
     bool preedit_cursor_in_focus = false;
     bool preedit_cursor_emphasized = false;
@@ -119,6 +133,8 @@ struct RenderContext {
     RECT page_indicator_rect{};
     RECT prev_button_rect{};
     RECT next_button_rect{};
+    // Settings button (the toolbar's ☰): opens the settings program.
+    RECT settings_button_rect{};
     int preedit_text_height = 0;
 };
 

@@ -58,6 +58,7 @@ target_link_libraries(cxxime-settings PRIVATE
     cxxime-update
     miniz
     comctl32.lib
+    comdlg32.lib
     imm32.lib
 )
 

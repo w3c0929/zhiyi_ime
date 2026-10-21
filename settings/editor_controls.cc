@@ -428,6 +428,15 @@ HWND make_check(int id, const wchar_t* text, int x, int y, int width, HWND paren
     return check;
 }
 
+// 一块颜色样本（皮肤设置用）：自绘的 STATIC，点一下由调用者打开取色对话框。
+HWND make_color_swatch(int id, int x, int y, int width, int height, HWND parent) {
+    HWND swatch = CreateWindowExW(
+        0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_OWNERDRAW | SS_NOTIFY, x, y, width, height,
+        parent, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), GetModuleHandle(nullptr),
+        nullptr);
+    return swatch;
+}
+
 HWND make_radio(int id, const wchar_t* text, int x, int y, int width, HWND parent, bool group) {
     HWND radio = CreateWindowExW(
         0, L"BUTTON", text,

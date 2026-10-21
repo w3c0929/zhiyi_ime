@@ -529,6 +529,8 @@ private:
     void _trace_ai_source(const char* tier, const std::wstring& text);
 
     void _hide_translate_window();
+    // 右上角那行状态（中文·全拼·半角·中文标点），style.show_status 打开时才用。
+    std::string _status_line();
     // The key that opens the voice post-processing list (纠错 / 提问 / 不使用), and that list itself.
     bool _is_voice_action_key(WPARAM key) const;
     void _open_voice_mode_menu();

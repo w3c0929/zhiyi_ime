@@ -210,6 +210,25 @@ private:
     HWND hAutostart_ = nullptr;  // startup.autostart
     HWND hLaya_ = nullptr;  // laya.enable (Chinese and English)
     HWND hNgram_ = nullptr;  // laya.ngram: the word n-gram beside the recommendation model
+    HWND hInlinePreedit_ = nullptr;  // style.inline_preedit (inverted: ticked = popup)
+    HWND hShowStatus_ = nullptr;  // style.show_status (the top-right state line)
+    // 皮肤（常规页底部）：四块颜色样本、字号下拉、随字体缩放
+    HWND hSkinCustomColors_ = nullptr;
+    HWND hSkinColorPinyin_ = nullptr;
+    HWND hSkinColorFocused_ = nullptr;
+    HWND hSkinColorFocusedBack_ = nullptr;
+    int skin_swatch_width_ = 0;  // 五个色块共用的宽度（最宽的那个文字）
+    HWND hSkinColorCandidate_ = nullptr;
+    HWND hSkinColorBack_ = nullptr;
+    HWND hSkinFont_ = nullptr;
+    HWND hSkinFontSize_ = nullptr;
+    HWND hSkinScaleWithFont_ = nullptr;
+    std::string skin_pinyin_hex_, skin_focused_hex_, skin_focused_back_hex_,
+        skin_candidate_hex_, skin_background_hex_;
+    std::vector<std::wstring> skin_fonts_;  // 字体下拉里的字体族
+    bool is_skin_swatch(int id) const;
+    void draw_skin_swatch(const DRAWITEMSTRUCT& item);
+    void pick_skin_color(int id);
     // laya.device (editor_gpu.cc): only created when this computer has a card to offer
     HWND hDevice_ = nullptr;
     HWND hDeviceHint_ = nullptr;

@@ -20,8 +20,8 @@ struct LayoutConfig {
     int max_width = 0;
     int max_height = 0;
     int margin_x = 12;
-    int margin_y = 12;
-    int spacing = 10;          // preedit to candidates gap
+    int margin_y = 6;          // top/bottom inset: Sogou-like, tight above the preedit row
+    int spacing = 8;           // preedit to candidates gap
     int candidate_spacing = 8; // between candidate cells
     int row_spacing = 4;       // between candidate rows (vertical layout)
     int hilite_spacing = 4;    // inner gap: label↔text
@@ -37,6 +37,9 @@ struct LayoutConfig {
     int preedit_boundary_gap = 1;           // focused input to following syllable mark
     int preedit_highlight_corner = 3;       // focused input corner radius
     int preedit_highlight_border_width = 1; // focused input border
+    // 翻页箭头与 ☰ 的竖直微调（dip，负数往上）：它们按候选文字行框居中，中文字形视觉
+    // 中心略高于行框中心时用这个挪一两个像素。
+    int nav_offset_y = 0;
 };
 
 // engine.input_style: the Chinese input style, Wubi (input_mode 1) or a pinyin style.
@@ -172,9 +175,23 @@ struct Config {
     // placeholder character in the document.
     bool inline_preedit = true;
     std::string preedit_type = "composition";
+    // Show the current state (Chinese/full/shape/punctuation) at the top-right of the
+    // candidate window's preedit row (settings > 常规 > 外观 > 状态显示). Off by default.
+    bool show_status = false;
 
     // theme
     std::string theme = "moon_light";  // "moon_light" (light) or "moon_dark" (dark)
+    // skin: the candidate window's own colours and size (settings > 常规 > 皮肤). The colours are
+    // "#RRGGBB"; an empty one keeps the theme's (themes.json). custom_colors off = the theme alone.
+    bool skin_custom_colors = false;
+    std::string skin_pinyin_color;     // the preedit (what is being typed)
+    std::string skin_focused_color;    // the focused candidate's text
+    std::string skin_focused_back_color;  // the focused candidate's background (the chip)
+    std::string skin_candidate_color;  // every other candidate
+    std::string skin_background_color; // the card
+    // Scale the paddings and spacing with the font size (style.font_point / 14), so a bigger字
+    // does not crowd the card.
+    bool skin_scale_with_font = false;
     // Settings UI language: "auto" (follow Windows) or a data/ui.<code>.json code.
     std::string ui_language = "auto";
 

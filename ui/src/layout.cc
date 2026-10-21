@@ -12,8 +12,8 @@ namespace cxxime {
 
 PageNavigationMetrics candidate_page_navigation_metrics(UINT dpi) {
     const UINT effective_dpi = dpi == 0 ? USER_DEFAULT_SCREEN_DPI : dpi;
-    return {(std::max)(1, MulDiv(16, effective_dpi, USER_DEFAULT_SCREEN_DPI)),
-            (std::max)(1, MulDiv(2, effective_dpi, USER_DEFAULT_SCREEN_DPI)),
+    return {(std::max)(1, MulDiv(18, effective_dpi, USER_DEFAULT_SCREEN_DPI)),
+            (std::max)(1, MulDiv(6, effective_dpi, USER_DEFAULT_SCREEN_DPI)),
             (std::max)(1, MulDiv(4, effective_dpi, USER_DEFAULT_SCREEN_DPI))};
 }
 
@@ -186,16 +186,10 @@ LayoutResult calculate_horizontal_layout(HDC hdc,
     result.row_height = rh;
     int text_slack = text_render_slack(rh);
 
+    // 分页箭头与工具栏现在**排在最后一个候选之后**，由 update_geometry 把窗口加宽到它们右边，
+    // 所以这里不再预留 nav_extra：预留会变成候选与箭头之间那段空白。
     int max_w = cfg.max_width > 0 ? cfg.max_width : 600;
-    int nav_extra = 0;
-    if (page_total > 1) {
-        const PageNavigationMetrics nav = candidate_page_navigation_metrics(dpi);
-        const int nav_buttons_width = nav.button_width * 2 + nav.gap;
-        int nav_overlap = cfg.hilite_padding_x + nav.leading_gap - cfg.candidate_spacing;
-        nav_extra = nav_buttons_width + (std::max)(0, nav_overlap);
-        max_w = (std::max)(1, max_w - nav_extra);
-    }
-    int min_w = (std::max)(0, cfg.min_width - nav_extra);
+    int min_w = (std::max)(0, cfg.min_width);
     if (min_w > max_w) {
         min_w = max_w;
     }
@@ -275,8 +269,6 @@ LayoutResult calculate_horizontal_layout(HDC hdc,
     result.width = content_w + cfg.margin_x;
     if (result.width > max_w) result.width = max_w;
     if (result.width < min_w) result.width = min_w;
-    // Add back nav space for window sizing
-    result.width += nav_extra;
     result.height = rh + cfg.margin_y * 2;
     return result;
 }

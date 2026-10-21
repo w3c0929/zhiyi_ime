@@ -372,7 +372,11 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         if (config.font_size > 72) config.font_size = 72;
         load_string(s, "layout", config.layout);
         load_string(s, "render_backend", config.render_backend);
+        // false: the popup shows what is typed (preedit row, focused part highlighted) and the
+        // document stays empty — the Sogou-like card (docs/ai.md is not it; see settings-guide).
+        load_bool(s, "inline_preedit", config.inline_preedit);
         load_string(s, "preedit_type", config.preedit_type);
+        load_bool(s, "show_status", config.show_status);
         if (config.preedit_type != "composition" && config.preedit_type != "preview")
             config.preedit_type = "composition";
     }
@@ -401,10 +405,21 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         load_int(l, "preedit_confirmed_gap", config.layout_config.preedit_confirmed_gap);
         load_int(l, "preedit_boundary_gap", config.layout_config.preedit_boundary_gap);
         load_int(l, "preedit_highlight_corner", config.layout_config.preedit_highlight_corner);
+        load_int(l, "nav_offset_y", config.layout_config.nav_offset_y);
         load_int(l, "preedit_highlight_border_width",
                     config.layout_config.preedit_highlight_border_width);
     }
 
+    if (j.contains("skin") && j["skin"].is_object()) {
+        auto& skin = j["skin"];
+        load_bool(skin, "custom_colors", config.skin_custom_colors);
+        load_string(skin, "pinyin", config.skin_pinyin_color);
+        load_string(skin, "focused", config.skin_focused_color);
+        load_string(skin, "focused_back", config.skin_focused_back_color);
+        load_string(skin, "candidate", config.skin_candidate_color);
+        load_string(skin, "background", config.skin_background_color);
+        load_bool(skin, "scale_with_font", config.skin_scale_with_font);
+    }
     load_string(j, "theme", config.theme);
     if (j.contains("ui") && j["ui"].is_object()) {
         load_string(j["ui"], "language", config.ui_language);
@@ -922,7 +937,9 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["style"]["font_point"] = config.font_size;
     j["style"]["layout"] = config.layout;
     j["style"]["render_backend"] = config.render_backend;
+    j["style"]["inline_preedit"] = config.inline_preedit;
     j["style"]["preedit_type"] = config.preedit_type;
+    j["style"]["show_status"] = config.show_status;
 
     j["layout"]["min_width"] = config.layout_config.min_width;
     j["layout"]["max_width"] = config.layout_config.max_width;
@@ -946,9 +963,17 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["layout"]["preedit_confirmed_gap"] = config.layout_config.preedit_confirmed_gap;
     j["layout"]["preedit_boundary_gap"] = config.layout_config.preedit_boundary_gap;
     j["layout"]["preedit_highlight_corner"] = config.layout_config.preedit_highlight_corner;
+    j["layout"]["nav_offset_y"] = config.layout_config.nav_offset_y;
     j["layout"]["preedit_highlight_border_width"] =
         config.layout_config.preedit_highlight_border_width;
 
+    j["skin"]["custom_colors"] = config.skin_custom_colors;
+    j["skin"]["pinyin"] = config.skin_pinyin_color;
+    j["skin"]["focused"] = config.skin_focused_color;
+    j["skin"]["focused_back"] = config.skin_focused_back_color;
+    j["skin"]["candidate"] = config.skin_candidate_color;
+    j["skin"]["background"] = config.skin_background_color;
+    j["skin"]["scale_with_font"] = config.skin_scale_with_font;
     j["theme"] = config.theme;
     j["ui"]["language"] = config.ui_language;
 

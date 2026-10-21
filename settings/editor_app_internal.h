@@ -152,6 +152,8 @@ HWND make_button(int id, const wchar_t* text, int x, int y, int width, HWND pare
 // A plain text box: make_edit (editor_controls.cc) is a number box (ES_NUMBER).
 HWND make_text_edit(int id, int x, int y, int width, HWND parent);
 HWND make_radio(int id, const wchar_t* text, int x, int y, int width, HWND parent, bool group);
+// A colour swatch (the skin card): an owner-drawn STATIC; a click opens the colour dialog.
+HWND make_color_swatch(int id, int x, int y, int width, int height, HWND parent);
 void combo_add(HWND combo, const wchar_t* text);
 void combo_sel(HWND combo, const wchar_t* text);
 int combo_index(HWND combo);

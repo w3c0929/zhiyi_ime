@@ -1,6 +1,8 @@
 // Copyright (c) 2026 CxxIME Contributors. Apache License 2.0.
 
+#include <cxxime/query_trace.h>
 #include <cxxime/candidate_window.h>
+#include <cxxime/settings_launcher.h>
 
 #include <algorithm>
 #include <cmath>
@@ -228,6 +230,7 @@ bool CandidateWindow::create(HWND owner, const Config& config) {
     wc.hInstance = GetModuleHandle(nullptr);
     wc.lpszClassName = L"ZhiyuIMECandidateWindow";
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     RegisterClassExW(&wc);
     ScopedDpiAwarenessContext dpi_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     hwnd_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
@@ -576,6 +579,8 @@ void CandidateWindow::set_page_info(int cur, int tot) {
     page_current_ = cur;
     page_total_ = tot;
 }
+void CandidateWindow::set_status_text(const std::string& text) { status_text_ = text; }
+
 void CandidateWindow::set_preedit(const std::string& preedit) {
     set_preedit(preedit, preedit.size());
 }
@@ -625,6 +630,7 @@ void CandidateWindow::set_layout_changed_callback(LayoutChangedCallback cb) {
     layout_changed_cb_ = std::move(cb);
 }
 void CandidateWindow::set_page_callback(PageCallback cb) { page_cb_ = std::move(cb); }
+void CandidateWindow::set_toolbar(bool on) { toolbar_ = on; }
 void CandidateWindow::set_draggable(bool draggable) { draggable_ = draggable; }
 
 void CandidateWindow::move_window_now(int x, int y) {
@@ -738,6 +744,7 @@ void CandidateWindow::rebuild_render_context(const LayoutConfig& cfg, int window
     render_ctx_.theme = &render_theme_;
     render_ctx_.layout_cfg = &cfg;
     render_ctx_.preedit = preedit_text_;
+    render_ctx_.status_text = status_text_;
     render_ctx_.preedit_cursor = preedit_cursor_;
     render_ctx_.preedit_cursor_emphasized = preedit_cursor_emphasized_;
     render_ctx_.preedit_cursor_idle = blend_color(
@@ -750,30 +757,104 @@ void CandidateWindow::rebuild_render_context(const LayoutConfig& cfg, int window
     // Page nav placement depends on layout orientation
     render_ctx_.prev_button_rect = {};
     render_ctx_.next_button_rect = {};
-    if (page_total_ > 1 && !candidate_rects_.empty()) {
+    render_ctx_.settings_button_rect = {};
+    if (!candidate_rects_.empty() && (page_total_ > 1 || toolbar_)) {
         auto& last = candidate_rects_.back();
         const PageNavigationMetrics nav = candidate_page_navigation_metrics(dpi());
         const int pw = nav.button_width;
         const int nw = nav.button_width;
+        const int sw = nav.button_width;
         int nav_h = last.highlight_rect.bottom - last.highlight_rect.top;
+        const bool paging = page_total_ > 1;
 
         if (layout_orientation_ == "vertical") {
-            // Vertical layout: nav buttons at bottom-left, use text row height (no highlight padding)
+            // Vertical layout: the nav row sits under the candidates, at the left; the settings
+            // button ends it. The row is there even for one page when the toolbar is on.
             nav_h = last.text_rect.bottom - last.text_rect.top;
             int nav_y = last.text_rect.bottom;
-            int nav_x = cfg.margin_x;
-            render_ctx_.prev_button_rect = {nav_x, nav_y, nav_x + pw, nav_y + nav_h};
-            render_ctx_.next_button_rect = {nav_x + pw + nav.gap, nav_y,
-                                            nav_x + pw + nav.gap + nw, nav_y + nav_h};
+            const int nav_x = cfg.margin_x;
+            if (paging) {
+                render_ctx_.prev_button_rect = {nav_x, nav_y, nav_x + pw, nav_y + nav_h};
+                render_ctx_.next_button_rect = {nav_x + pw + nav.gap, nav_y,
+                                                nav_x + pw + nav.gap + nw, nav_y + nav_h};
+            }
+            if (toolbar_) {
+                // 与横排一致：☰ 距 › 的距离就是 leading_gap（原来多算了一个 gap）。
+                const int x = nav_x + (paging ? 2 * pw + nav.gap + nav.leading_gap : 0);
+                render_ctx_.settings_button_rect = {x, nav_y, x + sw, nav_y + nav_h};
+            }
             render_ctx_.page_indicator_rect = {};
         } else {
-            // Horizontal layout: nav buttons after last candidate, same row
-            int nav_y = last.highlight_rect.top;
+            // Horizontal layout: page buttons, then the settings button, all after the last
+            // candidate in the same row.
+            // 用文字的**行框**做按钮框：箭头与 ☰ 的竖直中心就和候选文字一致（高亮框多出的
+            // padding 会让它们看起来偏高/偏矮）。
+            int nav_y = last.text_rect.top + scaled_cfg_.nav_offset_y;
+            int nav_h_text = last.text_rect.bottom - last.text_rect.top;
             int x = last.highlight_rect.right + nav.leading_gap;
-            render_ctx_.prev_button_rect = {x, nav_y, x + pw, nav_y + nav_h};
-            render_ctx_.next_button_rect = {x + pw + nav.gap, nav_y,
-                                            x + pw + nav.gap + nw, nav_y + nav_h};
+            // 横排：候选之后是 ‹ ›（有分页时），再是 ☰。
+            if (paging) {
+                render_ctx_.prev_button_rect = {x, nav_y, x + pw, nav_y + nav_h_text};
+                render_ctx_.next_button_rect = {x + pw + nav.gap, nav_y,
+                                                x + pw + nav.gap + nw, nav_y + nav_h_text};
+                x = render_ctx_.next_button_rect.right + nav.leading_gap;
+            }
+            if (toolbar_) {
+                render_ctx_.settings_button_rect = {x, nav_y, x + sw, nav_y + nav_h_text};
+            }
             render_ctx_.page_indicator_rect = {};
+        }
+    }
+
+    // 横排：状态串右端对齐到设置按钮（☰）的右端，正好落在它正上方。
+    if (!render_ctx_.status_vertical && render_ctx_.status_width > 0 &&
+        render_ctx_.settings_button_rect.right > render_ctx_.settings_button_rect.left) {
+        const int right = static_cast<int>(render_ctx_.settings_button_rect.right);
+        if (right - render_ctx_.status_rect.left >= render_ctx_.status_width) {
+            render_ctx_.status_rect.right = right;
+        }
+    }
+
+    // 竖排状态列：一列、一个字一行，限制在现有窗口高度内（绝不撑高窗口）。
+    // 放不下时收紧行距并按比例缩小字号，避免字形被裁。
+    if (!status_text_.empty() && !preedit_text_.empty() &&
+        layout_orientation_ == "vertical" && !candidate_rects_.empty()) {
+        const std::wstring wstatus = utf8_to_wstring(status_text_);
+        int glyphs = 0;
+        for (const wchar_t wc : wstatus) {
+            if (!is_status_space(wc)) ++glyphs;  // 空格/换行不占行
+        }
+        if (glyphs > 0) {
+            const int status_pad_y = (std::max)(cfg.preedit_highlight_padding_y, 2);
+            const int status_dpi = static_cast<int>(dpi());
+            const int natural_line =
+                MulDiv(theme_.preedit_font_size, status_dpi, 72) + status_pad_y * 2;
+            const int top = cfg.margin_y;
+            int bottom = static_cast<int>(candidate_rects_.back().highlight_rect.bottom);
+            bottom = (std::max)(bottom, static_cast<int>(render_ctx_.next_button_rect.bottom));
+            bottom = (std::max)(bottom,
+                                static_cast<int>(render_ctx_.settings_button_rect.bottom));
+            bottom += cfg.margin_y;
+            const int available = (std::max)(glyphs, bottom - top);
+            int line_h = available / glyphs;
+            if (line_h > natural_line) line_h = natural_line;
+            if (line_h < 8) line_h = 8;
+            float scale = natural_line > 0
+                              ? static_cast<float>(line_h) / static_cast<float>(natural_line)
+                              : 1.0f;
+            scale = (std::clamp)(scale, 0.6f, 1.0f);
+            const int glyph_px =
+                static_cast<int>(theme_.preedit_font_size * scale * status_dpi / 72.0f);
+            const int column_w = glyph_px + 4;
+            const int left = candidate_rects_.back().highlight_rect.right + cfg.spacing;
+            render_ctx_.status_vertical = true;
+            render_ctx_.status_font_scale = scale;
+            render_ctx_.status_rect = {left, top, left + column_w, top + glyphs * line_h};
+            render_ctx_.status_glyph_rects.reserve(static_cast<std::size_t>(glyphs));
+            for (int i = 0; i < glyphs; ++i) {
+                render_ctx_.status_glyph_rects.push_back(
+                    {left, top + i * line_h, left + column_w, top + (i + 1) * line_h});
+            }
         }
     }
 }
@@ -866,8 +947,25 @@ void CandidateWindow::update(const CandidatePage& page) {
     scaled_cfg_.preedit_confirmed_gap = (int)(scaled_cfg_.preedit_confirmed_gap * s);
     scaled_cfg_.preedit_boundary_gap = (int)(scaled_cfg_.preedit_boundary_gap * s);
     scaled_cfg_.preedit_highlight_corner = (int)(scaled_cfg_.preedit_highlight_corner * s);
+    scaled_cfg_.nav_offset_y = (int)(scaled_cfg_.nav_offset_y * s);
     scaled_cfg_.preedit_highlight_border_width =
         (int)(scaled_cfg_.preedit_highlight_border_width * s);
+    // 皮肤随字体缩放（skin.scale_with_font）：以 14pt 为基准，字号越大边距/间距一起放大，
+    // 免得字变大后卡片显得挤。只缩放间距类，不动边框宽度。
+    if (config_->skin_scale_with_font && config_->font_size > 0) {
+        float f = (float)config_->font_size / 14.0f;
+        if (f < 0.8f) f = 0.8f;
+        if (f > 2.0f) f = 2.0f;
+        const auto grow = [f](int v) { return (int)std::lround((double)v * f); };
+        scaled_cfg_.margin_x = grow(scaled_cfg_.margin_x);
+        scaled_cfg_.margin_y = grow(scaled_cfg_.margin_y);
+        scaled_cfg_.spacing = grow(scaled_cfg_.spacing);
+        scaled_cfg_.candidate_spacing = grow(scaled_cfg_.candidate_spacing);
+        scaled_cfg_.row_spacing = grow(scaled_cfg_.row_spacing);
+        scaled_cfg_.hilite_padding_x = grow(scaled_cfg_.hilite_padding_x);
+        scaled_cfg_.hilite_padding_y = grow(scaled_cfg_.hilite_padding_y);
+        scaled_cfg_.hilite_spacing = grow(scaled_cfg_.hilite_spacing);
+    }
     scaled_cfg_.min_width = (int)(scaled_cfg_.min_width * s);
     scaled_cfg_.max_width = (int)(scaled_cfg_.max_width * s);
     scaled_cfg_.max_height = (int)(scaled_cfg_.max_height * s);
@@ -916,6 +1014,13 @@ void CandidateWindow::update(const CandidatePage& page) {
     render_ctx_.preedit_active_rect = {};
     render_ctx_.preedit_cursor_rect = {};
     render_ctx_.preedit_cursor_in_focus = false;
+    // 状态串的几何统一在这里清空后重算（rebuild_render_context 在后面才跑，
+    // 所以不能在那里清，否则刚算好的矩形会被抹掉）。
+    render_ctx_.status_vertical = false;
+    render_ctx_.status_rect = {};
+    render_ctx_.status_glyph_rects.clear();
+    render_ctx_.status_font_scale = 1.0f;
+    render_ctx_.status_width = 0;
     const bool high_contrast = system_high_contrast_enabled();
     if (render_ctx_.high_contrast != high_contrast) {
         render_ctx_.high_contrast = high_contrast;
@@ -1141,6 +1246,28 @@ void CandidateWindow::update(const CandidatePage& page) {
         }
         render_ctx_.preedit_rect = {cfg.margin_x, cfg.margin_y,
                                     lr.width - cfg.margin_x, cfg.margin_y + content_height};
+        // 状态串：横排放预编辑行右端；竖排的逐字几何在 rebuild_render_context 里算
+        // （那里才知道工具栏/翻页行的实际高度，能把状态列限制在现有窗口内）。
+        if (!status_text_.empty()) {
+            if (layout_orientation_ == "vertical" && !lr.rects.empty()) {
+                // 竖排只在这里预留宽度，绝不为状态列增加窗口高度。
+                const int char_px = MulDiv(theme_.preedit_font_size,
+                                           static_cast<int>(window_dpi), 72);
+                const int left = lr.rects.back().highlight_rect.right + cfg.spacing;
+                const int right = left + char_px + 4 + cfg.margin_x;
+                if (right > lr.width) lr.width = right;
+            } else {
+                // 横排：拼音串在最左，状态串在同一行最右、右对齐到窗口右边距。
+                // 窗口先保证「拼音 + 间距 + 状态 + 边距」放得下，再铺满整行右对齐。
+                const int status_w = measure_text_width(hdc, hf, status_text_);
+                const int needed = preedit_w + cfg.spacing + status_w + cfg.margin_x;
+                if (needed > lr.width) lr.width = needed;
+                render_ctx_.status_width = status_w;
+                render_ctx_.status_rect = {cfg.margin_x, cfg.margin_y,
+                                           lr.width - cfg.margin_x,
+                                           cfg.margin_y + content_height};
+            }
+        }
         // Store preedit text height for separator positioning
         render_ctx_.preedit_text_height = content_height;
         lr.row_height = row_h;
@@ -1156,18 +1283,40 @@ void CandidateWindow::update(const CandidatePage& page) {
     candidate_rects_ = std::move(lr.rects);
     visible_candidate_count_ = static_cast<int>(candidate_rects_.size());
     rebuild_render_context(cfg, lr.width);
-    // Extend width for page nav buttons if present
-    if (page_total_ > 1 && render_ctx_.next_button_rect.right > lr.width)
-        lr.width = render_ctx_.next_button_rect.right + cfg.margin_x;
-    // Vertical layout: extend height for nav buttons row below candidates
-    if (layout_orientation_ == "vertical" && page_total_ > 1 && !candidate_rects_.empty()) {
-        int nav_bottom = render_ctx_.next_button_rect.bottom + cfg.hilite_padding_y;
+    // Extend the width for whatever the toolbar / page buttons add in this row.
+    const int toolbar_right = (std::max)(render_ctx_.next_button_rect.right,
+                                         render_ctx_.settings_button_rect.right);
+    if (toolbar_right > lr.width) lr.width = toolbar_right + cfg.margin_x;
+    // Vertical layout: extend the height for the nav row below the candidates (with the toolbar
+    // on, that row exists even for one page).
+    if (layout_orientation_ == "vertical" && !candidate_rects_.empty()) {
+        const int nav_bottom = toolbar_right > 0
+                                   ? (std::max)(render_ctx_.next_button_rect.bottom,
+                                                render_ctx_.settings_button_rect.bottom) +
+                                         cfg.hilite_padding_y
+                                   : 0;
         if (nav_bottom > lr.height) lr.height = nav_bottom;
     }
     int border = cfg.border_width > 0 ? cfg.border_width : 0;
     if (border > 0) {
         lr.width += border * 2;
         lr.height += border * 2;
+    }
+    if (config_ && config_->diagnostics.trace_mode != cxxime::DiagnosticTraceMode::kOff) {
+        char line[320] = {};
+        const int n = snprintf(
+            line, sizeof(line),
+            "{\"event\":\"candidate_geom\",\"pid\":%lu,\"layout\":\"%s\",\"final_w\":%d,"
+            "\"old_w\":%d,\"items\":%zu,\"last_r\":%ld,\"prev_r\":%ld,\"next_r\":%ld,"
+            "\"set_l\":%ld,\"set_r\":%ld,\"toolbar\":%d,\"page\":%d/%d}",
+            (unsigned long)GetCurrentProcessId(), layout_orientation_.c_str(), lr.width,
+            window_width_, page_.candidates.size(),
+            candidate_rects_.empty() ? 0L : (long)candidate_rects_.back().highlight_rect.right,
+            (long)render_ctx_.prev_button_rect.right, (long)render_ctx_.next_button_rect.right,
+            (long)render_ctx_.settings_button_rect.left,
+            (long)render_ctx_.settings_button_rect.right, toolbar_ ? 1 : 0, page_current_,
+            page_total_);
+        if (n > 0) cxxime::enqueue_server_trace_json(line, n);
     }
     if (lr.width != window_width_ || lr.height != window_height_) {
         POINT target = {};
@@ -1220,6 +1369,11 @@ LRESULT CALLBACK CandidateWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
             }
             return 0;
         }
+        if (PtInRect(&self->render_ctx_.settings_button_rect, pt)) {
+            // 工具栏的 ☰：打开设置程序（输入法页）。不抢焦点，点完候选窗照常收起。
+            cxxime::open_settings(cxxime::SettingsPanel::kInput);
+            return 0;
+        }
         for (const auto& cr : self->candidate_rects_) {
             if (PtInRect(&cr.highlight_rect, pt)) {
                 if (self->candidate_selection_cb_ && cr.index >= 0) {
@@ -1250,6 +1404,8 @@ LRESULT CALLBACK CandidateWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
                 return self->render_ctx_.prev_button_rect;
             } else if (target == CandidateHoverTarget::NextPage) {
                 return self->render_ctx_.next_button_rect;
+            } else if (target == CandidateHoverTarget::Settings) {
+                return self->render_ctx_.settings_button_rect;
             }
             return {};
         };
@@ -1261,6 +1417,9 @@ LRESULT CALLBACK CandidateWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
         } else if (PtInRect(&self->render_ctx_.next_button_rect, pt)) {
             hovered_target = CandidateHoverTarget::NextPage;
             new_r = self->render_ctx_.next_button_rect;
+        } else if (PtInRect(&self->render_ctx_.settings_button_rect, pt)) {
+            hovered_target = CandidateHoverTarget::Settings;
+            new_r = self->render_ctx_.settings_button_rect;
         } else {
             for (const auto& cr : self->candidate_rects_) {
                 if (PtInRect(&cr.highlight_rect, pt)) {
@@ -1288,6 +1447,24 @@ LRESULT CALLBACK CandidateWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
             InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
+    case WM_SETCURSOR: {
+        // 能点的地方给手指光标：候选行、能翻的 ‹ ›——一眼看出哪里可以点（其余仍是箭头）。
+        if (LOWORD(lp) == HTCLIENT && self) {
+            const auto& rc = self->render_ctx_;
+            const bool over_candidate = rc.hovered_target == CandidateHoverTarget::Candidate;
+            const bool over_prev = rc.hovered_target == CandidateHoverTarget::PreviousPage &&
+                                   rc.page_current > 1;
+            const bool over_next = rc.hovered_target == CandidateHoverTarget::NextPage &&
+                                   rc.page_current < rc.page_total;
+            const bool over_settings = rc.hovered_target == CandidateHoverTarget::Settings;
+            SetCursor(LoadCursorW(nullptr,
+                                  (over_candidate || over_prev || over_next || over_settings)
+                                      ? IDC_HAND
+                                      : IDC_ARROW));
+            return TRUE;
+        }
+        break;
+    }
     case WM_MOUSEACTIVATE: return MA_NOACTIVATE;  // prevent focus theft on click
     case WM_NCHITTEST: return HTCLIENT;  // prevent resize cursor at edges
     case WM_ERASEBKGND: return 1;
