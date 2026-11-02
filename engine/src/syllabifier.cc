@@ -111,6 +111,14 @@ bool pinyin_matches_initials(std::string_view input, std::string_view syllables)
 
 constexpr float kErhuaCredibility = 0.0f;
 
+// The position after the syllable separators (apostrophes, xi'an) at `pos`: a syllable's span
+// takes the separators typed after it, as librime's syllabifier does with its delimiters, so the
+// spans still add up to the input.
+static size_t after_separators(const std::string& input, size_t pos) {
+    while (pos < input.size() && input[pos] == '\'') ++pos;
+    return pos;
+}
+
 Syllabifier::Syllabifier(const SpellingsIndex& spellings)
     : spellings_(spellings) {}
 
@@ -149,9 +157,10 @@ SyllableGraph Syllabifier::build_graph(const std::string& input,
             if (options.initials_only && !is_initial_span(remaining, m.input_key_len)) {
                 continue;
             }
-            const size_t end_pos = pos + m.input_key_len;
+            size_t end_pos = pos + m.input_key_len;
             if (end_pos > input.size())
                 continue;
+            end_pos = after_separators(input, end_pos);
 
             // Add edge
             graph[pos][end_pos].push_back(
@@ -168,10 +177,11 @@ SyllableGraph Syllabifier::build_graph(const std::string& input,
         // "yihuir"), a whole syllable like "er" typed out; the r-initial readings (华人, 纳入)
         // stay as abbreviations.
         if (pos > 0 && !remaining.empty() && remaining[0] == 'r' && !options.initials_only) {
-            graph[pos][pos + 1].push_back(
+            const size_t end_pos = after_separators(input, pos + 1);
+            graph[pos][end_pos].push_back(
                 {"er", kNormalSpelling, kErhuaCredibility, syllable_log_share("er")});
-            if (pos + 1 < visited.size() && !visited[pos + 1]) {
-                queue.push({pos + 1, vertex_type});
+            if (end_pos < visited.size() && !visited[end_pos]) {
+                queue.push({end_pos, vertex_type});
             }
         }
     }
@@ -469,6 +479,50 @@ bool Syllabifier::matches_without_fuzzy(const std::string& input,
                     if (edge.syllable == syllable &&
                         std::find(next.begin(), next.end(), end) == next.end()) {
                         next.push_back(end);
+                    }
+                }
+            }
+        }
+        if (next.empty()) {
+            return false;
+        }
+        positions = std::move(next);
+    }
+    return std::find(positions.begin(), positions.end(), input.size()) != positions.end();
+}
+
+bool Syllabifier::matches_in_full(const std::string& input, const std::string& syllables,
+                                  bool enable_fuzzy, uint8_t fuzzy_groups) const {
+    if (input.empty() || syllables.empty()) {
+        return false;
+    }
+    SyllabifierOptions options;
+    options.enable_fuzzy = enable_fuzzy;
+    options.fuzzy_groups = enable_fuzzy ? fuzzy_groups : 0;
+    const SyllableGraph graph = build_graph(input, options);
+
+    // Input positions reachable after the first k syllables, by full spellings only.
+    std::vector<std::size_t> positions = {0};
+    std::size_t begin = 0;
+    while (begin <= syllables.size()) {
+        std::size_t end = syllables.find(':', begin);
+        if (end == std::string::npos) {
+            end = syllables.size();
+        }
+        const std::string_view syllable(syllables.data() + begin, end - begin);
+        begin = end + 1;
+        std::vector<std::size_t> next;
+        for (const std::size_t position : positions) {
+            const auto edges = graph.find(position);
+            if (edges == graph.end()) {
+                continue;
+            }
+            for (const auto& [edge_end, group] : edges->second) {
+                for (const SyllableEdge& edge : group) {
+                    if ((edge.type == kNormalSpelling || edge.type == kFuzzySpelling) &&
+                        edge.syllable == syllable &&
+                        std::find(next.begin(), next.end(), edge_end) == next.end()) {
+                        next.push_back(edge_end);
                     }
                 }
             }

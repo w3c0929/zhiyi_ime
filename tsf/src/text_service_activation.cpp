@@ -456,7 +456,10 @@ void TextService::_register_switch_keys() {
         {&c_guidPreservedKeyStyle, _config.english_style_shortcut, L"Input style"},
         {&c_guidPreservedKeyPunct, _config.punct_toggle_shortcut, L"Punctuation"},
         {&c_guidPreservedKeyShape, _config.shape_toggle_shortcut, L"Full/half width"},
-        {&c_guidPreservedKeyVoice, _config.voice_input_shortcut, L"Voice input"},
+        // 语音输入关着时不注册语音键，让这个键照常交给程序。
+        {&c_guidPreservedKeyVoice,
+         _config.voice_enable ? _config.voice_input_shortcut : cxxime::KeyboardShortcut{},
+         L"Voice input"},
     };
     for (size_t i = 0; i < std::size(keys); ++i) {
         if (!keys[i].key.enabled()) continue;

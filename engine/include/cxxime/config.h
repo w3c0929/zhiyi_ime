@@ -247,6 +247,12 @@ struct Config {
         std::string model_dir = "laya";        // relative to the server executable's directory
         std::string onnx = "laya.int8g.onnx";
         int min_candidates = 2;   // fewer comparable candidates: keep the translator's order
+        // Pinyin: when a compared candidate spells the input exactly (every syllable in full, a
+        // fuzzy reading only with fuzzy pinyin on), only such a candidate goes first; completions
+        // (想 for "xian") and initials (了哦 for "lo") keep their places (issue #34). Off by
+        // default: typists who stop inside the last syllable (jinti for 今天) lose the model's
+        // pick (bench eng_test, last syllable cut short: 67.2 -> 50.4%; full pinyin 86.7 -> 87.2).
+        bool exact_pinyin_first = false;
         // Leading candidates the model looks at (those covering the whole input are compared);
         // 0 = 2 * page_size. See Config::laya_candidate_count.
         int max_candidates = 0;

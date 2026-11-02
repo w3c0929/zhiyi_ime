@@ -51,6 +51,7 @@ enum ControlId {
     kAutostartId,
     kLayaId,
     kDeviceId,
+    kExactPinyinId,
     kDefaultChineseId,
     kDefaultEnglishId,
     kDefaultAutoId,
@@ -227,6 +228,12 @@ void EditorApp::create_general_panel(HWND panel) {
     hLaya_ = make_check(kLayaId, tr("general.laya_enable"), laya_x, y, S(440), panel);
     y += kRowH;
     make_hint(tr("general.laya_hint"), laya_x, y - S(6), S(480), panel);
+    y += S(20);
+    // 精确拼音优先（#34，laya.exact_pinyin_first）：只有整串拼全的候选才允许被模型提到第一。
+    hExactPinyin_ = make_check(kExactPinyinId, tr("general.exact_pinyin"), laya_x, y, S(440),
+                               panel);
+    y += kRowH;
+    make_hint(tr("general.exact_pinyin_hint"), laya_x, y - S(6), S(480), panel, 1);
     y += S(20);
     // 词语 n-gram（laya.ngram）：推荐模型旁边的词语三元模型。关掉它 = 不加载，光标前没有上文的页
     // 不再多算一次（docs/settings-guide.md）。
@@ -627,6 +634,7 @@ void EditorApp::populate_controls() {
     set_check(hInlinePreedit_, !config_.inline_preedit);
     set_check(hShowStatus_, config_.show_status);
     set_check(hLaya_, config_.laya.enable);
+    set_check(hExactPinyin_, config_.laya.exact_pinyin_first);
     // 词语 n-gram：配置里是文件路径，空 = 不用（与数据文件里默认的 ngram/zh.ngram 对应）。
     set_check(hNgram_, !config_.laya.ngram.empty());
     populate_device();
@@ -748,6 +756,7 @@ bool EditorApp::read_controls(bool report_errors) {
     c.inline_preedit = !get_check(hInlinePreedit_);
     c.show_status = get_check(hShowStatus_);
     c.laya.enable = get_check(hLaya_);
+    c.laya.exact_pinyin_first = get_check(hExactPinyin_);
     // 勾上就用默认路径（配置里已有别的路径就留着），没勾就是空 = 不加载。
     if (get_check(hNgram_)) {
         c.laya.ngram = config_.laya.ngram.empty() ? std::string("ngram/zh.ngram")
@@ -1006,6 +1015,9 @@ void EditorApp::update_enabled_controls() {
     if (hNgram_) {
         EnableWindow(hNgram_, get_check(hLaya_));  // 推荐关着时 n-gram 也没意义
     }
+    if (hExactPinyin_) {
+        EnableWindow(hExactPinyin_, get_check(hLaya_));  // 推荐关着时置灰（保留勾选）
+    }
     // 皮肤：不勾「使用自定义颜色」时色块只是显示主题色，点不动。
     const bool skin = get_check(hSkinCustomColors_);
     for (HWND swatch : {hSkinColorPinyin_, hSkinColorFocused_, hSkinColorFocusedBack_,
@@ -1064,7 +1076,8 @@ bool EditorApp::handle_command(int control_id, int notification) {
             if (language != ui_language_) {
                 ui_language_ = language;
                 load_ui_strings(ui_language_);
-                rebuild_ui();
+                // 不能在 CBN_SELCHANGE 里直接重建（会销毁正在处理点击的下拉框，COMCTL32 崩溃）。
+                PostMessageW(hwnd_, kRebuildUiMessage, 0, 0);
             }
         }
         return true;

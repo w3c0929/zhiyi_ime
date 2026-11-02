@@ -3,14 +3,25 @@
 #ifndef CXXIME_SETTINGS_EDITOR_APP_INTERNAL_H_
 #define CXXIME_SETTINGS_EDITOR_APP_INTERNAL_H_
 
+#include <cstdint>
 #include <initializer_list>
 #include <string>
+#include <vector>
 
 #include <windows.h>
 #include <commctrl.h>
 
+#include <cxxime/gpu_adapters.h>
+
 namespace cxxime {
 namespace settings {
+
+// The graphics cards and the processor, asked once per run (editor_gpu.cc): the pages are built
+// again on every DPI change (the window moved to another screen), and asking Direct3D and Vulkan
+// each time made that take more than a second.
+const std::vector<GpuAdapter>& cached_gpu_adapters(std::uint64_t min_memory_mb);
+const std::vector<GpuAdapter>& cached_translator_gpus(std::uint64_t min_memory_mb);
+const CpuInfo& cached_cpu_info();
 
 inline constexpr int kFontPt = 14;
 inline constexpr int kNavFontPt = kFontPt + 1;
@@ -23,6 +34,10 @@ inline constexpr int kAboutPanel = 9;     // page index of About
 inline constexpr int kAiPanel = 10;       // page index of AI
 // Makes the Word lists page again after an import or a removal (posted from its buttons).
 inline constexpr UINT kRebuildWordListsMessage = WM_APP + 90;
+// Makes all pages again in a new interface language. Posted from the language box: rebuilding
+// inside its CBN_SELCHANGE destroys the box while it is still handling the click (a crash in
+// COMCTL32).
+inline constexpr UINT kRebuildUiMessage = WM_APP + 91;
 
 extern float g_dpi;
 extern HFONT g_hFont;

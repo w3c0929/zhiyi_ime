@@ -297,7 +297,9 @@ void Engine::init_per_session(const Config& config) {
     ascii_toggle_shortcut_ = config.ascii_toggle_shortcut;
     punct_toggle_shortcut_ = config.punct_toggle_shortcut;
     shape_toggle_shortcut_ = config.shape_toggle_shortcut;
-    voice_input_shortcut_ = config.voice_input_shortcut;
+    // 语音输入关着时不再占用语音键（键直接交给程序，也不弹提示）。
+    voice_input_shortcut_ = config.voice_enable ? config.voice_input_shortcut
+                                                : KeyboardShortcut{};
     english_word_mode_ = config.english.word_mode;
     pinyin_style_ = config.pinyin_style;
     // Start loading the Laya model in the background so it is ready by the first keystroke.
@@ -1587,6 +1589,24 @@ TranslationResult Engine::translate_composition(const CompositionState& state,
         LayaApplyOptions options;
         options.slots = request.scheme == CompositionScheme::kPinyin;
         options.lattice_scored = span_scorer && span_scorer->scored();
+        // Issue #34: which candidates spell the input exactly, every syllable in full (fuzzy
+        // readings with fuzzy pinyin on); only those may be put first when there are any.
+        const PinyinResourceSet* resources = active_pinyin_resources();
+        if (options.slots && runtime_->config().laya.exact_pinyin_first && resources) {
+            const PinyinQueryPolicy policy = runtime_->pinyin_query_policy();
+            std::string typed = request.input;
+            typed.erase(std::remove(typed.begin(), typed.end(), '\''), typed.end());
+            options.exact.reserve(result.entries.size());
+            for (const CandidateEntry& entry : result.entries) {
+                const Candidate& candidate = entry.candidate;
+                const auto* action = std::get_if<TextSelectionAction>(&entry.selection);
+                options.exact.push_back(candidate.source == CandidateSource::kPinyin && action &&
+                                        action->consumed_input_bytes == request.input.size() &&
+                                        resources->matches_in_full(typed, candidate.syllables,
+                                                                   policy.enable_fuzzy,
+                                                                   policy.fuzzy_groups));
+            }
+        }
         LayaRerank::instance().apply(
             runtime_->config(), laya_context(state), request.input, result,
             shuangpin_model_pinyin(request.input, result, shuangpin_input()), options);

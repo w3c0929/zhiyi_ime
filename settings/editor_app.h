@@ -194,6 +194,12 @@ private:
     std::vector<HWND> hints_;  // secondary text, drawn smaller and gray
     HWND make_hint(const wchar_t* text, int x, int y, int width, HWND parent, int lines = 2);
     int panel_ = 0;
+    // Moved to a screen of another DPI while the window is dragged: the pages are built again
+    // when it is let go (apply_dpi), not on every screen it crosses.
+    bool size_moving_ = false;
+    UINT pending_dpi_ = 0;
+    SIZE pending_size_ = {};  // the size Windows suggested for it
+    void apply_dpi(UINT dpi, const RECT& suggested, bool keep_position);
     cxxime::SettingsPanel initial_panel_ = cxxime::SettingsPanel::kInput;
     static constexpr int kPanelCount = 11;
     HWND hPanels_[kPanelCount] = {};
@@ -209,6 +215,7 @@ private:
     HWND hEnglishCorrection_ = nullptr;
     HWND hAutostart_ = nullptr;  // startup.autostart
     HWND hLaya_ = nullptr;  // laya.enable (Chinese and English)
+    HWND hExactPinyin_ = nullptr;  // laya.exact_pinyin_first
     HWND hNgram_ = nullptr;  // laya.ngram: the word n-gram beside the recommendation model
     HWND hInlinePreedit_ = nullptr;  // style.inline_preedit (inverted: ticked = popup)
     HWND hShowStatus_ = nullptr;  // style.show_status (the top-right state line)
