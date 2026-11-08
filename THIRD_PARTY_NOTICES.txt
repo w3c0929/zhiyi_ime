@@ -252,6 +252,20 @@ The word-choice text also came from SODA (Kim et al., 2023),
 https://huggingface.co/datasets/allenai/soda, CC BY 4.0; Tatoeba,
 https://tatoeba.org, CC BY 2.0 FR; and the English portion of C4 (ODC-BY 1.0).
 
+The model in the installer since 1.7.73 (upstream 1.6.4), Zhiyi ML-Flash-1103
+(this repository re-publishes the same files as release model-ml-flash-1103,
+https://github.com/w3c0929/zhiyi_ime/releases/tag/model-ml-flash-1103), is Zhiyi
+ML-pumpkin-1026 with 8 of its encoder layers, a prefix mask and one head shared
+by word choice and composition, trained further on the same rows and on rows
+typed without context. ML-pumpkin-1026 is Zhiyi 1.4V2-Long-L12 trained further
+with Traditional Chinese, Japanese, Korean and Vietnamese word choice and
+Traditional Chinese and Japanese composition; the engine reads its Simplified
+Chinese and English side. Its rows were scored by the Qwen3.5-9B teachers above
+and by a 12-layer model of our own trained from them; only their scores were
+used, none of their weights are in the model. Its text, candidate lists and
+readings came from the same sources as 1.4V2-Long-L12's. The model files are
+Apache License 2.0.
+
 
 Word n-gram (ngram/zh.ngram)
 ----------------------------
