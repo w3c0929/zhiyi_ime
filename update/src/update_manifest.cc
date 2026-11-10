@@ -262,6 +262,14 @@ bool parse_voice_manifest(const std::string& text, const std::string& download_p
                        return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_';
                    });
         };
+        // A release asset name: flat (GitHub allows no '/'), letters, digits, '.', '-' and '_'.
+        auto safe_asset = [](const std::string& name) {
+            return !name.empty() && name.size() <= 96 &&
+                   std::all_of(name.begin(), name.end(), [](char c) {
+                       return std::isalnum(static_cast<unsigned char>(c)) || c == '.' ||
+                              c == '-' || c == '_';
+                   });
+        };
         auto safe_target = [](const std::string& path) {
             if (path.empty() || path.size() > 160 || path.rfind('/', 0) == 0 ||
                 path.back() == '/') {
@@ -320,7 +328,7 @@ bool parse_voice_manifest(const std::string& text, const std::string& download_p
                 file.target = file_json["target"].get<std::string>();
                 file.sha256 = file_json["sha256"].get<std::string>();
                 file.size = file_json["size"].get<std::uint64_t>();
-                if (!safe_target(file.target) || !allowed(file.asset) ||
+                if (!safe_target(file.target) || !safe_asset(file.asset) ||
                     !is_lower_hex(file.sha256, 64) || file.size == 0) {
                     return false;
                 }
