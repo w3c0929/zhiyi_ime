@@ -143,6 +143,10 @@ struct Config {
     // Voice input (docs/voice-input.md): the server records while the voice key is on and turns
     // the speech into text with the downloaded model (voice_recognizer.h, voice_files.h).
     bool voice_enable = false;            // voice.enable
+    // voice.model: the recognition model, one of the local models the voice release offers
+    // (voice_files.h, docs/voice-input.md): "sensevoice-local" (default, ONNX Runtime on the
+    // CPU or a card), "funasr-nano-local" or "qwen3-asr-local" (sherpa-onnx, CPU only).
+    std::string voice_model = "sensevoice-local";
     std::string voice_device;             // voice.device: "" the CPU, else a card key (gpu_adapters.h)
     std::string voice_language = "auto";  // voice.language: auto, zh, en or yue
     bool voice_itn = true;                // voice.itn: numbers and dates as digits ("3点")

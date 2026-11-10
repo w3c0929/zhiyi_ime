@@ -170,6 +170,7 @@ private:
     void read_voice(cxxime::Config& config);
     void show_voice_key();
     void show_voice_state();
+    void fill_voice_models();
     void fill_voice_devices();
     void show_voice_device();
     void show_voice_device_hint(const wchar_t* text, bool warning);
@@ -347,6 +348,7 @@ private:
 
     // Voice input
     HWND hVoiceEnable_ = nullptr, hVoiceKeyText_ = nullptr, hVoiceStatus_ = nullptr;
+    HWND hVoiceModel_ = nullptr;  // voice.model: the recognition model
     HWND hVoiceAction_ = nullptr, hVoiceRemove_ = nullptr;
     HWND hVoiceDevice_ = nullptr, hVoiceLanguage_ = nullptr, hVoiceItn_ = nullptr;
     HWND hVoiceDeviceHint_ = nullptr;

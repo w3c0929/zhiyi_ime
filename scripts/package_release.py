@@ -190,6 +190,12 @@ def main():
     print("overwriting built programs:")
     for name in overlay_builds(args.reference, out_dir, args.build, args.x86_build):
         print(f"  {name}")
+    # The voice worker and its own ONNX Runtime (Fun-ASR-Nano, Qwen3-ASR), next to the server.
+    if args.build:
+        runtime = os.path.join(args.build, "voice-runtime")
+        if os.path.isdir(runtime):
+            shutil.copytree(runtime, os.path.join(out_dir, "voice-runtime"), dirs_exist_ok=True)
+            print("  voice-runtime\\")
     print("overwriting repository data:")
     for name in overlay_repo_data(out_dir):
         print(f"  data\\{name}")

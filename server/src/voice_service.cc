@@ -15,6 +15,8 @@
 #include <cxxime/query_trace.h>
 #include <cxxime/voice_files.h>
 
+#include "voice_worker_client.h"
+
 namespace {
 
 // The text waits this long for its client; then the session's keys are freed anyway.
@@ -124,12 +126,14 @@ void VoiceService::run() {
                 CXXIME_LOG(L"%s", L"voice: the client did not take the text");
                 expired = drop_locked();
             }
-            unload = phase_ == Phase::kIdle && recognizer_ && now - last_used_ > kModelIdle;
+            unload = phase_ == Phase::kIdle && (recognizer_ || recognizer_worker_) &&
+                     now - last_used_ > kModelIdle;
         }
         if (expired) release_capture(expired);
         if (unload) {
             recognizer_.reset();
             recognizer_model_.clear();
+            recognizer_worker_.reset();
             CXXIME_LOG(L"%s", L"voice: model unloaded (unused)");
         }
         if (task) task();
@@ -182,7 +186,7 @@ void VoiceService::toggle(uint32_t id) {
     } else if (!sessions_.capabilities ||
                (sessions_.capabilities(id) & cxxime::kClientCapabilityVoiceInput) == 0) {
         refused = VoiceOverlay::Message::kRestartProgram;
-    } else if (!cxxime::voice::find_installed(nullptr)) {
+    } else if (!cxxime::voice::find_model(config->voice_model, nullptr)) {
         refused = VoiceOverlay::Message::kNoModel;
     }
     if (refused) {
@@ -260,30 +264,57 @@ uint32_t VoiceService::take_status(uint32_t id, std::string* text) {
 }
 
 bool VoiceService::ensure_detector(std::string* error) {
-    cxxime::voice::InstalledModel installed;
-    if (!cxxime::voice::find_installed(&installed)) {
+    std::string model_id;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (config_) model_id = config_->voice_model;
+    }
+    cxxime::voice::InstalledVoiceModel model;
+    if (!cxxime::voice::find_model(model_id, &model)) {
         if (error) *error = "model not installed";
         return false;
     }
-    if (detector_.loaded() && detector_model_ == installed.vad) return true;
-    if (!detector_.load(installed.vad, error)) return false;
-    detector_model_ = installed.vad;
+    if (detector_.loaded() && detector_model_ == model.vad) return true;
+    if (!detector_.load(model.vad, error)) return false;
+    detector_model_ = model.vad;
     return true;
 }
 
 bool VoiceService::ensure_recognizer(std::string* error) {
-    cxxime::voice::InstalledModel installed;
-    if (!cxxime::voice::find_installed(&installed)) {
-        if (error) *error = "model not installed";
-        return false;
-    }
+    std::string model_id;
     std::string device;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (config_) device = config_->voice_device;
+        if (config_) {
+            model_id = config_->voice_model;
+            device = config_->voice_device;
+        }
+    }
+    cxxime::voice::InstalledVoiceModel model;
+    if (!cxxime::voice::find_model(model_id, &model)) {
+        if (error) *error = "model not installed";
+        return false;
     }
     last_used_ = std::chrono::steady_clock::now();
-    if (recognizer_ && recognizer_model_ == installed.model && recognizer_device_ == device) return true;
+    if (model.engine != "sensevoice") {
+        // Fun-ASR-Nano / Qwen3-ASR: sherpa-onnx, in its own process (voice_worker_client.h).
+        if (recognizer_worker_ && recognizer_worker_->model_id() == model.id) return true;
+        recognizer_worker_.reset();
+        recognizer_.reset();
+        recognizer_model_.clear();
+        auto worker = std::make_unique<VoiceWorkerClient>();
+        const auto start = std::chrono::steady_clock::now();
+        if (!worker->Load(model, cxxime::voice::cpu_threads(), error)) return false;
+        CXXIME_LOG(L"voice: %S loaded in %lld ms",
+                   model.id.c_str(),
+                   static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                              std::chrono::steady_clock::now() - start)
+                                              .count()));
+        recognizer_worker_ = std::move(worker);
+        return true;
+    }
+    recognizer_worker_.reset();
+    if (recognizer_ && recognizer_model_ == model.model && recognizer_device_ == device) return true;
     recognizer_.reset();
     auto recognizer = std::make_unique<cxxime::voice::SpeechRecognizer>();
     const auto start = std::chrono::steady_clock::now();
@@ -293,7 +324,7 @@ bool VoiceService::ensure_recognizer(std::string* error) {
         const std::vector<cxxime::GpuAdapter> adapters = cxxime::list_gpu_adapters(0);
         const cxxime::GpuAdapter* adapter = cxxime::find_gpu_adapter(adapters, device);
         std::string gpu_error = "graphics card not found";
-        loaded = adapter && recognizer->load(installed.model, installed.tokens,
+        loaded = adapter && recognizer->load(model.model, model.tokens,
                                              static_cast<int>(adapter->index), 0, &gpu_error);
         if (!loaded) {
             CXXIME_LOG(L"voice: graphics card %S failed (%S), using the CPU", device.c_str(),
@@ -301,7 +332,7 @@ bool VoiceService::ensure_recognizer(std::string* error) {
         }
     }
     if (!loaded) {
-        loaded = recognizer->load(installed.model, installed.tokens, -1, cxxime::voice::cpu_threads(),
+        loaded = recognizer->load(model.model, model.tokens, -1, cxxime::voice::cpu_threads(),
                                   error);
     }
     if (!loaded) return false;
@@ -310,7 +341,7 @@ bool VoiceService::ensure_recognizer(std::string* error) {
                                           std::chrono::steady_clock::now() - start)
                                           .count()));
     recognizer_ = std::move(recognizer);
-    recognizer_model_ = installed.model;
+    recognizer_model_ = model.model;
     recognizer_device_ = device;
     return true;
 }
@@ -392,9 +423,18 @@ void VoiceService::finish_recording(uint64_t generation) {
     std::string error;
     std::string text;
     const auto start = std::chrono::steady_clock::now();
-    if (!ensure_recognizer(&error) ||
-        !recognizer_->transcribe(samples.data(), samples.size(), cxxime::voice::parse_language(language),
-                                 itn, &text, &error)) {
+    bool recognized = false;
+    if (ensure_recognizer(&error)) {
+        if (recognizer_worker_ && recognizer_worker_->loaded()) {
+            recognized = recognizer_worker_->Transcribe(samples.data(), samples.size(), &text, &error);
+        } else if (recognizer_) {
+            recognized =
+                recognizer_->transcribe(samples.data(), samples.size(),
+                                        cxxime::voice::parse_language(language), itn, &text,
+                                        &error);
+        }
+    }
+    if (!recognized) {
         CXXIME_LOG(L"voice: recognition failed: %S", error.c_str());
         end(VoiceOverlay::Message::kFailed);
         return;

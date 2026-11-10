@@ -37,6 +37,40 @@ struct InstalledModel {
 // The model in local_data_dir()\voice, when all its files are there.
 bool find_installed(InstalledModel* installed);
 
+// The selectable models offered by the voice release (voice.json "models"): each installs
+// into local_data_dir()\voice\models\<dir>\ with the layout below. The channel model ids are
+// fixed (voice.model); engine selects the recogniser.
+constexpr char kVoiceModelsDir[] = "models";
+constexpr char kVoiceSenseVoiceId[] = "sensevoice-local";
+constexpr char kVoiceFunAsrId[] = "funasr-nano-local";
+constexpr char kVoiceQwen3Id[] = "qwen3-asr-local";
+
+struct InstalledVoiceModel {
+    std::string id;    // voice.model
+    std::string engine;  // sensevoice | funasr-nano | qwen3-asr
+    std::wstring dir;  // ...\voice\models\<dir>\ (ends in '\'), empty for SenseVoice
+    std::wstring vad;  // silero_vad.onnx
+    // Fun-ASR-Nano
+    std::wstring encoder_adaptor;
+    std::wstring llm;
+    std::wstring embedding;
+    std::wstring tokenizer;  // a directory
+    // Qwen3-ASR
+    std::wstring conv_frontend;
+    std::wstring encoder;
+    std::wstring decoder;
+    // SenseVoice (the legacy single model)
+    std::wstring model;
+    std::wstring tokens;
+};
+
+// Where the model of `id` is installed, when every file it needs is there. `id` empty uses
+// the legacy single-model install ("sensevoice-local").
+bool find_model(const std::string& id, InstalledVoiceModel* model);
+
+// The directory a model installs into (...\voice\models\<dir>\), or empty for SenseVoice.
+std::wstring model_directory(const std::string& dir);
+
 }  // namespace voice
 }  // namespace cxxime
 

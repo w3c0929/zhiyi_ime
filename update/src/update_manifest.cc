@@ -249,9 +249,102 @@ bool parse_voice_manifest(const std::string& text, const std::string& download_p
         parsed.files.push_back(std::move(file));
     }
     if (required != 3) return false;
+
+    // "models": the selectable recognition models (voice.model). Additive: older applications
+    // read "files" only and keep installing SenseVoice. Asset names are flat; targets are
+    // relative paths under the model's directory.
+    if (json.contains("models")) {
+        const auto& models = json["models"];
+        if (!models.is_array() || models.empty() || models.size() > 8) return false;
+        auto safe_id = [](const std::string& id) {
+            return !id.empty() && id.size() <= 64 &&
+                   std::all_of(id.begin(), id.end(), [](char c) {
+                       return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_';
+                   });
+        };
+        auto safe_target = [](const std::string& path) {
+            if (path.empty() || path.size() > 160 || path.rfind('/', 0) == 0 ||
+                path.back() == '/') {
+                return false;
+            }
+            std::size_t start = 0;
+            while (start <= path.size()) {
+                const std::size_t slash = path.find('/', start);
+                const std::string part =
+                    path.substr(start, slash == std::string::npos ? std::string::npos
+                                                                  : slash - start);
+                if (part.empty() || part == "." || part == "..") return false;
+                if (!std::all_of(part.begin(), part.end(), [](char c) {
+                        return std::isalnum(static_cast<unsigned char>(c)) || c == '.' ||
+                               c == '-' || c == '_';
+                    })) {
+                    return false;
+                }
+                if (slash == std::string::npos) break;
+                start = slash + 1;
+            }
+            return true;
+        };
+        for (const nlohmann::json& item : models) {
+            if (!item.is_object() || !item.contains("id") || !item["id"].is_string() ||
+                !item.contains("name") || !item["name"].is_string() || !item.contains("dir") ||
+                !item["dir"].is_string() || !item.contains("engine") ||
+                !item["engine"].is_string() || !item.contains("files") ||
+                !item["files"].is_array() || item["files"].empty() || item["files"].size() > 32) {
+                return false;
+            }
+            VoiceLocalModel model;
+            model.id = item["id"].get<std::string>();
+            model.name = item["name"].get<std::string>();
+            model.dir = item["dir"].get<std::string>();
+            model.engine = item["engine"].get<std::string>();
+            if (!safe_id(model.id) || model.name.empty() || model.name.size() > 80 ||
+                !safe_id(model.dir) || model.dir.size() > 32 ||
+                (model.engine != "sensevoice" && model.engine != "funasr-nano" &&
+                 model.engine != "qwen3-asr")) {
+                return false;
+            }
+            for (const VoiceLocalModel& seen : parsed.models) {
+                if (seen.id == model.id || seen.dir == model.dir) return false;
+            }
+            for (const nlohmann::json& file_json : item["files"]) {
+                if (!file_json.is_object() || !file_json.contains("asset") ||
+                    !file_json["asset"].is_string() || !file_json.contains("target") ||
+                    !file_json["target"].is_string() || !file_json.contains("sha256") ||
+                    !file_json["sha256"].is_string() || !file_json.contains("size") ||
+                    !file_json["size"].is_number_unsigned()) {
+                    return false;
+                }
+                VoiceModelFile file;
+                file.asset = file_json["asset"].get<std::string>();
+                file.target = file_json["target"].get<std::string>();
+                file.sha256 = file_json["sha256"].get<std::string>();
+                file.size = file_json["size"].get<std::uint64_t>();
+                if (!safe_target(file.target) || !allowed(file.asset) ||
+                    !is_lower_hex(file.sha256, 64) || file.size == 0) {
+                    return false;
+                }
+                for (const VoiceModelFile& seen : model.files) {
+                    if (seen.target == file.target) return false;
+                }
+                model.files.push_back(std::move(file));
+            }
+            parsed.models.push_back(std::move(model));
+        }
+    }
+
+    parsed.download_prefix = download_prefix;
     *manifest = std::move(parsed);
     return true;
 }
+
+std::uint64_t VoiceLocalModel::total_size() const {
+    std::uint64_t total = 0;
+    for (const VoiceModelFile& file : files) total += file.size;
+    return total;
+}
+
+// (the manifest keeps the prefix the files were resolved with, see update.h)
 
 bool is_newer_release(const std::string& candidate, const std::string& current) {
     if (candidate.find('-') != std::string::npos) return false;  // pre-releases are not offered

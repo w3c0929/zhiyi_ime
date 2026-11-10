@@ -24,6 +24,7 @@ add_executable(cxxime-server WIN32
     src/voice_overlay.cc
     src/voice_recorder.cc
     src/voice_service.cc
+    src/voice_worker_client.cc
     src/word_list_service.cc
 )
 

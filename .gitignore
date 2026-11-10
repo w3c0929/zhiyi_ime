@@ -91,3 +91,6 @@ __pycache__/
 /diagnostics/host_takeover/probe/
 /diagnostics/host_takeover/scripts/
 /.github/workflows/windows-release.yml
+
+# sherpa-onnx runtime for the voice worker: python scripts/fetch_sherpa.py
+third_party/sherpa-onnx/

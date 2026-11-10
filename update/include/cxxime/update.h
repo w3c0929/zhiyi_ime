@@ -199,10 +199,34 @@ Status download_translator_file(const TranslatorFile& file, const std::wstring& 
 //   models' licenses (LICENSE-*.txt)
 inline constexpr char kVoiceReleasePath[] = "voice/";  // under kDownloadPrefix
 
+// One file of a selectable model: a release asset and where it goes under the model's
+// directory (docs/voice-input.md). Asset names are flat (GitHub allows no '/'), so
+// "Qwen3-0.6B/merges.txt" ships as "funasr-nano--Qwen3-0.6B--merges.txt".
+struct VoiceModelFile {
+    std::string asset;
+    std::string target;
+    std::uint64_t size = 0;
+    std::string sha256;
+};
+
+// One recognition model offered by the voice release ("models" in voice.json, newer
+// applications only; "files" still describes the original SenseVoice model for older ones).
+struct VoiceLocalModel {
+    std::string id;      // voice.model: sensevoice-local | funasr-nano-local | qwen3-asr-local
+    std::string name;    // shown in Settings
+    std::string dir;     // directory under <data>/voice/models/
+    std::string engine;  // sensevoice | funasr-nano | qwen3-asr
+    std::vector<VoiceModelFile> files;
+
+    std::uint64_t total_size() const;
+};
+
 struct VoiceManifest {
     std::uint32_t version = 0;
     std::string min_app;  // the oldest program version that runs it ("" = any)
-    std::vector<TranslatorFile> files;
+    std::vector<TranslatorFile> files;      // SenseVoice, for applications before voice.models
+    std::vector<VoiceLocalModel> models;    // selectable models (voice.model)
+    std::string download_prefix;            // where the assets live ("" = the usual prefix)
 
     std::uint64_t total_size() const;
 };

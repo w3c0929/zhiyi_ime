@@ -31,6 +31,8 @@
 #include "voice_overlay.h"
 #include "voice_recorder.h"
 
+class VoiceWorkerClient;
+
 class VoiceService {
 public:
     // What the service needs of the sessions.
@@ -101,6 +103,8 @@ private:
     std::unique_ptr<cxxime::voice::SpeechRecognizer> recognizer_;
     std::wstring recognizer_model_;
     std::string recognizer_device_;
+    // Fun-ASR-Nano / Qwen3-ASR: sherpa-onnx in its own process (voice_worker_client.h).
+    std::unique_ptr<VoiceWorkerClient> recognizer_worker_;
     std::chrono::steady_clock::time_point last_used_{};
 };
 
