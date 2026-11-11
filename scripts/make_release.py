@@ -10,7 +10,7 @@ of a release tagged `v<version>` in https://github.com/w3c0929/zhiyi_ime.
 
 The manifest must satisfy update_manifest.cc: the file name is exactly
 zhiyu-v<version>-setup.exe and the url is <base>v<version>/<file>. The signature uses the same
-key as scripts/update_signing.py (update-signing-key.pem by default).
+key as scripts/update_signing.py (~/.key/update-signing-key.pem by default).
 """
 import argparse
 import datetime

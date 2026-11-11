@@ -11,6 +11,9 @@ repository — only a release machine needs it.
 `sign` writes, next to each manifest, a `.sig` file: base64 of the raw signature r || s (64
 bytes), over the manifest's exact bytes, which is what verify_signature() checks.
 
+The key is read from ~/.key/update-signing-key.pem unless --key or
+ZHIYU_UPDATE_SIGNING_KEY says otherwise.
+
 Needs the `cryptography` package (pip install cryptography).
 """
 import argparse
@@ -26,7 +29,8 @@ except ImportError:  # pragma: no cover - a clear message beats a traceback
     raise SystemExit(2)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_KEY = os.path.join(ROOT, "update-signing-key.pem")
+DEFAULT_KEY = (os.environ.get("ZHIYU_UPDATE_SIGNING_KEY") or
+               os.path.join(os.path.expanduser("~"), ".key", "update-signing-key.pem"))
 INC_PATH = os.path.join(ROOT, "update", "src", "update_public_key.inc")
 
 

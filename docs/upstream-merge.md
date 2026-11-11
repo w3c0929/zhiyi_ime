@@ -231,7 +231,7 @@
 - **不能把地址指回上游**：那些清单是**上游私钥**签的，而程序内置的是本仓库公钥
   （`update/src/update_public_key.inc`），签名验证不过会被拒。
 - 正确做法：下载上游资产 → **丢弃上游的 `*.json.sig`** → 用本仓库私钥重签
-  （`python scripts/update_signing.py sign update-signing-key.pem <清单>`）→ 在本仓库建同名 Release 上传。
+  （`python scripts/update_signing.py sign <清单>`，私钥默认读 `~/.key/update-signing-key.pem`）→ 在本仓库建同名 Release 上传。
 - **必须 `--latest=false`**（`gh release create … --latest=false`）：否则会抢走 `/releases/latest`，
   更新检查就会指向模型 Release。**忘了带的话**：`--latest=false` 在**已发布**的 release 上不生效
   （2026-10-17 实测：`gh release edit <tag> --latest=false` 与 `PATCH … make_latest=false` 都不动它），
