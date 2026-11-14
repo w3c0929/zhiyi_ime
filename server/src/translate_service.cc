@@ -266,7 +266,6 @@ void TranslateService::run() {
                 std::chrono::seconds(config->translate_idle_seconds)) {
             server_->stop();
             server_.reset();
-            server_device_.clear();
         }
     }
 }
@@ -279,16 +278,9 @@ bool TranslateService::ensure_server(std::string* error) {
         if (error) *error = "the translation model is not installed";
         return false;
     }
-    std::string device;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (config_) device = config_->translate_device;
-    }
-    if (device.empty()) device = cxxime::mt::kCpuDevice;  // "" means the CPU, as elsewhere
     auto server = std::make_unique<cxxime::mt::LlamaServer>();
-    if (!server->start(installed, device, error)) return false;
+    if (!server->start(installed, error)) return false;
     server_ = std::move(server);
-    server_device_ = device;
     return true;
 }
 

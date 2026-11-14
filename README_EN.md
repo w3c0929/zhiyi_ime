@@ -38,9 +38,7 @@ Zhiyu IME is an **independent fork** of Zhiyi IME: the update check and the lang
 
 - **Context-aware recommendation**: a small model running on your computer reads the text before
   the caret, puts the most likely candidate first and marks it with a blue-purple star (权利 / 权力 /
-  全力). The model works offline; nothing you type leaves your computer. With a dedicated graphics
-  card the model can run on it instead (DirectML: NVIDIA, AMD and Intel cards; Settings tests the
-  speed first and uses the card only when it is faster than the CPU).
+  全力). The model works offline on the processor; nothing you type leaves your computer.
 - **Learning mode (candidate translations)**: each candidate shows what it means in another language,
   with English part-of-speech labels (n. v. adj. …) and up to three common senses, so you pick up a
   language while typing. Chinese candidates can be shown in English, Japanese, Korean, French,
@@ -133,7 +131,6 @@ Zhiyu IME is maintained by [w3c0929](https://github.com/w3c0929); it is a modifi
 - [SkyPile-150B](https://huggingface.co/datasets/Skywork/SkyPile-150B) (Skywork, Skywork Community License): about 70% of the training text for long-pinyin composition since 1.5.4
 - [wordfreq](https://github.com/rspeer/wordfreq): English word frequencies (CC BY-SA 4.0)
 - [ONNX Runtime](https://github.com/microsoft/onnxruntime): model inference (MIT)
-- [DirectML](https://github.com/microsoft/DirectML): inference on graphics cards (Microsoft DirectML
   license, redistributable)
 
 The learning-mode language packs were generated offline by large language models (GLM, Gemma), then

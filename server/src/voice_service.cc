@@ -9,7 +9,6 @@
 
 #include <cxxime/ai_actions.h>
 #include <cxxime/ai_client.h>
-#include <cxxime/gpu_adapters.h>
 #include <cxxime/ipc_protocol.h>
 #include <cxxime/logging.h>
 #include <cxxime/query_trace.h>
@@ -295,13 +294,9 @@ bool VoiceService::ensure_detector(std::string* error) {
 
 bool VoiceService::ensure_recognizer(std::string* error) {
     std::string model_id;
-    std::string device;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (config_) {
-            model_id = config_->voice_model;
-            device = config_->voice_device;
-        }
+        if (config_) model_id = config_->voice_model;
     }
     cxxime::voice::InstalledVoiceModel model;
     if (!cxxime::voice::find_model(model_id, &model)) {
@@ -327,35 +322,19 @@ bool VoiceService::ensure_recognizer(std::string* error) {
         return true;
     }
     recognizer_worker_.reset();
-    if (recognizer_ && recognizer_model_ == model.model && recognizer_device_ == device) return true;
+    if (recognizer_ && recognizer_model_ == model.model) return true;
     recognizer_.reset();
     auto recognizer = std::make_unique<cxxime::voice::SpeechRecognizer>();
     const auto start = std::chrono::steady_clock::now();
-    bool loaded = false;
-    if (!device.empty()) {
-        // The card chosen in Settings, whatever voice.min_gpu_memory_mb is now.
-        const std::vector<cxxime::GpuAdapter> adapters = cxxime::list_gpu_adapters(0);
-        const cxxime::GpuAdapter* adapter = cxxime::find_gpu_adapter(adapters, device);
-        std::string gpu_error = "graphics card not found";
-        loaded = adapter && recognizer->load(model.model, model.tokens,
-                                             static_cast<int>(adapter->index), 0, &gpu_error);
-        if (!loaded) {
-            CXXIME_LOG(L"voice: graphics card %S failed (%S), using the CPU", device.c_str(),
-                       gpu_error.c_str());
-        }
+    if (!recognizer->load(model.model, model.tokens, cxxime::voice::cpu_threads(), error)) {
+        return false;
     }
-    if (!loaded) {
-        loaded = recognizer->load(model.model, model.tokens, -1, cxxime::voice::cpu_threads(),
-                                  error);
-    }
-    if (!loaded) return false;
     CXXIME_LOG(L"voice: model loaded in %lld ms",
                static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
                                           std::chrono::steady_clock::now() - start)
                                           .count()));
     recognizer_ = std::move(recognizer);
     recognizer_model_ = model.model;
-    recognizer_device_ = device;
     return true;
 }
 

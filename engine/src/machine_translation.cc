@@ -20,7 +20,6 @@
 #include <json.hpp>
 
 #include <cxxime/data_path.h>
-#include <cxxime/gpu_adapters.h>
 #include <cxxime/translator_files.h>
 
 #include "laya/text_util.h"
@@ -124,65 +123,6 @@ int free_port() {
     return port;
 }
 
-// Runs `command` without a window and returns what it printed (stdout and stderr).
-std::string run_and_capture(const std::wstring& command, const std::wstring& directory, int timeout_ms) {
-    SECURITY_ATTRIBUTES inherit = {sizeof(inherit), nullptr, TRUE};
-    HANDLE read = nullptr, write = nullptr;
-    if (!CreatePipe(&read, &write, &inherit, 0)) return {};
-    SetHandleInformation(read, HANDLE_FLAG_INHERIT, 0);
-    STARTUPINFOW startup = {sizeof(startup)};
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdOutput = write;
-    startup.hStdError = write;
-    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    PROCESS_INFORMATION process = {};
-    std::wstring line = command;
-    const BOOL started = CreateProcessW(nullptr, line.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
-                                        nullptr, directory.c_str(), &startup, &process);
-    CloseHandle(write);
-    std::string out;
-    if (started) {
-        char buf[4096];
-        DWORD n = 0;
-        while (ReadFile(read, buf, sizeof(buf), &n, nullptr) && n > 0) out.append(buf, n);
-        if (WaitForSingleObject(process.hProcess, static_cast<DWORD>(timeout_ms)) != WAIT_OBJECT_0) {
-            TerminateProcess(process.hProcess, 1);
-        }
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
-    }
-    CloseHandle(read);
-    return out;
-}
-
-// "Vulkan1" for the card `device_key` (its name, or "<name> #2" for the second of a model),
-// matched by name against llama-server --list-devices.
-std::string vulkan_device(const InstalledModel& installed, const std::string& device_key,
-                          std::string* error) {
-    std::string name = device_key;
-    int nth = 1;
-    const std::regex numbered(R"((.*) #(\d+))");
-    std::smatch m;
-    if (std::regex_match(device_key, m, numbered)) {
-        name = m[1];
-        nth = std::stoi(m[2]);
-    }
-    const std::wstring dir = installed.dir + wide(kTranslatorRuntimeDir);
-    const std::string listing =
-        run_and_capture(L"\"" + installed.server + L"\" --list-devices", dir, 30000);
-    const std::regex device_line(R"(^\s*(Vulkan\d+):\s*(.+?)\s*\(\d+ MiB)");
-    int seen = 0;
-    size_t start = 0;
-    while (start < listing.size()) {
-        size_t end = listing.find('\n', start);
-        if (end == std::string::npos) end = listing.size();
-        const std::string line = listing.substr(start, end - start);
-        start = end + 1;
-        if (std::regex_search(line, m, device_line) && m[2] == name && ++seen == nth) return m[1];
-    }
-    if (error) *error = "graphics card not found by Vulkan: " + device_key;
-    return {};
-}
 
 struct Http {
     HINTERNET session = nullptr;
@@ -390,15 +330,10 @@ void LlamaServer::stop() {
         std::lock_guard<std::mutex> lock(impl_->page_mutex);
         impl_->last_page.clear();  // a new server holds no context
     }
-    device_.clear();
 }
 
-bool LlamaServer::start(const InstalledModel& installed, const std::string& device_key,
-                        std::string* error) {
+bool LlamaServer::start(const InstalledModel& installed, std::string* error) {
     stop();
-    const bool cpu = device_key == kCpuDevice;
-    const std::string device = cpu ? "none" : vulkan_device(installed, device_key, error);
-    if (device.empty()) return false;
     const int port = free_port();
     if (port == 0) {
         if (error) *error = "no free port";
@@ -416,8 +351,8 @@ bool LlamaServer::start(const InstalledModel& installed, const std::string& devi
     const std::wstring dir = installed.dir + wide(kTranslatorRuntimeDir);
     // --cache-ram 0: no prompt cache in memory. Its default (8 GB) grew the server to several GB
     // over a long session; the prompts are short, so it saves nothing.
-    std::wstring command = L"\"" + installed.server + L"\" -m \"" + installed.model + L"\" --device " +
-                           wide(device) + (cpu ? L" -ngl 0 -t " + std::to_wstring(cpu_threads()) : L" -ngl 99") +
+    std::wstring command = L"\"" + installed.server + L"\" -m \"" + installed.model +
+                           L"\" --device none -ngl 0 -t " + std::to_wstring(cpu_threads()) +
                            L" -np " + std::to_wstring(kParallel) + L" -c " + std::to_wstring(kContextSize) +
                            L" --cache-ram 0 --host 127.0.0.1 --port " + std::to_wstring(port) +
                            L" --api-key " + impl_->http.key + L" --no-webui --offline --log-disable";
@@ -447,16 +382,10 @@ bool LlamaServer::start(const InstalledModel& installed, const std::string& devi
         }
         Sleep(100);
     }
-    device_ = device_key;
     prompt_ = installed.prompt;
-    // The first requests of each batch size build the card's compute pipelines (seconds): do
-    // that now, not on the first page. The processor needs one to page the model in.
-    std::vector<Item> warm(kParallel, Item{"en", "\xE4\xBD\xA0\xE5\xA5\xBD"});  // 你好
-    for (size_t n : {size_t{1}, size_t{3}, size_t{5}, size_t{kParallel}}) {
-        warm.resize(n);
-        translate(warm, {}, 30000);
-        if (cpu) break;
-    }
+    // One request pages the model in, so the first page is not the one that waits for it.
+    std::vector<Item> warm(1, Item{"en", "\xE4\xBD\xA0\xE5\xA5\xBD"});  // 你好
+    translate(warm, {}, 30000);
     return true;
 }
 
@@ -473,7 +402,7 @@ std::vector<std::string> LlamaServer::translate_impl(const std::vector<Item>& it
     // costs one more round, 184). On a graphics card the prompt is cheap and the extra round is
     // not (60 -> 80 ms): one request each there too. A runtime without the patch answers the
     // shared request all the same.
-    if (prompt_ == kStudentPrompt && device_ == kCpuDevice && items.size() > 1 && !long_form) {
+    if (prompt_ == kStudentPrompt && items.size() > 1 && !long_form) {
         const std::string key = page_key(items, context);
         bool fresh = false;
         {

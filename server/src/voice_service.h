@@ -106,7 +106,6 @@ private:
     std::wstring detector_model_;
     std::unique_ptr<cxxime::voice::SpeechRecognizer> recognizer_;
     std::wstring recognizer_model_;
-    std::string recognizer_device_;
     // Fun-ASR-Nano / Qwen3-ASR: sherpa-onnx in its own process (voice_worker_client.h).
     std::unique_ptr<VoiceWorkerClient> recognizer_worker_;
     // One recognizer call at a time: a preview and the final recognition never overlap.

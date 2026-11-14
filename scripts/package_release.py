@@ -115,6 +115,12 @@ def copy_reference(reference, out_dir):
     if os.path.exists(whole) and os.path.exists(one):
         os.remove(whole)
         print("  laya\\laya.int8g.onnx (the CPU one graph is there)")
+    # Everything runs on the processor now: the DirectML provider DLL and its license go too.
+    for name in ("DirectML.dll", os.path.join("licenses", "DirectML.txt")):
+        path = os.path.join(out_dir, name)
+        if os.path.exists(path):
+            os.remove(path)
+            print(f"  {name} (the CPU-only build)")
 
 
 def overlay_builds(reference, out_dir, build_x64, build_x86):

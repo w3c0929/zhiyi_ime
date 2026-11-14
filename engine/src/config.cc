@@ -486,11 +486,8 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
             if (!legacy.empty()) config.gloss_targets[source] = legacy;
         }
         load_bool(learning, "translator", config.mt_enable);
-        load_string(learning, "translator_device", config.mt_device);
         load_int(learning, "translator_context_chars", config.mt_context_chars);
         load_int(learning, "translator_idle_seconds", config.mt_idle_seconds);
-        load_int(learning, "translator_min_gpu_memory_mb", config.mt_min_gpu_memory_mb);
-        config.mt_min_gpu_memory_mb = std::clamp(config.mt_min_gpu_memory_mb, 0, 1 << 20);
         load_bool(learning, "digits_type_translation", config.digits_type_translation);
         config.mt_context_chars = (std::max)(0, (std::min)(config.mt_context_chars, 256));
         config.mt_idle_seconds = (std::max)(5, config.mt_idle_seconds);
@@ -509,12 +506,9 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
         load_bool(voice, "enable", config.voice_enable);
         load_string(voice, "model", config.voice_model);
         load_bool(voice, "preview", config.voice_preview);
-        load_string(voice, "device", config.voice_device);
         load_string(voice, "language", config.voice_language);
         load_bool(voice, "itn", config.voice_itn);
         load_int(voice, "max_seconds", config.voice_max_seconds);
-        load_int(voice, "min_gpu_memory_mb", config.voice_min_gpu_memory_mb);
-        config.voice_min_gpu_memory_mb = std::clamp(config.voice_min_gpu_memory_mb, 0, 1 << 20);
         config.voice_max_seconds = (std::max)(5, (std::min)(config.voice_max_seconds, 300));
         if (config.voice_language != "zh" && config.voice_language != "en" &&
             config.voice_language != "yue") {
@@ -525,7 +519,6 @@ static void apply_config_json(Config& config, nlohmann::json& j) {
     if (j.contains("translate") && j["translate"].is_object()) {
         auto& translate = j["translate"];
         load_bool(translate, "direct_insert", config.translate_direct_insert);
-        load_string(translate, "device", config.translate_device);
         load_int(translate, "idle_seconds", config.translate_idle_seconds);
         config.translate_idle_seconds = std::clamp(config.translate_idle_seconds, 0, 3600);
         load_int(translate, "max_selection_chars", config.translate_max_selection_chars);
@@ -1026,22 +1019,17 @@ static nlohmann::json build_config_json(const Config& config, bool include_diagn
     j["learning"]["chinese_target"] = config.gloss_target("zh");
     j["learning"]["english_target"] = config.gloss_target("en");
     j["learning"]["translator"] = config.mt_enable;
-    j["learning"]["translator_device"] = config.mt_device;
     j["learning"]["translator_context_chars"] = config.mt_context_chars;
     j["learning"]["translator_idle_seconds"] = config.mt_idle_seconds;
-    j["learning"]["translator_min_gpu_memory_mb"] = config.mt_min_gpu_memory_mb;
     j["learning"]["space_languages"] = config.translation_space_languages;
     j["learning"]["digits_type_translation"] = config.digits_type_translation;
     j["voice"]["enable"] = config.voice_enable;
     j["voice"]["model"] = config.voice_model;
     j["voice"]["preview"] = config.voice_preview;
-    j["voice"]["device"] = config.voice_device;
     j["voice"]["language"] = config.voice_language;
     j["voice"]["itn"] = config.voice_itn;
     j["voice"]["max_seconds"] = config.voice_max_seconds;
-    j["voice"]["min_gpu_memory_mb"] = config.voice_min_gpu_memory_mb;
     j["translate"]["direct_insert"] = config.translate_direct_insert;
-    j["translate"]["device"] = config.translate_device;
     j["translate"]["idle_seconds"] = config.translate_idle_seconds;
     j["translate"]["max_selection_chars"] = config.translate_max_selection_chars;
     j["ai"]["enabled"] = config.ai.enabled;

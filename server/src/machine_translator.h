@@ -35,10 +35,9 @@ public:
     // The translation remembered for (target, text); false when it was never asked.
     bool cached(const std::string& target, const std::string& text, std::string* translation);
 
-    // Translates these candidates (the current page) on the graphics card `device`; replaces a
-    // page still waiting.
-    void request(std::vector<cxxime::mt::Item> items, std::string context, std::string device,
-                 int idle_seconds);
+    // Translates these candidates (the current page) on the processor; replaces a page still
+    // waiting.
+    void request(std::vector<cxxime::mt::Item> items, std::string context, int idle_seconds);
 
     void stop();  // at server exit
 
@@ -50,7 +49,6 @@ private:
     struct Page {
         std::vector<cxxime::mt::Item> items;
         std::string context;
-        std::string device;
         int idle_seconds = 60;
     };
 
@@ -63,7 +61,7 @@ private:
     Callback callback_;
     std::unordered_map<std::string, std::string> cache_;  // target \x1F text -> translation
     std::wstring model_;  // run() only: the .gguf the cached translations came from
-    std::string failed_device_;  // the model could not start there; not tried again for a while
+    bool failed_start_ = false;  // the model could not start; not tried again for a while
     long long failed_at_ms_ = 0;
 };
 

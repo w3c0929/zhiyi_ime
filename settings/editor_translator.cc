@@ -53,41 +53,7 @@ struct MtInstalled {
 
 struct MtTested {
     bool works = false;
-    int device_ms = 0;  // median page on the chosen card; 0: not timed (the CPU was chosen)
-    int cpu_ms = 0;     // the same pages on the CPU; 0: not timed or it failed
 };
-
-// Three pages of seven common words, each page different so no answer comes from a cache.
-const std::vector<std::vector<mt::Item>>& timing_pages() {
-    static const std::vector<std::vector<mt::Item>> pages = [] {
-        const char* words[3][7] = {
-            {"现在", "朋友", "天气", "学习", "发展", "电脑", "工作"},
-            {"晚饭", "城市", "音乐", "医生", "周末", "问题", "照片"},
-            {"火车", "公司", "新闻", "时间", "颜色", "超市", "作业"},
-        };
-        std::vector<std::vector<mt::Item>> out(3);
-        for (int p = 0; p < 3; ++p) {
-            for (const char* word : words[p]) out[p].push_back({"en", word});
-        }
-        return out;
-    }();
-    return pages;
-}
-
-// The median time of a page on a started server, in ms; 0 when a page fails.
-int time_pages(mt::LlamaServer& server) {
-    std::vector<int> times;
-    for (const auto& page : timing_pages()) {
-        const auto start = std::chrono::steady_clock::now();
-        const auto out = server.translate(page, {});
-        if (out.empty() || out[0].empty()) return 0;
-        times.push_back(static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                             std::chrono::steady_clock::now() - start)
-                                             .count()));
-    }
-    std::sort(times.begin(), times.end());
-    return (std::max)(1, times[times.size() / 2]);
-}
 
 fs::path translator_root() { return fs::path(utf8_to_wstr(local_data_dir())) / kTranslatorDir; }
 
@@ -278,11 +244,6 @@ void EditorApp::create_translator_card(HWND panel, int y) {
     y = card_begin(panel, y, tr("learning.card_translator"));
     hTranslator_ = make_check(kTranslatorId, tr("learning.translator_enable"), x0, y, S(520), panel);
     y += kRowH;
-    const int labels = label_width({"learning.translator_device"});
-    const int device_x = make_aligned_label(tr("learning.translator_device"), x0 + S(20), labels, y, panel);
-    hTranslatorDevice_ = make_combo(kTranslatorDeviceId, device_x, y, S(420), panel);
-    fill_translator_devices();
-    y += kRowH;
     hTranslatorStatus_ = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_ENDELLIPSIS,
                                          x0, y + S(5), client.right - x0 - S(240), S(kFontPt + 8), panel,
                                          nullptr, GetModuleHandle(nullptr), nullptr);
@@ -297,43 +258,15 @@ void EditorApp::create_translator_card(HWND panel, int y) {
     show_translator_state();
 }
 
-// The cards are asked from Vulkan (about 0.15 s) only once the model is here: before, the box
-// is disabled and lists the CPU alone.
-void EditorApp::fill_translator_devices() {
-    mt_choices_ = mt::find_installed(nullptr)
-                      ? cached_translator_gpus(static_cast<std::uint64_t>(config_.mt_min_gpu_memory_mb))
-                      : std::vector<GpuAdapter>{};
-    const size_t cards = mt_choices_.size();
-    GpuAdapter cpu;
-    cpu.name = cached_cpu_info().name;
-    cpu.key = mt::kCpuDevice;
-    mt_choices_.push_back(cpu);
-    SendMessageW(hTranslatorDevice_, CB_RESETCONTENT, 0, 0);
-    for (size_t i = 0; i < mt_choices_.size(); ++i) {
-        std::wstring label = i == cards ? L"CPU" : cards > 1 ? L"GPU " + std::to_wstring(i + 1) : L"GPU";
-        if (!mt_choices_[i].name.empty()) label += L"（" + utf8_to_wstr(mt_choices_[i].name) + L"）";
-        combo_add(hTranslatorDevice_, label.c_str());
-    }
-}
-
 void EditorApp::populate_translator() {
     if (!hTranslator_) return;
     set_check(hTranslator_, config_.mt_enable);
-    int index = 0;
-    for (size_t i = 0; i < mt_choices_.size(); ++i) {
-        if (mt_choices_[i].key == config_.mt_device) index = static_cast<int>(i);
-    }
-    combo_set_index(hTranslatorDevice_, index);
     show_translator_state();
 }
 
 void EditorApp::read_translator(Config& config) {
     if (!hTranslator_) return;
-    const int index = combo_index(hTranslatorDevice_);
     config.mt_enable = mt::find_installed(nullptr) && get_check(hTranslator_);
-    if (index >= 0 && index < static_cast<int>(mt_choices_.size())) {
-        config.mt_device = mt_choices_[static_cast<size_t>(index)].key;
-    }
 }
 
 void EditorApp::show_translator_state() {
@@ -381,7 +314,6 @@ void EditorApp::show_translator_state() {
     ShowWindow(hTranslatorRemove_, have && mt_busy_ == MtBusy::kNone ? SW_SHOW : SW_HIDE);
     EnableWindow(hTranslator_, have && mt_busy_ == MtBusy::kNone);
     if (!have) set_check(hTranslator_, false);
-    EnableWindow(hTranslatorDevice_, have && mt_busy_ == MtBusy::kNone && get_check(hTranslator_));
 }
 
 void EditorApp::start_translator_check() {
@@ -436,31 +368,22 @@ void EditorApp::remove_translator() {
 }
 
 void EditorApp::start_translator_test() {
-    const int index = combo_index(hTranslatorDevice_);
     mt::InstalledModel installed;
-    if (index < 0 || index >= static_cast<int>(mt_choices_.size()) || !mt::find_installed(&installed)) return;
+    if (!mt::find_installed(&installed)) return;
     mt_busy_ = MtBusy::kTesting;
     show_translator_state();
     if (hTranslatorHint_) SetWindowTextW(hTranslatorHint_, tr("learning.translator_hint"));
     const HWND window = hwnd_;
-    const std::string key = mt_choices_[static_cast<size_t>(index)].key;
-    std::thread([window, installed, key] {
+    std::thread([window, installed] {
         auto tested = std::make_unique<MtTested>();
         {
             mt::LlamaServer server;
             std::string error;
-            tested->works = server.start(installed, key, &error);
+            tested->works = server.start(installed, &error);
             if (tested->works) {
                 const auto out = server.translate({{"en", "\xE4\xBD\xA0\xE5\xA5\xBD"}}, {});  // 你好
                 tested->works = !out.empty() && !out[0].empty();
             }
-            // An old card may run the model slower than the processor: time both.
-            if (tested->works && key != mt::kCpuDevice) tested->device_ms = time_pages(server);
-        }
-        if (tested->device_ms > 0) {
-            mt::LlamaServer cpu;
-            std::string error;
-            if (cpu.start(installed, mt::kCpuDevice, &error)) tested->cpu_ms = time_pages(cpu);
         }
         PostMessageW(window, kMtTestedMessage, 0, reinterpret_cast<LPARAM>(tested.release()));
     }).detach();
@@ -473,9 +396,6 @@ bool EditorApp::handle_translator_command(int control_id, int notification) {
             show_translator_state();
             if (get_check(hTranslator_)) start_translator_test();
         }
-        return true;
-    case kTranslatorDeviceId:
-        if (notification == CBN_SELCHANGE && get_check(hTranslator_)) start_translator_test();
         return true;
     case kTranslatorActionId:
         if (notification != BN_CLICKED) return true;
@@ -527,7 +447,6 @@ bool EditorApp::handle_translator_message(UINT message, WPARAM wparam, LPARAM lp
         if (done->status == update::Status::kOk) {
             mt_note_.clear();
             show_translator_state();
-            fill_translator_devices();  // the cards, now that the model is here
             populate_translator();
             set_check(hTranslator_, true);  // downloaded to be used: on, after a test where it runs
             start_translator_test();
@@ -552,13 +471,6 @@ bool EditorApp::handle_translator_message(UINT message, WPARAM wparam, LPARAM lp
             return true;
         }
         show_translator_state();
-        if (hTranslatorHint_ && tested->device_ms > 0 && tested->cpu_ms > 0) {
-            const bool slower = tested->device_ms > tested->cpu_ms;
-            SetWindowTextW(hTranslatorHint_,
-                           fill(tr(slower ? "learning.translator_slower" : "learning.translator_speed"),
-                                {std::to_wstring(tested->device_ms), std::to_wstring(tested->cpu_ms)})
-                               .c_str());
-        }
         return true;
     }
     default:

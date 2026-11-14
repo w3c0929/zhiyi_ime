@@ -58,14 +58,14 @@ target_link_libraries(cxxime-engine PUBLIC
     nlohmann_json
 )
 
-# ---- Laya context reranking (ONNX Runtime: CPU, or a graphics card through DirectML) ----
+# ---- Laya context reranking (ONNX Runtime, CPU only) ----
 # onnxruntime.dll is delay-loaded: executables that link the engine but never load a model
 # (tests, tools, settings) start without it. LayaRerank only calls into ONNX Runtime after
 # checking that the model files exist and the DLL can be loaded.
 # The x86 build only produces the in-process modules for 32-bit applications (the server is
 # 64-bit), so it gets a no-op LayaRerank and no ONNX Runtime.
 target_sources(cxxime-engine PRIVATE src/english_lexicon.cc src/english_candidates.cc src/english_learning.cc
-    src/experience_log.cc src/gpu_adapters.cc src/vulkan_gpus.cc)
+    src/experience_log.cc)
 target_include_directories(cxxime-engine PRIVATE ${CXXIME_GENERATED_INCLUDE_DIR})
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(LAYA_ORT_DIR ${CMAKE_SOURCE_DIR}/third_party/onnxruntime CACHE PATH "ONNX Runtime (onnxruntime-win-x64) root")
@@ -90,8 +90,6 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     target_link_options(cxxime-engine INTERFACE /DELAYLOAD:onnxruntime.dll)
     set(LAYA_ORT_RUNTIME_FILES
         ${LAYA_ORT_DIR}/lib/onnxruntime.dll
-        ${LAYA_ORT_DIR}/lib/onnxruntime_providers_shared.dll
-        ${LAYA_ORT_DIR}/lib/DirectML.dll
         CACHE INTERNAL "ONNX Runtime DLLs shipped next to cxxime-server.exe")
 else()
     target_sources(cxxime-engine PRIVATE src/laya_rerank_stub.cc)

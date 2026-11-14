@@ -181,9 +181,6 @@
 - **快捷键**：显示“按键”页设的语音输入快捷键，点“在‘按键’页设置”过去修改；没设时快捷键不起作用。
 - **语音模型**：SenseVoice-Small，约 240 MB。未下载时只有“下载”；装好后有“检查更新”和“卸载”，有新版本时变成
   “更新到 vN”。卸载后语音输入关闭。
-- **识别设备**：CPU（一句话约 0.1 秒）或显卡（DirectML，列表和“常规”页的推荐模型一样）。选显卡时先测速度：
-  识别 5 秒语音在这块显卡和 CPU 上各要多久，显卡更慢时提示建议改用 CPU；跑不起来的显卡退回 CPU 并不再列出。
-  下载模型后也会在所选设备上测一次。
 - **识别语言**：自动、普通话、英语、粤语。
 - **数字和日期写成阿拉伯数字**：默认打开（“3点”“10月15号”）。
 - 一次最长录音时长只在配置文件里改（`voice.max_seconds`，默认 60 秒）。
@@ -198,8 +195,8 @@
   有新版本时变成“更新到 vN”。安装包自带中 → 英、英 → 中，也可以卸载，再点“下载”从安装目录恢复。
   语言包装上或卸载后立即生效。
 - **离线翻译**：语言包里没有的词、词组和短句（3–7 个一页），用下载到本机的翻译模型（从腾讯 Hy-MT2-7B 蒸馏，约 0.32 GB）
-  翻译，见 [学习模式](learning-mode.md#离线翻译)。“运行在”选自带显存约 1 GB 以上的独立显卡或 CPU（CPU 上一页约 0.3 秒）。
-  点“下载”后下载模型和运行库，装好后自动打开并在所选的显卡或 CPU 上试翻一句；试翻失败时关闭。
+  翻译，见 [学习模式](learning-mode.md#离线翻译)。在 CPU 上运行（一页约 0.3 秒）。
+  点“下载”后下载模型和运行库，装好后自动打开并试翻一句；试翻失败时关闭。
   装好后可以“检查更新”“卸载”。
 
 ## 隐私
@@ -248,15 +245,11 @@
 | `learning.gloss_targets` | `{}` | 「学习」页每种源语言译成什么：`{"zh":"ja","en":"zh",...}`（键与值都是 `zh` `en` `ja` `ko` `fr` `de` `es` `ru`），缺哪个语言就是关。中文、英文两行是候选窗里的译文，八行全都是划词翻译（Ctrl+C+C）译成的语言 |
 | `learning.chinese_target` / `english_target` | 空 | 旧键（`gloss_targets` 之前），仍会读取，保存时一并写出，便于回退到旧版本 |
 | `learning.translator` | false | 离线翻译：语言包里没有的候选用下载的翻译模型翻译 |
-| `learning.translator_device` | 空 | 离线翻译在哪里运行：显卡名称（同型号的第二块为 `名称 #2`）或 `cpu`；空 = 列表里的第一项 |
-| `learning.translator_min_gpu_memory_mb` | 1000 | “学习”页离线翻译列出的显卡至少要有这么多 MB 自带显存（Vulkan 的独立显卡；模型约占 1 GB） |
 | `learning.translator_context_chars` | 32 | 交给翻译模型的光标前文字（字数，0–256），帮助多义词选对意思 |
 | `learning.translator_idle_seconds` | 60 | 这么多秒没有要翻译的词就卸载翻译模型，释放显存 |
 | `learning.space_languages` | `["en", "ko", "fr", "de", "es", "ru"]` | Ctrl+1～9 打出这些语言的翻译时，光标前是英文等字母或数字就先补一个空格（`[]` = 都不补） |
 | `voice.enable` | false | 语音输入（需要下载语音模型，见 [语音输入](voice-input.md)） |
-| `voice.device` | 空 | 语音识别在哪里运行：空 = CPU，或显卡名称（同型号的第二块为 `<型号> #2`）。只对 SenseVoice 有效，Fun-ASR-Nano / Qwen3-ASR 只在 CPU 上运行 |
-| `voice.min_gpu_memory_mb` | 1000 | “语音输入”页列出的显卡至少要有这么多 MB 自带显存（DirectML，不含核显） |
-| `voice.model` | `sensevoice-local` | 识别模型：`sensevoice-local`（默认，最快，可用显卡）、`funasr-nano-local`、`qwen3-asr-local`（后两个只在 CPU 上运行，首次选中时下载） |
+| `voice.model` | `sensevoice-local` | 识别模型：`sensevoice-local`（默认，最快）、`funasr-nano-local`、`qwen3-asr-local`（后两个首次选中时下载）；三者都只在 CPU 上运行 |
 | `voice.preview` | true | 说话时在语音条上显示已经认出的文字（每约半秒刷新一次）；说完仍以整段识别的结果为准 |
 | `voice.language` | `auto` | 识别语言：`auto` `zh` `en` `yue` |
 | `voice.itn` | true | 数字和日期写成阿拉伯数字 |
@@ -297,7 +290,7 @@
 | `laya.continuation_weight` | 0.5 | 组句时每个词的分数 = ln P(模型) + 权重 × 引擎的词分数 |
 | `laya.continuation_min_syllables` | 4 | 从几个音节起由模型参与组句 |
 | `laya.continuation_paths` | 4 | 每个组合最多给模型几种拼音切分（每种一次模型调用，在后台算） |
-| `laya.continuation_delay_ms` | 100 | 停止打字多少毫秒后后台才开始组句（CPU 和显卡都一样）；连续打字时不做马上作废的计算 |
+| `laya.continuation_delay_ms` | 100 | 停止打字多少毫秒后后台才开始组句；连续打字时不做马上作废的计算 |
 | `laya.continuation_rerank` | true | 模型组出的整句再交给选词头重排；关时模型的第一句放在第一个并加星标，这一页不再重排 |
 | `laya.ngram` | `ngram/zh.ngram` | 词语 n-gram 的文件（相对服务端程序目录）：整句候选的分数再加上"它在上文之后的概率"；空或文件不在 = 不用 |
 | `laya.ngram_weight` | 1.0 | 上面那一项的权重；0 = 不用 n-gram |

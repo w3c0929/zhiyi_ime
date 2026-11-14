@@ -75,7 +75,6 @@ private:
     std::deque<std::function<void()>> tasks_;
     bool stopping_ = false;
     std::unique_ptr<cxxime::mt::LlamaServer> server_;
-    std::string server_device_;
     std::chrono::steady_clock::time_point last_used_{};
 };
 

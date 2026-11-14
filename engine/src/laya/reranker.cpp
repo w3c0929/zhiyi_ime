@@ -16,7 +16,6 @@
 
 #include <json.hpp>  // cxx-ime vendors nlohmann/json as third_party/nlohmann/json.hpp
 #include <onnxruntime_cxx_api.h>
-#include <dml_provider_factory.h>
 
 #include "text_util.h"
 
@@ -96,25 +95,6 @@ void build_prepacked_model(Ort::Env& env, const RerankerOptions& opt, const std:
   std::filesystem::rename(tmp / L"laya.data", dir / L"laya.data");
   std::filesystem::rename(tmp / L"laya.onnx", dir / L"laya.onnx");
   std::filesystem::remove_all(tmp, ec);
-}
-
-// DirectML (laya.device): one fixed shape (see RerankerOptions::gpu_device). The DirectML
-// provider wants no memory pattern and sequential execution.
-Ort::SessionOptions gpu_session_options(int device) {
-  Ort::SessionOptions so;
-  so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-  so.DisableMemPattern();
-  so.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
-  so.AddFreeDimensionOverrideByName("batch_size", 1);
-  so.AddFreeDimensionOverrideByName("seq_len", kGpuSequenceLength);
-  so.AddFreeDimensionOverrideByName("num_markers", kGpuMarkers);
-  so.AddFreeDimensionOverrideByName("num_slots", kGpuSlots);
-  const OrtDmlApi* dml = nullptr;
-  Ort::ThrowOnError(Ort::GetApi().GetExecutionProviderApi("DML", ORT_API_VERSION,
-                                                          reinterpret_cast<const void**>(&dml)));
-  if (!dml) throw std::runtime_error("ONNX Runtime has no DirectML provider");
-  Ort::ThrowOnError(dml->SessionOptionsAppendExecutionProvider_DML(so, device));
-  return so;
 }
 
 std::vector<char> read_file(const std::wstring& path) {
@@ -224,7 +204,7 @@ Reranker::Reranker(const RerankerOptions& opt) {
       std::filesystem::path(utf8_to_wide(opt.model_dir)) / L"unified_vocab.json", vocab_ec);
   std::string one_file;  // the one graph on the CPU
   for (const char* f : kOneGraphFiles) {
-    if (opt.gpu_device >= 0 || !opt.context_cache || !unified_files || !one_file.empty()) break;
+    if (!opt.context_cache || !unified_files || !one_file.empty()) break;
     if (std::filesystem::exists(std::filesystem::path(utf8_to_wide(opt.model_dir)) / utf8_to_wide(f), vocab_ec))
       one_file = f;
   }
@@ -258,15 +238,6 @@ Reranker::Reranker(const RerankerOptions& opt) {
   }
   if (one_) {
     // the one graph, loaded above
-  } else if (opt.gpu_device >= 0) {
-    // The prepacked cache is a CPU layout; the card gets the model as it is, patched in memory.
-    std::vector<char> model = read_file(model_path);
-    clear_reshape_allowzero(model);
-    session_ = std::make_unique<Ort::Session>(*env_, model.data(), model.size(),
-                                              gpu_session_options(opt.gpu_device));
-    gpu_ = true;
-    max_len_ = (std::min)(max_len_, kGpuSequenceLength);
-    load_note_ += "DirectML device " + std::to_string(opt.gpu_device);
   } else if (!dir.empty() && unified_files) {
     load_note_ += "prepacked cache not used (unified model); ";
   } else if (!dir.empty()) {
@@ -337,7 +308,6 @@ Reranker::Reranker(const RerankerOptions& opt) {
                            replace_all(kInstructionsGuess, tok_->mask_token(), " "));
   // A card that loads the model can still fail to run it (driver, unsupported operator): find
   // out now, while the caller can still fall back to the CPU. Also compiles the graph.
-  if (gpu_ && score("", "", {"a", "b"}).size() != 2) throw std::runtime_error("DirectML run failed");
 }
 
 Reranker::~Reranker() = default;
@@ -454,7 +424,7 @@ std::vector<float> Reranker::score(const std::string& context, const std::vector
   Sequence seq = build(context, candidates, units);
   // The card's fixed length: drop the oldest context until the sequence fits (build() would cut
   // the newest text, right before the caret, instead).
-  for (size_t chars = utf8_length(context); gpu_ && seq.ids.size() >= static_cast<size_t>(max_len_) && chars > 0;) {
+  for (size_t chars = utf8_length(context); false && seq.ids.size() >= static_cast<size_t>(max_len_) && chars > 0;) {
     chars -= (std::min)(chars, (std::max)(size_t{8}, chars / 4));
     seq = build(utf8_tail(context, chars), candidates, units);
   }
@@ -467,12 +437,11 @@ bool Reranker::run(Sequence seq, std::vector<float>* logits, std::vector<float>*
   const int64_t used = static_cast<int64_t>(seq.ids.size());
   const int64_t K = static_cast<int64_t>(seq.markers.size());
   const int64_t S = static_cast<int64_t>(seq.slots.size());
-  if (gpu_ && (used > kGpuSequenceLength || K > kGpuMarkers || S > kGpuSlots)) return false;
   // The card's fixed shape: tokens padded with id 0 and attention 0, extra candidates masked
   // (their logits are not read), extra slots at position 0 (not read either).
-  const int64_t L = gpu_ ? kGpuSequenceLength : used;
-  const int64_t markers = gpu_ ? kGpuMarkers : (std::max)(K, int64_t{1});
-  const int64_t slots = gpu_ ? kGpuSlots : (std::max)(S, int64_t{1});
+  const int64_t L = used;
+  const int64_t markers = (std::max)(K, int64_t{1});
+  const int64_t slots = (std::max)(S, int64_t{1});
   std::vector<int64_t> ids = seq.ids, att(used, 1), pos = seq.markers, qtype{0};  // 0 = choice
   std::vector<int64_t> units = seq.units, slot_pos = seq.slots;
   ids.resize(L, 0);
@@ -516,8 +485,6 @@ bool Reranker::run(Sequence seq, std::vector<float>* logits, std::vector<float>*
     out_names.push_back("slot_vec");
   }
   if (out_names.empty()) return false;
-  std::unique_lock<std::mutex> gpu_lock;
-  if (gpu_) gpu_lock = std::unique_lock<std::mutex>(gpu_run_mutex_);
   auto out = session_->Run(Ort::RunOptions{nullptr}, in_names.data(), in.data(), in.size(), out_names.data(),
                            out_names.size());
   size_t next = 0;

@@ -266,7 +266,7 @@ void EditorApp::destroy_controls() {
     hPackActions_.clear();
     hPackRemoves_.clear();
     hVoiceEnable_ = hVoiceKeyText_ = hVoiceStatus_ = hVoiceAction_ = hVoiceRemove_ = nullptr;
-    hVoiceDevice_ = hVoiceLanguage_ = hVoiceItn_ = hVoiceKey_ = hVoiceDeviceHint_ = nullptr;
+    hVoiceLanguage_ = hVoiceItn_ = hVoiceKey_ = nullptr;
     hints_.clear();
     clear_cards();
     for (HWND& panel : hPanels_) {
@@ -366,7 +366,6 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(gloss_targets);
     KEEP_PAGE_EDIT(digits_type_translation);
     KEEP_PAGE_EDIT(mt_enable);
-    KEEP_PAGE_EDIT(mt_device);
     KEEP_PAGE_EDIT(page_size);
     KEEP_PAGE_EDIT(ui_language);
     KEEP_PAGE_EDIT(english.correction);
@@ -397,7 +396,6 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(page_down_key);
     KEEP_PAGE_EDIT(voice_enable);
     KEEP_PAGE_EDIT(voice_model);
-    KEEP_PAGE_EDIT(voice_device);
     KEEP_PAGE_EDIT(voice_language);
     KEEP_PAGE_EDIT(voice_itn);
     KEEP_PAGE_EDIT(translate_selection_shortcut);

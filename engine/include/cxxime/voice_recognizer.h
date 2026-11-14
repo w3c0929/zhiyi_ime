@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Zhiyi IME Contributors. GPL-3.0-only.
 //
 // Voice input (docs/voice-input.md): speech to text on this machine. SenseVoice-Small (the int8
-// ONNX export of sherpa-onnx) turns a whole recording into text in one pass, on the CPU or a
-// graphics card through DirectML; Silero VAD (v4) only tells whether the recording has speech at
+// ONNX export of sherpa-onnx) turns a whole recording into text in one pass, on the CPU (only:
+// the graphics card path was dropped with the other GPU support); Silero VAD (v4) only tells whether the recording has speech at
 // all. Settings downloads the model files (voice_files.h); the server records and runs them
 // (server/src/voice_service.cc). Both use the ONNX Runtime the Laya model uses.
 #ifndef CXXIME_VOICE_RECOGNIZER_H_
@@ -48,14 +48,6 @@ bool runtime_available();
 // Threads for the CPU: half the cores, 1 to 4 (the server and Settings' speed test alike).
 int cpu_threads();
 
-// Settings' speed test (voice.device): how long the model takes for kTimedSeconds of sound on a
-// graphics card (gpu_device, a DirectML adapter index) or the CPU (-1), in ms: the median of
-// three runs of lengths it has not seen (about kTimedSeconds; a card prepares each new length, as
-// for every recording) after a first one. 0 with *error when it does not run there.
-constexpr int kTimedSeconds = 5;
-double time_recognition(const std::wstring& model, const std::wstring& tokens, int gpu_device,
-                        std::string* error);
-
 class SpeechRecognizer {
 public:
     SpeechRecognizer();
@@ -63,10 +55,9 @@ public:
     SpeechRecognizer(const SpeechRecognizer&) = delete;
     SpeechRecognizer& operator=(const SpeechRecognizer&) = delete;
 
-    // model: the .onnx file, tokens: its tokens.txt. gpu_device: a DirectML adapter index
-    // (GpuAdapter::index), or -1 for the CPU with `threads` threads. False with *error when the
-    // files or the runtime cannot be loaded.
-    bool load(const std::wstring& model, const std::wstring& tokens, int gpu_device, int threads,
+    // model: the .onnx file, tokens: its tokens.txt; `threads` threads of the processor. False
+    // with *error when the files or the runtime cannot be loaded.
+    bool load(const std::wstring& model, const std::wstring& tokens, int threads,
               std::string* error);
     bool loaded() const;
     // The text of a recording (UTF-8, 16 kHz samples in [-1, 1]); empty when nothing was said.

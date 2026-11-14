@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Zhiyi IME Contributors. GPL-3.0-only.
-// Laya 候选重排: 构造与训练时完全一致的输入序列, 用 ONNX Runtime 推理 (CPU, 或 DirectML 显卡)。
+// Laya 候选重排: 构造与训练时完全一致的输入序列, 用 ONNX Runtime 推理 (只用 CPU)。
 //
 // Two generations of model file share this class. The deployed choice model reads
 // input_ids / attention_mask / marker_pos / marker_mask / qtype and answers "logits". The
@@ -51,7 +51,7 @@ struct Sequence {
 // A decoder model's reading of one continuation sequence (encode): what its decoder reads at
 // every character it writes (decode). About length x width floats (160 x 384: 245 KB).
 struct Encoded {
-  int64_t length = 0;  // tokens of the sequence (the card's fixed length on DirectML)
+  int64_t length = 0;  // tokens of the sequence
   int64_t width = 0;
   int64_t slots = 0;
   std::vector<float> memory;      // (length, width)
@@ -90,14 +90,8 @@ struct RerankerOptions {
   int intra_threads = 4;
   // Directory for the prepacked copy of the model (see Reranker); empty = load the model as is.
   std::string cache_dir;
-  // >= 0: run on this graphics card (DirectML device_id, the DXGI adapter index) instead of the
-  // CPU. The card gets one fixed input shape (kGpuSequenceLength tokens, kGpuMarkers
-  // candidates): DirectML compiles the whole graph for a fixed shape, and runs it about ten
-  // times slower when shapes vary.
-  int gpu_device = -1;
   // On the CPU, the one graph with the context's KV cache (kOneGraphFiles, the first found in
-  // model_dir) instead of onnx_file. The card keeps the whole graph: DirectML is fast only
-  // with fixed shapes, and the one graph's fused attention is wrong there.
+  // model_dir) instead of onnx_file.
   bool context_cache = true;
 };
 
@@ -106,13 +100,10 @@ struct RerankerOptions {
 extern const char* const kOneGraphFiles[2];
 constexpr size_t kContextCacheEntries = 4;  // contexts kept (the choice's and the composition's blocks differ)
 
-constexpr int kGpuSequenceLength = 256;
-constexpr int kGpuMarkers = 32;
-constexpr int kGpuSlots = 24;
-
-// The model with every Reshape's allowzero cleared (DirectML fails on allowzero = 1; no shape in
-// this model has a zero, so the result is the same). Patched in the serialized model: the
-// attribute's int field is one byte either way. Returns how many were cleared.
+// The model with every Reshape's allowzero cleared (kept for tools; the CPU one graph runs as
+// it is). No shape in this model has a zero, so the result is the same. Patched in the
+// serialized model: the attribute's int field is one byte either way. Returns how many were
+// cleared.
 size_t clear_reshape_allowzero(std::vector<char>& model);
 
 class Reranker {
@@ -162,7 +153,6 @@ class Reranker {
   const UnifiedVocab* vocab() const { return vocab_.get(); }
   const BpeTokenizer& tokenizer() const { return *tok_; }
   const std::string& load_note() const { return load_note_; }  // how the model was loaded (log)
-  bool on_gpu() const { return gpu_; }
   bool context_cached() const { return one_; }  // the one graph with the context's cache
 
  private:
@@ -192,10 +182,6 @@ class Reranker {
   std::vector<int64_t> context_prefix_ids_;  // the continuation sequence's "已输入的上文: "
   int max_len_ = 1024;
   int head_max_len_ = 256;
-  bool gpu_ = false;
-  // DirectML runs one call of a session at a time (the key path and the background
-  // continuation share the model); the CPU takes them together.
-  mutable std::mutex gpu_run_mutex_;
   bool slots_input_ = false;  // the graph reads unit_ids / slot_pos
   bool slot_pos_input_ = false;  // ... and slot_pos (not a choice-only unified model)
   bool char_logits_output_ = false;  // the graph gives char_logits (a continuation head)

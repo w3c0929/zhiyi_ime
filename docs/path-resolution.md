@@ -16,7 +16,6 @@ C:\Program Files\ZhiyuIME\             安装基目录（首次安装时选择�
 │   ├── zhiyu-server.exe / zhiyu-settings.exe
 │   ├── zhiyu-resources.dll
 │   ├── onnxruntime.dll / onnxruntime_providers_shared.dll   Laya 推理
-│   ├── DirectML.dll                                         显卡推理（只在设置里选了显卡时加载）
 │   ├── vcruntime140*.dll / msvcp140*.dll                    VC++ 运行时（随程序放置）
 │   ├── collect_diagnostics.ps1
 │   ├── uninstall.exe

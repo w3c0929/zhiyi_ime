@@ -134,27 +134,23 @@ struct Config {
     // itself (Ctrl+1..9 type the translation by default).
     bool digits_type_translation = false;
     // Offline translation (docs/learning-mode.md): candidates the language pack has no
-    // translation for are translated by a downloaded model (Hy-MT2) on a graphics card.
+    // translation for are translated by a downloaded model (Hy-MT2), on the processor.
     bool mt_enable = false;        // learning.translator
-    std::string mt_device;         // learning.translator_device: a card key (gpu_adapters.h)
     int mt_context_chars = 32;     // learning.translator_context_chars: text before the caret
     int mt_idle_seconds = 60;      // learning.translator_idle_seconds: unloaded after this
-    int mt_min_gpu_memory_mb = 1000;  // learning.translator_min_gpu_memory_mb: cards offered
     // Voice input (docs/voice-input.md): the server records while the voice key is on and turns
     // the speech into text with the downloaded model (voice_recognizer.h, voice_files.h).
     bool voice_enable = false;            // voice.enable
     // voice.model: the recognition model, one of the local models the voice release offers
-    // (voice_files.h, docs/voice-input.md): "sensevoice-local" (default, ONNX Runtime on the
-    // CPU or a card), "funasr-nano-local" or "qwen3-asr-local" (sherpa-onnx, CPU only).
+    // (voice_files.h, docs/voice-input.md), all on the processor: "sensevoice-local" (default,
+    // ONNX Runtime), "funasr-nano-local" or "qwen3-asr-local" (sherpa-onnx).
     std::string voice_model = "sensevoice-local";
     // voice.preview: while speaking, the recording so far is recognized again now and then and
     // shown on the voice bar (the final text still comes from the whole recording).
     bool voice_preview = true;
-    std::string voice_device;             // voice.device: "" the CPU, else a card key (gpu_adapters.h)
     std::string voice_language = "auto";  // voice.language: auto, zh, en or yue
     bool voice_itn = true;                // voice.itn: numbers and dates as digits ("3点")
     int voice_max_seconds = 60;           // voice.max_seconds: recording stops by itself after this
-    int voice_min_gpu_memory_mb = 1000;   // voice.min_gpu_memory_mb: cards offered
     // A "learning" section was read. User configs written before it hold style.layout
     // "horizontal" without the user having chosen it (there was no setting), so load_user keeps
     // the default (vertical) for them.
@@ -232,7 +228,6 @@ struct Config {
     // note, never silently; a selection that was cut is shown rather than typed back over the
     // text, so nothing is lost.
     int translate_max_selection_chars = 32000;
-    std::string translate_device;        // "" the CPU, else a card key (gpu_adapters.h)
     int translate_idle_seconds = 60;     // the model is unloaded after this long without a request
 
     // Online AI (ai_config.h): off by default; the features it may serve are listed in

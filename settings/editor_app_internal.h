@@ -11,17 +11,9 @@
 #include <windows.h>
 #include <commctrl.h>
 
-#include <cxxime/gpu_adapters.h>
 
 namespace cxxime {
 namespace settings {
-
-// The graphics cards and the processor, asked once per run (editor_gpu.cc): the pages are built
-// again on every DPI change (the window moved to another screen), and asking Direct3D and Vulkan
-// each time made that take more than a second.
-const std::vector<GpuAdapter>& cached_gpu_adapters(std::uint64_t min_memory_mb);
-const std::vector<GpuAdapter>& cached_translator_gpus(std::uint64_t min_memory_mb);
-const CpuInfo& cached_cpu_info();
 
 inline constexpr int kFontPt = 14;
 inline constexpr int kNavFontPt = kFontPt + 1;
@@ -136,7 +128,6 @@ constexpr int kDataChangeId = 5010;
 constexpr int kDataDefaultId = 5011;
 // Offline translation on the Learning page (editor_translator.cc).
 constexpr int kTranslatorId = 5020;
-constexpr int kTranslatorDeviceId = 5021;
 constexpr int kTranslatorActionId = 5022;
 constexpr int kTranslatorRemoveId = 5023;
 // The AI page (editor_ai_panel.cc, docs/ai.md). 6000+: the ranges below 6000 are taken

@@ -18,7 +18,6 @@
 
 #include <cxxime/config.h>
 #include <cxxime/glossary.h>
-#include <cxxime/gpu_adapters.h>
 #include <cxxime/settings_route.h>
 #include <cxxime/update.h>
 #include <cxxime/word_list_control.h>
@@ -145,7 +144,6 @@ private:
     // Offline translation (editor_translator.cc)
     void create_translator_card(HWND panel, int y);
     void populate_translator();
-    void fill_translator_devices();
     void read_translator(cxxime::Config& config);
     void show_translator_state();
     void start_translator_check();
@@ -163,10 +161,6 @@ private:
     void show_voice_key();
     void show_voice_state();
     void fill_voice_models();
-    void fill_voice_devices();
-    void show_voice_device();
-    void show_voice_device_hint(const wchar_t* text, bool warning);
-    void start_voice_test();
     void start_voice_check();
     void start_voice_install();
     void remove_voice();
@@ -288,7 +282,7 @@ private:
     std::vector<PackState> packs_;    // zh -> 7 targets, then en -> 7 targets
     int pack_tab_ = 0;
     int last_gloss_target_[8] = {};  // combo indexes, one per language
-    HWND hTranslator_ = nullptr, hTranslatorDevice_ = nullptr, hTranslatorStatus_ = nullptr;
+    HWND hTranslator_ = nullptr, hTranslatorStatus_ = nullptr;
     HWND hTranslatorAction_ = nullptr, hTranslatorRemove_ = nullptr, hTranslatorHint_ = nullptr;
     // AI (editor_ai_panel.cc)
     HWND hAiEnabled_ = nullptr, hAiProvider_ = nullptr, hAiBaseUrl_ = nullptr;
@@ -324,7 +318,6 @@ private:
     // The stored (DPAPI-protected) keys: kept here so a page rebuild does not lose them.
     std::vector<std::string> ai_keys_;
     std::vector<std::string> ai_effort_levels_;  // what this service/model offers
-    std::vector<GpuAdapter> mt_choices_;  // list_translator_gpus() once installed, then the CPU
     enum class MtBusy { kNone, kChecking, kDownloading, kTesting } mt_busy_ = MtBusy::kNone;
     bool mt_remote_known_ = false;
     update::TranslatorManifest mt_remote_;
@@ -336,12 +329,8 @@ private:
     HWND hVoiceEnable_ = nullptr, hVoiceKeyText_ = nullptr, hVoiceStatus_ = nullptr;
     HWND hVoiceModel_ = nullptr;  // voice.model: the recognition model
     HWND hVoiceAction_ = nullptr, hVoiceRemove_ = nullptr;
-    HWND hVoiceDevice_ = nullptr, hVoiceLanguage_ = nullptr, hVoiceItn_ = nullptr;
-    HWND hVoiceDeviceHint_ = nullptr;
-    std::vector<GpuAdapter> voice_choices_;  // the device combo's items after the CPU
-    bool voice_device_warning_ = false;      // the hint says the card is slower than the CPU
-    double voice_cpu_ms_ = 0;                // the CPU's time, when it was timed alone
-    enum class VoiceBusy { kNone, kChecking, kDownloading, kTesting } voice_busy_ = VoiceBusy::kNone;
+    HWND hVoiceLanguage_ = nullptr, hVoiceItn_ = nullptr;
+    enum class VoiceBusy { kNone, kChecking, kDownloading } voice_busy_ = VoiceBusy::kNone;
     bool voice_remote_known_ = false;
     update::VoiceManifest voice_remote_;
     std::uint64_t voice_done_mb_ = 0, voice_total_mb_ = 0;

@@ -47,12 +47,12 @@ bool MachineTranslator::cached(const std::string& target, const std::string& tex
 }
 
 void MachineTranslator::request(std::vector<cxxime::mt::Item> items, std::string context,
-                                std::string device, int idle_seconds) {
-    if (items.empty() || device.empty()) return;
+                                int idle_seconds) {
+    if (items.empty()) return;
     std::lock_guard<std::mutex> lock(mutex_);
     if (stopping_) return;
-    if (device == failed_device_ && now_ms() - failed_at_ms_ < kRetryAfterFailureMs) return;
-    page_ = Page{std::move(items), std::move(context), std::move(device), idle_seconds};
+    if (failed_start_ && now_ms() - failed_at_ms_ < kRetryAfterFailureMs) return;
+    page_ = Page{std::move(items), std::move(context), idle_seconds};
     have_page_ = true;
     if (!thread_.joinable()) thread_ = std::thread([this] { run(); });
     wake_.notify_one();
@@ -112,18 +112,17 @@ void MachineTranslator::run() {
             }
             model_ = installed.model;
         }
-        if (!server.running() || server.device() != page.device) {
+        if (!server.running()) {
             std::string error = "the model is not installed";
             const auto started = now_ms();
-            if (!have || !server.start(installed, page.device, &error)) {
-                CXXIME_LOG(L"MachineTranslator: cannot start on %S: %S", page.device.c_str(), error.c_str());
+            if (!have || !server.start(installed, &error)) {
+                CXXIME_LOG(L"MachineTranslator: cannot start: %S", error.c_str());
                 std::lock_guard<std::mutex> lock(mutex_);
-                failed_device_ = page.device;
+                failed_start_ = true;
                 failed_at_ms_ = now_ms();
                 continue;
             }
-            CXXIME_LOG(L"MachineTranslator: model loaded on %S in %lld ms", page.device.c_str(),
-                       now_ms() - started);
+            CXXIME_LOG(L"MachineTranslator: model loaded in %lld ms", now_ms() - started);
         }
         const std::vector<std::string> translations = server.translate(page.items, page.context);
         if (!server.running()) {  // it died: nothing is remembered, started again on the next page

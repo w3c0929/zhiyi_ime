@@ -20,9 +20,6 @@ namespace mt {
 // The parallel slots: a page has at most this many candidates to translate.
 constexpr int kParallel = 10;
 
-// learning.translator_device for the processor instead of a graphics card.
-inline constexpr char kCpuDevice[] = "cpu";
-
 // How a model is asked (translator.json "prompt"; the model was trained on it):
 //   ""            Hy-MT2-1.8B (translator v1): its own Chinese template, through the chat API
 //   "zhiyi-mt-1"  the distilled models (v2, v3): student_prompt(), raw through /completion
@@ -78,13 +75,11 @@ public:
     LlamaServer(const LlamaServer&) = delete;
     LlamaServer& operator=(const LlamaServer&) = delete;
 
-    // Starts it on the graphics card `device_key` (gpu_adapters.h), or the processor for
-    // kCpuDevice, and waits until it is ready and warmed up (a few seconds). False with a
-    // log-style reason in *error.
-    bool start(const InstalledModel& installed, const std::string& device_key, std::string* error);
+    // Starts it on the processor and waits until it is ready and warmed up (a few seconds).
+    // False with a log-style reason in *error.
+    bool start(const InstalledModel& installed, std::string* error);
     void stop();
     bool running() const;
-    const std::string& device() const { return device_; }
 
     // The translations, in the order of `items` (empty where it failed), asked in parallel.
     std::vector<std::string> translate(const std::vector<Item>& items, const std::string& context,
@@ -100,7 +95,6 @@ private:
                                             int max_tokens, bool long_form);
     struct Impl;
     std::unique_ptr<Impl> impl_;
-    std::string device_;
     std::string prompt_;  // InstalledModel::prompt of the running model
 };
 

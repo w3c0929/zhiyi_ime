@@ -276,7 +276,7 @@ bool learning_mode_shown(const cxxime::Config& config) {
 }
 
 bool translator_enabled(const cxxime::Config& config) {
-    return config.mt_enable && !config.mt_device.empty();
+    return config.mt_enable;
 }
 
 std::string gloss_target(const cxxime::Config& config, const cxxime::Candidate& candidate) {
@@ -328,7 +328,7 @@ void add_glosses(const SessionEntry& entry, cxxime::CandidatePresentationPage& p
         MachineTranslator::instance().request(
             std::move(missing),
             entry.engine->laya_context(static_cast<std::size_t>(config.mt_context_chars)),
-            config.mt_device, config.mt_idle_seconds);
+            config.mt_idle_seconds);
     }
 }
 
