@@ -33,6 +33,10 @@ constexpr UINT WM_CXXIME_AI_ACTION_SELECTION = WM_APP + 0x31B;
 // AI actions: a tapped modifier key is watched while it is held (TextService::_watch_ai_action_tap):
 // some programs never hand a text service the modifier's key-up, and the tap would go unnoticed.
 constexpr UINT_PTR TIMER_CXXIME_AI_TAP_WATCH = 0xC31B;
+// The document focus came back to the composition after a gap (TextService::
+// _resume_composition_after_focus_gap). The candidates are shown again outside the focus
+// notification, where the document may be locked. (0x31A and 0x31B are taken above.)
+constexpr UINT WM_CXXIME_RESUME_COMPOSITION = WM_APP + 0x31C;
 
 struct ConfigSnapshot {
     cxxime::ConfigGeneration generation;

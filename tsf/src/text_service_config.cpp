@@ -135,6 +135,14 @@ LRESULT CALLBACK TextService::_config_window_proc(HWND hwnd, UINT msg, WPARAM wp
         }
         return 0;
     }
+    if (msg == cxxime_tsf::WM_CXXIME_RESUME_COMPOSITION && service) {
+        // Only while still typing in an input box: the focus on another document has ended the
+        // composition, a new gap hides it again (a key since has shown them already, harmless).
+        if (service->_activated && service->_inputFocused && service->_composing) {
+            service->refresh_candidates_from_server();
+        }
+        return 0;
+    }
     if (msg == WM_TIMER && wp == cxxime_tsf::TIMER_CXXIME_CONVERSION_SETTLE && service) {
         KillTimer(hwnd, cxxime_tsf::TIMER_CXXIME_CONVERSION_SETTLE);
         service->_settle_conversion_change();
