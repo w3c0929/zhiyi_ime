@@ -46,6 +46,8 @@ public:
     void show_listening();
     // The level of the last 32 ms (0..1) and whether someone is speaking.
     void add_level(float level, bool speaking);
+    // The text recognized so far while speaking ("" clears it); shown in place of the waveform.
+    void show_preview(const std::string& text);
     void show_recognizing();
     void show_message(Message message);
     void hide();

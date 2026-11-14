@@ -54,6 +54,11 @@ void VoiceRecorder::start(cxxime::voice::SpeechDetector* detector, int max_secon
     thread_ = std::thread(&VoiceRecorder::run, this, max_seconds);
 }
 
+std::vector<float> VoiceRecorder::snapshot() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return samples_;
+}
+
 std::vector<float> VoiceRecorder::stop(bool* heard) {
     stop_ = true;
     if (thread_.joinable()) thread_.join();

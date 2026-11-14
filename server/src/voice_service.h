@@ -74,6 +74,10 @@ private:
     void begin_recording(uint64_t generation);
     void finish_recording(uint64_t generation);
     void recording_failed(uint64_t generation, VoiceRecorder::Error error);
+    // The text while speaking (voice.preview): the recording so far, recognized again now and
+    // then on the preview thread and shown on the bar.
+    void request_preview();
+    void preview_loop();
     bool ensure_detector(std::string* error);
     bool ensure_recognizer(std::string* error);
     std::string tidy(std::string text, uint32_t owner);
@@ -105,6 +109,15 @@ private:
     std::string recognizer_device_;
     // Fun-ASR-Nano / Qwen3-ASR: sherpa-onnx in its own process (voice_worker_client.h).
     std::unique_ptr<VoiceWorkerClient> recognizer_worker_;
+    // One recognizer call at a time: a preview and the final recognition never overlap.
+    std::mutex recognize_mutex_;
+    std::thread preview_thread_;
+    std::mutex preview_mutex_;
+    std::condition_variable preview_wake_;
+    bool preview_stop_ = false;
+    bool preview_requested_ = false;
+    std::size_t previewed_samples_ = 0;
+    std::chrono::steady_clock::time_point preview_last_{};
     std::chrono::steady_clock::time_point last_used_{};
 };
 

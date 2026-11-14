@@ -41,6 +41,8 @@ public:
     // Starts recording on the thread. `detector` (reset here) is used by that thread until
     // stop(); the listener is called from it.
     void start(cxxime::voice::SpeechDetector* detector, int max_seconds, Listener listener);
+    // What has been recorded so far (16 kHz, [-1, 1]); for the text shown while speaking.
+    std::vector<float> snapshot() const;
     // Ends recording: the samples (16 kHz, [-1, 1]) and whether the detector heard speech.
     std::vector<float> stop(bool* heard);
     bool recording() const { return thread_.joinable(); }
@@ -53,7 +55,7 @@ private:
     std::atomic<bool> stop_{false};
     cxxime::voice::SpeechDetector* detector_ = nullptr;
     Listener listener_;
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::vector<float> samples_;
     std::vector<float> window_;  // samples not yet a whole VAD window
     bool limit_reached_ = false;

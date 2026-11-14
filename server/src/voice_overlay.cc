@@ -15,6 +15,16 @@
 
 namespace {
 
+std::wstring to_wide(const std::string& text) {
+    if (text.empty()) return {};
+    const int length = MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                                           nullptr, 0);
+    std::wstring out(static_cast<std::size_t>(length), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), out.data(), length);
+    return out;
+}
+
+
 constexpr UINT kUpdateMessage = WM_APP + 1;
 constexpr UINT_PTR kAnimationTimer = 1;
 constexpr UINT_PTR kHideTimer = 2;
@@ -91,6 +101,7 @@ struct VoiceOverlay::Impl {
     Mode mode = Mode::kHidden;
     Message message = Message::kNoSpeech;
     std::deque<float> levels;  // newest last; 0 while nobody speaks
+    std::wstring preview;      // the text recognized so far while speaking ("" = waveform)
     cxxime::Theme theme;
     bool english = false;
     bool shown_changed = false;  // the mode changed: placed again
@@ -154,6 +165,7 @@ void VoiceOverlay::show_listening() {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         impl_->mode = Impl::Mode::kListening;
         impl_->levels.assign(kBars, 0.0f);
+        impl_->preview.clear();
         impl_->shown_changed = true;
     }
     if (impl_->hwnd) PostMessageW(impl_->hwnd, kUpdateMessage, 0, 0);
@@ -165,10 +177,19 @@ void VoiceOverlay::add_level(float level, bool speaking) {
     while (impl_->levels.size() > static_cast<std::size_t>(kBars)) impl_->levels.pop_front();
 }
 
+void VoiceOverlay::show_preview(const std::string& text) {
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        impl_->preview = to_wide(text);
+    }
+    if (impl_->hwnd) PostMessageW(impl_->hwnd, kUpdateMessage, 0, 0);
+}
+
 void VoiceOverlay::show_recognizing() {
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         impl_->mode = Impl::Mode::kRecognizing;
+        impl_->preview.clear();
         impl_->shown_changed = true;
     }
     if (impl_->hwnd) PostMessageW(impl_->hwnd, kUpdateMessage, 0, 0);
@@ -400,6 +421,7 @@ void VoiceOverlay::Impl::render() {
     Message shown_message;
     cxxime::Theme colors;
     bool in_english;
+    std::wstring preview;
     std::array<float, kBars> wanted = {};
     {
         std::lock_guard<std::mutex> lock(mutex);
@@ -407,6 +429,7 @@ void VoiceOverlay::Impl::render() {
         shown_message = message;
         colors = theme;
         in_english = english;
+        preview = this->preview;
         for (std::size_t i = 0; i < levels.size() && i < wanted.size(); ++i) {
             wanted[wanted.size() - levels.size() + i] = levels[i];
         }
@@ -518,28 +541,53 @@ void VoiceOverlay::Impl::render() {
         const cxxime::Color on_accent = colors.hilited_text;
         if (now == Mode::kListening) {
             draw_microphone(left, color(accent), color(on_accent));
-            // The waveform: newest on the right; a dot where nobody spoke.
             const float from = left.x + kButton / 2 + 14.0f;
             const float to = stop_center.x - kButton / 2 - 14.0f;
-            const float step = (to - from) / kBars;
-            brush->SetColor(color(accent, 0.9f));
-            for (int i = 0; i < kBars; ++i) {
-                const float x = from + step * (i + 0.5f);
-                const float h = 3.0f + shown_levels[i] * (kBarHeight - 22.0f);
+            if (!preview.empty()) {
+                // What has been recognized so far: the newest characters, cut to fit.
+                std::wstring shown = preview;
+                const float room = to - from - 8.0f;
+                while (!shown.empty() && text_width(shown, format) > room) {
+                    shown.erase(0, 1);
+                }
+                if (shown.size() < preview.size()) shown.insert(0, L"…");
+                brush->SetColor(color(colors.comment_text));
+                target->DrawText(shown.c_str(), static_cast<UINT32>(shown.size()), format,
+                                 D2D1::RectF(from, kShadow, to, kShadow + kBarHeight), brush,
+                                 D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                // Stop: a square in a circle.
+                brush->SetColor(color(mix(colors.background, colors.text,
+                                          pressed ? 0.24f : hover ? 0.16f : 0.08f)));
+                target->FillEllipse(D2D1::Ellipse(stop_center, kButton / 2, kButton / 2), brush);
+                brush->SetColor(color(colors.text));
                 target->FillRoundedRectangle(
-                    D2D1::RoundedRect(D2D1::RectF(x - 1.5f, middle - h / 2, x + 1.5f, middle + h / 2),
-                                      1.5f, 1.5f),
+                    D2D1::RoundedRect(D2D1::RectF(stop_center.x - 5.5f, stop_center.y - 5.5f,
+                                                  stop_center.x + 5.5f, stop_center.y + 5.5f),
+                                      2.0f, 2.0f),
+                    brush);
+            } else {
+                // The waveform: newest on the right; a dot where nobody spoke.
+                const float step = (to - from) / kBars;
+                brush->SetColor(color(accent, 0.9f));
+                for (int i = 0; i < kBars; ++i) {
+                    const float x = from + step * (i + 0.5f);
+                    const float h = 3.0f + shown_levels[i] * (kBarHeight - 22.0f);
+                    target->FillRoundedRectangle(
+                        D2D1::RoundedRect(
+                            D2D1::RectF(x - 1.5f, middle - h / 2, x + 1.5f, middle + h / 2), 1.5f, 1.5f),
+                        brush);
+                }
+                // Stop: a square in a circle.
+                brush->SetColor(color(mix(colors.background, colors.text,
+                                          pressed ? 0.24f : hover ? 0.16f : 0.08f)));
+                target->FillEllipse(D2D1::Ellipse(stop_center, kButton / 2, kButton / 2), brush);
+                brush->SetColor(color(colors.text));
+                target->FillRoundedRectangle(
+                    D2D1::RoundedRect(D2D1::RectF(stop_center.x - 5.5f, stop_center.y - 5.5f,
+                                                  stop_center.x + 5.5f, stop_center.y + 5.5f),
+                                      2.0f, 2.0f),
                     brush);
             }
-            // Stop: a square in a circle.
-            brush->SetColor(color(mix(colors.background, colors.text, pressed ? 0.24f : hover ? 0.16f : 0.08f)));
-            target->FillEllipse(D2D1::Ellipse(stop_center, kButton / 2, kButton / 2), brush);
-            brush->SetColor(color(colors.text));
-            target->FillRoundedRectangle(
-                D2D1::RoundedRect(D2D1::RectF(stop_center.x - 5.5f, stop_center.y - 5.5f,
-                                              stop_center.x + 5.5f, stop_center.y + 5.5f),
-                                  2.0f, 2.0f),
-                brush);
         } else if (now == Mode::kRecognizing) {
             // The microphone breathes; "Recognizing" with three dots going up and down.
             const float pulse = 0.65f + 0.35f * std::sin(phase * 6.0f);

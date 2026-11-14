@@ -95,6 +95,7 @@
     "voice": {
         "enable": false,
         "model": "sensevoice-local",
+        "preview": true,
         "device": "",
         "language": "auto",
         "itn": true,

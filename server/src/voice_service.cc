@@ -23,6 +23,8 @@ namespace {
 constexpr auto kDoneTimeout = std::chrono::seconds(5);
 // The model leaves memory after this long unused.
 constexpr auto kModelIdle = std::chrono::minutes(10);
+// The text shown while speaking is refreshed at most this often (voice.preview).
+constexpr int kPreviewIntervalMs = 500;
 
 // A model's answer without the whitespace it tends to end with: the text goes into the input box
 // as it is, so a trailing newline would land there.
@@ -78,6 +80,11 @@ bool VoiceService::start(Sessions sessions, const std::shared_ptr<const cxxime::
     });
     stopping_ = false;
     worker_ = std::thread(&VoiceService::run, this);
+    {
+        std::lock_guard<std::mutex> lock(preview_mutex_);
+        preview_stop_ = false;
+    }
+    preview_thread_ = std::thread(&VoiceService::preview_loop, this);
     return overlay;
 }
 
@@ -90,6 +97,12 @@ void VoiceService::stop() {
     }
     wake_.notify_all();
     worker_.join();
+    {
+        std::lock_guard<std::mutex> lock(preview_mutex_);
+        preview_stop_ = true;
+    }
+    preview_wake_.notify_all();
+    if (preview_thread_.joinable()) preview_thread_.join();
     overlay_.stop();
 }
 
@@ -359,8 +372,16 @@ void VoiceService::begin_recording(uint64_t generation) {
         recording_failed(generation, VoiceRecorder::Error::kFailed);
         return;
     }
+    {
+        std::lock_guard<std::mutex> lock(preview_mutex_);
+        previewed_samples_ = 0;
+        preview_last_ = std::chrono::steady_clock::now();
+    }
     VoiceRecorder::Listener listener;
-    listener.level = [this](float level, bool speaking) { overlay_.add_level(level, speaking); };
+    listener.level = [this](float level, bool speaking) {
+        overlay_.add_level(level, speaking);
+        request_preview();
+    };
     listener.error = [this, generation](VoiceRecorder::Error e) {
         post([this, generation, e] { recording_failed(generation, e); });
     };
@@ -376,6 +397,82 @@ void VoiceService::begin_recording(uint64_t generation) {
     recorder_.start(&detector_, max_seconds, std::move(listener));
     // The model, while the user speaks (the first time takes about a second).
     if (!ensure_recognizer(&error)) CXXIME_LOG(L"voice: model failed to load: %S", error.c_str());
+}
+
+// Called from the recorder's thread for every 32 ms window (docs/voice-input.md): asks the
+// preview thread for the text so far, at most every kPreviewIntervalMs and only once there is
+// something new to read.
+void VoiceService::request_preview() {
+    bool enabled = true;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (phase_ != Phase::kListening) return;
+        if (config_) enabled = config_->voice_preview;
+    }
+    if (!enabled) return;
+    std::lock_guard<std::mutex> lock(preview_mutex_);
+    if (preview_requested_ || preview_stop_) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (now - preview_last_ < std::chrono::milliseconds(kPreviewIntervalMs)) return;
+    preview_requested_ = true;
+    preview_wake_.notify_one();
+}
+
+void VoiceService::preview_loop() {
+    for (;;) {
+        uint64_t generation = 0;
+        {
+            std::unique_lock<std::mutex> lock(preview_mutex_);
+            preview_wake_.wait(lock, [&] { return preview_stop_ || preview_requested_; });
+            if (preview_stop_) return;
+            preview_requested_ = false;
+            preview_last_ = std::chrono::steady_clock::now();
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (phase_ != Phase::kListening) continue;
+            generation = generation_;
+        }
+        std::vector<float> samples = recorder_.snapshot();
+        // Less than a second, or nothing new since the last preview: nothing to show.
+        if (samples.size() < static_cast<std::size_t>(cxxime::voice::kSampleRate)) continue;
+        {
+            std::lock_guard<std::mutex> lock(preview_mutex_);
+            if (samples.size() <= previewed_samples_ + cxxime::voice::kSampleRate / 2) continue;
+            previewed_samples_ = samples.size();
+        }
+        std::lock_guard<std::mutex> recognize_lock(recognize_mutex_);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (phase_ != Phase::kListening || generation != generation_) continue;
+        }
+        std::string error;
+        std::string text;
+        if (!ensure_recognizer(&error)) continue;
+        bool recognized = false;
+        if (recognizer_worker_ && recognizer_worker_->loaded()) {
+            recognized = recognizer_worker_->Transcribe(samples.data(), samples.size(), &text, &error);
+        } else if (recognizer_) {
+            std::string language = "auto";
+            bool itn = true;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (config_) {
+                    language = config_->voice_language;
+                    itn = config_->voice_itn;
+                }
+            }
+            recognized = recognizer_->transcribe(samples.data(), samples.size(),
+                                                 cxxime::voice::parse_language(language), itn,
+                                                 &text, &error);
+        }
+        if (!recognized) continue;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (phase_ != Phase::kListening || generation != generation_) continue;
+        }
+        overlay_.show_preview(text);
+    }
 }
 
 void VoiceService::recording_failed(uint64_t generation, VoiceRecorder::Error error) {
@@ -424,6 +521,8 @@ void VoiceService::finish_recording(uint64_t generation) {
     std::string text;
     const auto start = std::chrono::steady_clock::now();
     bool recognized = false;
+    // No preview overlaps this call (and a late one never shows text now).
+    std::lock_guard<std::mutex> recognize_lock(recognize_mutex_);
     if (ensure_recognizer(&error)) {
         if (recognizer_worker_ && recognizer_worker_->loaded()) {
             recognized = recognizer_worker_->Transcribe(samples.data(), samples.size(), &text, &error);

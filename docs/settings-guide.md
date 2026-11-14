@@ -256,6 +256,8 @@
 | `voice.enable` | false | 语音输入（需要下载语音模型，见 [语音输入](voice-input.md)） |
 | `voice.device` | 空 | 语音识别在哪里运行：空 = CPU，或显卡名称（同型号的第二块为 `<型号> #2`）。只对 SenseVoice 有效，Fun-ASR-Nano / Qwen3-ASR 只在 CPU 上运行 |
 | `voice.min_gpu_memory_mb` | 1000 | “语音输入”页列出的显卡至少要有这么多 MB 自带显存（DirectML，不含核显） |
+| `voice.model` | `sensevoice-local` | 识别模型：`sensevoice-local`（默认，最快，可用显卡）、`funasr-nano-local`、`qwen3-asr-local`（后两个只在 CPU 上运行，首次选中时下载） |
+| `voice.preview` | true | 说话时在语音条上显示已经认出的文字（每约半秒刷新一次）；说完仍以整段识别的结果为准 |
 | `voice.language` | `auto` | 识别语言：`auto` `zh` `en` `yue` |
 | `voice.itn` | true | 数字和日期写成阿拉伯数字 |
 | `voice.max_seconds` | 60 | 一次最长录音秒数（5–300），到时自动结束并识别 |
