@@ -50,7 +50,6 @@ enum ControlId {
     kHorizontalId,
     kAutostartId,
     kLayaId,
-    kDeviceId,
     kExactPinyinId,
     kDefaultChineseId,
     kDefaultEnglishId,
@@ -185,7 +184,7 @@ void EditorApp::create_general_panel(HWND panel) {
     const int labels = label_width({"general.chinese_input", "general.shuangpin_scheme",
                                     "general.theme", "general.font_size", "general.layout",
                                     "general.page_size", "general.language", "general.english",
-                                    "general.laya", "general.device", "general.startup"});
+                                    "general.laya", "general.startup"});
     int y = card_begin(panel, kPanelPadTop, tr("general.card_input"));
     const int option_width = S(110);
     auto radios = [&](const char* label, std::initializer_list<std::pair<int, const char*>> items,
@@ -241,18 +240,6 @@ void EditorApp::create_general_panel(HWND panel) {
     y += kRowH;
     make_hint(tr("general.ngram_hint"), laya_x, y - S(6), S(480), panel, 1);
     y += S(20);
-    // Graphics card (editor_gpu.cc): no row when this computer has none to offer.
-    load_gpu_choices();
-    hDevice_ = nullptr;
-    hDeviceHint_ = nullptr;
-    if (!gpu_choices_.empty()) {
-        const int device_x = make_aligned_label(tr("general.device"), x0, labels, y, panel);
-        hDevice_ = make_combo(kDeviceId, device_x, y, S(440), panel);
-        fill_device_combo();
-        y += kRowH;
-        hDeviceHint_ = make_hint(tr("general.device_hint"), device_x, y - S(6), S(480), panel, 1);
-        y += S(20);
-    }
     const int startup_x = make_aligned_label(tr("general.startup"), x0, labels, y, panel);
     hAutostart_ = make_check(kAutostartId, tr("general.autostart"), startup_x, y, S(300), panel);
     y += kRowH;
@@ -637,7 +624,6 @@ void EditorApp::populate_controls() {
     set_check(hExactPinyin_, config_.laya.exact_pinyin_first);
     // 词语 n-gram：配置里是文件路径，空 = 不用（与数据文件里默认的 ngram/zh.ngram 对应）。
     set_check(hNgram_, !config_.laya.ngram.empty());
-    populate_device();
 
     set_check(hDefaultChinese_, config_.initial_language == "chinese");
     set_check(hDefaultEnglish_, config_.initial_language == "english");
@@ -764,7 +750,6 @@ bool EditorApp::read_controls(bool report_errors) {
     } else {
         c.laya.ngram.clear();
     }
-    c.laya.device = selected_device();
     const KeyChoice choices[kSwitchKeyCount] = {
         key_capture_get(hSwitchKey_), key_capture_get(hStyleKey_), key_capture_get(hPunctKey_),
         key_capture_get(hShapeKey_), key_capture_get(hVoiceKey_)};
@@ -1009,9 +994,6 @@ void EditorApp::update_enabled_controls() {
     for (HWND group : hFuzzyGroups_) {
         EnableWindow(group, fuzzy);
     }
-    if (hDevice_) {
-        EnableWindow(hDevice_, get_check(hLaya_) && !gpu_testing_ && !gpu_choices_.empty());
-    }
     if (hNgram_) {
         EnableWindow(hNgram_, get_check(hLaya_));  // 推荐关着时 n-gram 也没意义
     }
@@ -1079,11 +1061,6 @@ bool EditorApp::handle_command(int control_id, int notification) {
                 // 不能在 CBN_SELCHANGE 里直接重建（会销毁正在处理点击的下拉框，COMCTL32 崩溃）。
                 PostMessageW(hwnd_, kRebuildUiMessage, 0, 0);
             }
-        }
-        return true;
-    case kDeviceId:
-        if (notification == CBN_SELCHANGE) {
-            on_device_selected();
         }
         return true;
     case kDataChangeId:

@@ -24,7 +24,7 @@ constexpr std::uint64_t kDefaultMinGpuMemoryMb = 1000;
 
 struct GpuAdapter {
     std::string name;  // UTF-8 description ("NVIDIA GeForce RTX 5070 Ti")
-    // The laya.device value: the name, or "<name> #2" for the second card of the same model
+    // The voice.device value: the name, or "<name> #2" for the second card of the same model
     // (in enumeration order, which follows the PCI slots).
     std::string key;
     unsigned index = 0;               // IDXGIFactory1::EnumAdapters1 index (DirectML device_id)

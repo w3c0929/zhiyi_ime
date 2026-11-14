@@ -106,6 +106,15 @@ BUILT = {
 def copy_reference(reference, out_dir):
     shutil.copytree(reference, out_dir, dirs_exist_ok=True, ignore=shutil.ignore_patterns(
         "*.replaced", "uninstall.exe", "install-manifest.json", ".zhiyu-install-complete"))
+    # Since the word choice runs on the CPU only (upstream 1.6.5), the installer ships just the
+    # one graph with the context's KV cache; a reference that still has the whole graph drops it
+    # (about 75 MB).
+    laya = os.path.join(out_dir, "laya")
+    whole = os.path.join(laya, "laya.int8g.onnx")
+    one = os.path.join(laya, "laya.one.fused.int8g.onnx")
+    if os.path.exists(whole) and os.path.exists(one):
+        os.remove(whole)
+        print("  laya\\laya.int8g.onnx (the CPU one graph is there)")
 
 
 def overlay_builds(reference, out_dir, build_x64, build_x86):

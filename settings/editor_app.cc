@@ -391,7 +391,6 @@ void EditorApp::refresh_config() {
     KEEP_PAGE_EDIT(laya.enable);
     KEEP_PAGE_EDIT(laya.exact_pinyin_first);
     KEEP_PAGE_EDIT(laya.ngram);
-    KEEP_PAGE_EDIT(laya.device);
     KEEP_PAGE_EDIT(fuzzy_pinyin);
     KEEP_PAGE_EDIT(fuzzy_groups);
     KEEP_PAGE_EDIT(page_up_key);
@@ -522,7 +521,7 @@ LRESULT CALLBACK EditorApp::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     const UINT navigate_message = settings_navigate_message();
     if (a->handle_update_message(msg, wp, lp) || a->handle_learning_message(msg, wp, lp) ||
-        a->handle_gpu_message(msg, wp, lp) || a->handle_data_message(msg, wp, lp) ||
+        a->handle_data_message(msg, wp, lp) ||
         a->handle_translator_message(msg, wp, lp) || a->handle_voice_message(msg, wp, lp)) {
         return 0;
     }

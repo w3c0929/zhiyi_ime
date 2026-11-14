@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <fstream>
 #include <map>
+#include <mutex>
 #include <regex>
 #include <thread>
 
@@ -345,7 +346,20 @@ struct LlamaServer::Impl {
     HANDLE job = nullptr;
     HANDLE process = nullptr;
     Http http;
+    std::mutex page_mutex;
+    std::string last_page;  // the context and languages of the last page (page_key)
 };
+
+namespace {
+
+// What the prompts of a page share besides the instruction: its context and its languages.
+std::string page_key(const std::vector<Item>& items, const std::string& context) {
+    std::string key = context;
+    for (const Item& item : items) key += "" + item.source + ">" + item.target;
+    return key;
+}
+
+}  // namespace
 
 LlamaServer::LlamaServer() : impl_(new Impl) {
     impl_->http.session = WinHttpOpen(L"ZhiyuIME", WINHTTP_ACCESS_TYPE_NO_PROXY,
@@ -371,6 +385,10 @@ void LlamaServer::stop() {
         WaitForSingleObject(impl_->process, 5000);
         CloseHandle(impl_->process);
         impl_->process = nullptr;
+    }
+    {
+        std::lock_guard<std::mutex> lock(impl_->page_mutex);
+        impl_->last_page.clear();  // a new server holds no context
     }
     device_.clear();
 }
@@ -447,6 +465,50 @@ std::vector<std::string> LlamaServer::translate_impl(const std::vector<Item>& it
                                                      int max_tokens, bool long_form) {
     std::vector<std::string> results(items.size());
     if (!running()) return results;
+    // The first page of a new context on the processor: one request with all the prompts and
+    // "shared_prefix" (the patched runtime, scripts/llama_server_pos): the instruction and the
+    // context they start with are computed once, not once per candidate (Ryzen 9600X, 4 threads,
+    // 7 candidates: 272 -> 202 ms). The next pages of the same context go one request each: the
+    // server gives each the slot that already holds that prefix (169 ms; shared, the prefix step
+    // costs one more round, 184). On a graphics card the prompt is cheap and the extra round is
+    // not (60 -> 80 ms): one request each there too. A runtime without the patch answers the
+    // shared request all the same.
+    if (prompt_ == kStudentPrompt && device_ == kCpuDevice && items.size() > 1 && !long_form) {
+        const std::string key = page_key(items, context);
+        bool fresh = false;
+        {
+            std::lock_guard<std::mutex> lock(impl_->page_mutex);
+            fresh = key != impl_->last_page;
+            impl_->last_page = key;
+        }
+        if (fresh) {
+            nlohmann::json body = {
+                {"prompt", nlohmann::json::array()},
+                {"n_predict", max_tokens},
+                {"temperature", 0},
+                {"top_k", 1},
+                {"repeat_penalty", 1.05},
+                {"stop", {"<|im_end|>"}},
+                {"shared_prefix", true},
+            };
+            for (const Item& item : items) body["prompt"].push_back(student_prompt(item, context));
+            const std::string text = body.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+            DWORD status = 0;
+            const std::string response = impl_->http.request(L"/completion", &text, timeout_ms, &status);
+            const nlohmann::json answers = nlohmann::json::parse(response, nullptr, false);
+            if (status == 200 && answers.is_array() && answers.size() == items.size()) {
+                for (size_t i = 0; i < items.size(); ++i) {
+                    if (answers[i].is_object() && answers[i].contains("content") &&
+                        answers[i]["content"].is_string()) {
+                        results[i] = clean_translation(items[i].text,
+                                                       answers[i]["content"].get<std::string>());
+                    }
+                }
+                return results;
+            }
+            // Anything else (an older runtime, a busy server) falls through to one request each.
+        }
+    }
     std::vector<std::thread> threads;
     for (size_t i = 0; i < items.size(); ++i) {
         threads.emplace_back([this, &items, &results, &context, timeout_ms, max_tokens, long_form, i] {

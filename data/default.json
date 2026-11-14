@@ -15,7 +15,10 @@
         "candidate_learning": true,
         "input_style": "full",
         "fuzzy_pinyin": true,
-        "fuzzy_groups": ["en_eng", "in_ing"]
+        "fuzzy_groups": [
+            "en_eng",
+            "in_ing"
+        ]
     },
     "initial_state": {
         "full_shape": false,
@@ -91,6 +94,7 @@
     },
     "voice": {
         "enable": false,
+        "model": "sensevoice-local",
         "device": "",
         "language": "auto",
         "itn": true,
